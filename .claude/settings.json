@@ -26,6 +26,19 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/guard-gated-commit.mjs\"",
+            "timeout": 10,
+            "statusMessage": "commit がゲート経由か検査中..."
+          }
+        ]
+      }
     ]
   }
 }
