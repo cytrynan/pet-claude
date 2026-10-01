@@ -85,6 +85,7 @@ Claude Code を使ったスペック駆動開発のための **言語非依存�
 | `steering` | 作業計画・実装・振り返りの管理 |
 | `tasklist-to-issues` | tasklist.md から GitHub issue を一括起票し、issue との食い違いを検出 |
 | `orchestration` | 司令塔としての編成判断・委任の設計・受入検証・采配の記録 |
+| `db-readonly-inspect` | 受け取った .env だけで他プロジェクトの PostgreSQL を読み取り専用で点検（二重ガード・証跡つき） |
 | `prd-writing` | プロダクト要求定義書の作成 |
 | `functional-design` | 機能設計書の作成 |
 | `architecture-design` | アーキテクチャ設計書の作成 |

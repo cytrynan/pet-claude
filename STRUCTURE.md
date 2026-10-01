@@ -218,6 +218,7 @@
 | steering | `.claude/skills/steering/SKILL.md` `templates/{requirements,design,tasklist}.md` | 🔒 コア | 作業単位のステアリングファイル管理スキル。`/add-feature` 等から内部的に呼ばれる。3つのテンプレ (要件/設計/タスクリスト) を保持。 |
 | tasklist-to-issues | `.claude/skills/tasklist-to-issues/SKILL.md` `scripts/{new-issues-from-tasklist,check-tasklist-issues}.ps1` | 🔒 コア | `tasklist.md` から GitHub issue (親1件＋子N件) を一括起票し番号を書き戻す／issue との食い違いを検出。実装着手前に使用。スクリプトは PowerShell (UTF-8 BOM付きで保持すること)。 |
 | orchestration | `.claude/skills/orchestration/SKILL.md` `templates/orchestration.md` | 🔒 コア | **司令塔の運用の正本**。編成の判断 / 委任の設計 / 受入検証 (3層ゲート) / 采配の記録の4モード。`/add-feature` ステップ3.5 で呼ばれる。 |
+| db-readonly-inspect | `.claude/skills/db-readonly-inspect/SKILL.md` `scripts/{lib,env-keys,inspect,ro-query,print,selftest}.js` | 🔒 コア | 受け取った `.env` だけで他プロジェクトの PostgreSQL を**読み取り専用**で点検する。生成済み Prisma Client を接続先差し替えで流用し、送信前 lint ＋ `SET TRANSACTION READ ONLY` の二重ガードと `SHOW transaction_read_only` の証跡つき。接続情報の値は出力しない。 |
 
 ### `.claude/templates/` — `/init-*` で展開するテンプレ素材
 
