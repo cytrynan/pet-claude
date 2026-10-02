@@ -79,6 +79,7 @@
 │   └── templates/                          # /init-* コマンドで展開する素材
 │       ├── stacks/                         # 技術スタック別の設定ファイル
 │       │   ├── claude-md-sections/         # CLAUDE.md に貼る技術スタック節
+│       │   │   ├── dotnet.md                   # .NET 8 / WinForms（節のみ。stacks/dotnet/ の雛形は未整備）
 │       │   │   ├── go.md
 │       │   │   ├── node-ts.md
 │       │   │   ├── none.md
