@@ -14,8 +14,8 @@
   .\new-issues-from-tasklist.ps1 -TasklistPath .steering\20260728-在庫CSV取込\tasklist.md -DryRun
 
 .EXAMPLE
-  # 実際に起票（カレントが対象リポジトリでない場合は -Repo <owner>/<repo> を指定）
-  .\new-issues-from-tasklist.ps1 -TasklistPath .steering\20260728-在庫CSV取込\tasklist.md
+  # 実際に起票（カレントが対象リポジトリでない場合は -Repo を指定）
+  .\new-issues-from-tasklist.ps1 -TasklistPath .steering\20260728-在庫CSV取込\tasklist.md -Repo 6dorg/inventory_management_system
 #>
 [CmdletBinding()]
 param(
@@ -115,11 +115,15 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
     if ($inFence) { continue }
 
     if ($line -match '^tracking:\s*#(\d+)') { $existingParent = [int]$Matches[1]; continue }
+    # 計画エージェントが置くプレースホルダ "tracking: #TBD" は、起票後に親番号で置き換える（2 行目を増やさない）
+    if ($line -match '^tracking:\s*#TBD\s*$') { $trackingPlaceholderIndex = $i; continue }
     if ($line -match '^##\s+(.+?)\s*$') { $currentPhase = $Matches[1]; continue }
 
     # トップレベルのタスク行（インデント無し）
     if ($line -match '^-\s\[( |~)\]\s+(.+?)\s*$') {
         $title = $Matches[2]
+        # 行末の "(#TBD)"（計画段階のプレースホルダ）は issue タイトルに入れない。書き戻しでも実番号に置き換える
+        $title = $title -replace '\s*\(#TBD\)\s*$', ''
         if ($title -match '~~') { continue }                 # スキップ済み
         if ($title -match '\(#\d+\)\s*$') { continue }        # 既に起票済み
         if ($title -match '^\{.*\}$') { continue }            # テンプレのプレースホルダのみ
@@ -261,10 +265,11 @@ Part of #$parent
     $newLines = New-Object System.Collections.Generic.List[string]
     for ($i = 0; $i -lt $lines.Count; $i++) {
         $hit = $created | Where-Object { $_.Index -eq $i }
-        if ($hit) { $newLines.Add(($lines[$i].TrimEnd() + " (#$($hit.Number))")) }
+        if ($hit) { $newLines.Add((($lines[$i] -replace '\s*\(#TBD\)\s*$', '').TrimEnd() + " (#$($hit.Number))")) }
+        elseif ($null -ne $trackingPlaceholderIndex -and $i -eq $trackingPlaceholderIndex) { $newLines.Add("tracking: #$parent") }
         else { $newLines.Add($lines[$i]) }
     }
-    if (-not $existingParent) {
+    if (-not $existingParent -and $null -eq $trackingPlaceholderIndex) {
         # タイトル行（先頭の # 行）の直後に tracking 行を差し込む
         $insertAt = 0
         for ($i = 0; $i -lt $newLines.Count; $i++) {
