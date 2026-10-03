@@ -125,7 +125,9 @@ for ($i = 0; $i -lt $lines.Count; $i++) {
         # 行末の "(#TBD)"（計画段階のプレースホルダ）は issue タイトルに入れない。書き戻しでも実番号に置き換える
         $title = $title -replace '\s*\(#TBD\)\s*$', ''
         if ($title -match '~~') { continue }                 # スキップ済み
-        if ($title -match '\(#\d+\)\s*$') { continue }        # 既に起票済み
+        # 既に起票済み: 行末の "(#NN)"、または "(#NN) — <メモ>" のように後ろに追記がある形
+        # （行末だけを見ると、追記のある未完了行を再起票して二重になる。check-tasklist-issues.ps1 と同じ式）
+        if ($title -match '\(#\d+\)(?=\s*$|\s+[—–-]\s)') { continue }
         if ($title -match '^\{.*\}$') { continue }            # テンプレのプレースホルダのみ
 
         # 直後の子行（インデント付きチェックボックス）を受入条件として集める

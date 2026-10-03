@@ -47,6 +47,11 @@ $parent = $null
 $local = @{}   # issue番号 -> @{ State; Title }
 $noIssue = @()
 
+# タスク行の issue 番号: 行末の "(#NN)"、または "(#NN)" の後に " — <完了ハッシュ・メモ>" が続く形
+# （完了時に " — 2e7f95d" のように追記する運用。行末だけを見ると追記した行を NO_ISSUE と誤判定する）。
+# new-issues-from-tasklist.ps1 の「起票済み」判定と同じ式に揃える。
+$IssueRefPattern = '\(#(\d+)\)(?=\s*$|\s+[—–-]\s)'
+
 foreach ($line in $lines) {
     if ($line -match '^\s*```') { $inFence = -not $inFence; continue }
     if ($inFence) { continue }
@@ -56,10 +61,12 @@ foreach ($line in $lines) {
         $title = $Matches[2]
         if ($title -match '~~') { continue }              # 技術的理由でスキップ済み
         if ($title -match '^\{.*\}$') { continue }         # テンプレのプレースホルダ
-        if ($title -match '\(#(\d+)\)\s*$') {
+        if ($title -match $IssueRefPattern) {
             $local[[int]$Matches[1]] = @{ State = $state; Title = $title }
         }
-        else {
+        elseif ($state -ne 'x') {
+            # 完了済み（[x]）で issue が無い行（承認・起票そのもの等）は起票対象にならないので報告しない
+            # （new-issues-from-tasklist.ps1 も [ ] / [~] の行だけを起票する）
             $noIssue += $title
         }
     }

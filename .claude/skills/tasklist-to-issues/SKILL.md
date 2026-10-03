@@ -54,6 +54,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 安全側の作り:
 
 - 既に `(#NN)` が付いた行・`~~` でスキップ済みの行・コードフェンス内・`{プレースホルダ}` は対象外 → **再実行しても二重起票しない**
+  - `(#NN)` は行末か、後ろに ` — <メモ>`（em dash・en dash・` - `）が続く形を起票済みと読む（完了ハッシュの追記 `(#12) — 2e7f95d` も可。2026-10-03）。本文の途中に書いた `(#NN)` は issue 番号として扱わない
 - 計画エージェントが置く **`(#TBD)`（行末）と `tracking: #TBD`** はそのまま渡してよい。タイトルから外して起票し、書き戻しで実番号に置き換える（2 本目の `tracking:` 行は増えない。2026-10-02）
 - 起票対象が **10件を超えると停止**する（`-MaxTasks` / `-Force` で変更可）。細切れの大量起票は issue 一覧を読めなくし、「issue を見て指示する」目的自体を壊すため。停止したらタスクを階層化して親タスク単位にまとめる
 - issue 本文は UTF-8(BOM無し) の一時ファイル経由（`--body-file`）。日本語・改行を `--body` にインラインで渡さない
@@ -63,7 +64,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 | tasklist.md | issue 側のコマンド |
 |---|---|
 | `- [ ]` → `- [~]` 着手 | `gh issue edit <N> --add-label in-progress --add-assignee @me` |
-| `- [~]` → `- [x]` 完了 | `gh issue close <N> --comment "<何を変えたか1〜3行>"` |
+| `- [~]` → `- [x]` 完了 | `gh issue close <N> --comment "<何を変えたか1〜3行>"`（tasklist 側は行末に ` — <コミットhash>` を追記してよい） |
 | `- [x] ~~名~~（理由）` スキップ | `gh issue close <N> --reason "not planned" --comment "<技術的理由>"` |
 
 ## 手順3: issue → tasklist の取り込み
@@ -78,7 +79,7 @@ allowed-tools: Read, Write, Edit, Bash, Glob, Grep
 | `ISSUE_ONLY` | issue にあって tasklist に無い | ユーザーが追加したタスク。`- [ ] タイトル (#NN)` を追記して着手対象に含める |
 | `CLOSED_OPEN` | issue closed / tasklist 未完了 | tasklist を `[x]` にする（**勝手に再実施しない**） |
 | `OPEN_DONE` | issue open / tasklist `[x]` | 差し戻しの可能性。**どちらも上書きせずユーザーに確認する** |
-| `NO_ISSUE` | tasklist にあって issue 番号が無い | 手順1で起票する |
+| `NO_ISSUE` | 未完了（`[ ]` / `[~]`）の行に issue 番号が無い（完了済みで issue の無い行＝承認・起票そのもの等は報告しない） | 手順1で起票する |
 | `LOCAL_ONLY` | tasklist の番号に対応する issue が無い | 番号の誤り・ラベル違いを確認する |
 
 状態（open/closed・タスクの増減）は **issue を上流**とみなす。ユーザーが手で触るのは issue 側だから。
