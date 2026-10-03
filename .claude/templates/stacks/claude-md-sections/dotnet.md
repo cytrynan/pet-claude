@@ -22,5 +22,9 @@ dotnet publish <csproj> -c Release -r win-x64 --self-contained true -p:PublishSi
 - テスト project は `RuntimeIdentifier=win-x64`・`SelfContained=false` を明示する（self-contained の Exe 本体を参照しても整合検査で落ちない）。
 - **xunit は MTA。WinForms の Form を作るテストは STA スレッドの中で `new Form()`（`Show()` はしない）**。
 - 静的な差し替え点（時計・ログ・環境）をテストで使うなら `[assembly: CollectionBehavior(DisableTestParallelization = true)]`。
+- **NSubstitute の `Arg.Is`／`Arg.Any` を変数に入れない。** 引数指定子は生成した時点でスレッド静的なキューに積まれ、
+  次の substitute 呼び出しがそれを消費する。変数に入れると「作った順」と「使った順」がずれ、
+  **単体では通るのに全体実行だと順序依存で落ちる**（落ち方が実行順でしか変わらないので原因が見えにくい）。
+  必ず呼び出しの引数の位置に直接書く。指定子を作って `Returns` を書かずに終わる行も残さない。
 - **コンパイル型なので同じツリーで 2 体の実装係が同時にビルドできない**（`obj/`・`bin/` の排他）。並行させる Phase ごとに worktree を分け、司令塔がマージする。
 - PowerShell スクリプト（`build/*.ps1`）は UTF-8 **BOM 付き**で保存する（5.1 は BOM 無しの非 ASCII を CP932 で読む。Write/Edit ツールは BOM を落とすので書いた後に付け直す）。
