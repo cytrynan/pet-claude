@@ -3,7 +3,7 @@
 //
 // 契約（公式 https://code.claude.com/docs/en/hooks に準拠）:
 //   stdin  = Stop イベントのJSON（transcript_path / tool_calls / stop_hook_active）
-//   stdout = 違反あり かつ stop_hook_active=false → {hookSpecificOutput:{decision:"block"}} で終了を差し戻す
+//   stdout = 違反あり かつ stop_hook_active=false → {decision:"block",reason} で終了を差し戻す（最上位キー。hookSpecificOutput 配下の decision は Stop では読まれない: 2026-10-09 判明）
 //            違反あり かつ stop_hook_active=true  → {systemMessage} の警告のみ（ブロック連鎖は1回で必ず止める）
 //   exit 0 固定（exit 2 は使わない。制御はJSONで行う）
 //
@@ -139,16 +139,13 @@ function main() {
     process.exit(0);
   }
   process.stdout.write(JSON.stringify({
-    hookSpecificOutput: {
-      hookEventName: 'Stop',
-      decision: 'block',
-      reason: [
+    decision: 'block',
+    reason: [
         '記録規約（`development-guidelines` スキル guides/recording.md）に反しています。',
         violations.size ? '【未追記】記録ファイルを編集した作業では、同じ作業内で当該ディレクトリの log.md に1行追記する。形式は「* **種別**: [ファイル](相対パス) — 要約 (アクター)」。' : '',
         formatBad.size ? '【書式】log.md の行頭に日付を書かない（日付は "## YYYY-MM-DD" 見出しで表す）。該当行の日付を削り、その日付の見出しの配下へ移してください。2形式が併存すると同じ日が2か所に散ります。' : '',
         detail,
       ].filter(Boolean).join('\n'),
-    },
   }));
   process.exit(0);
 }

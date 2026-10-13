@@ -51,7 +51,7 @@ const parse = (s) => { try { return JSON.parse(s); } catch { return null; } };
 const expectBlock = (out) => {
   const j = parse(out);
   if (!j) return 'stdoutがJSONでない';
-  if (j.hookSpecificOutput?.decision !== 'block') return 'decision:block が出ていない';
+  if (j.decision !== 'block') return 'decision:block が出ていない（最上位キー）';
   return null;
 };
 
@@ -60,7 +60,7 @@ run('2 是正→沈黙', input(tFixed, false), (out) => out.trim() === '' ? null
 run('3 stop_hook_active→警告のみ', input(tViolation, true), (out) => {
   const j = parse(out);
   if (!j) return 'stdoutがJSONでない';
-  if (j.hookSpecificOutput) return '連鎖中に再blockしている（有界化が壊れている）';
+  if (j.decision) return '連鎖中に再blockしている（有界化が壊れている）';
   if (!j.systemMessage) return 'systemMessage 警告が無い';
   return null;
 });
