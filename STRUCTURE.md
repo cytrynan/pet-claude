@@ -217,7 +217,7 @@
 | glossary-creation | `.claude/skills/glossary-creation/SKILL.md` `guide.md` `template.md` | 🔒 コア | ユビキタス言語 (用語集) 作成スキル。 |
 | design-tokens | `.claude/skills/design-tokens/SKILL.md` `template.md` | 🔒 コア | デザイン方向性・トークンをルート `DESIGN.md` に固定するスキル (AI slop 回避)。`/setup-project` ステップ7・UI実装前に使用。 |
 | apple-design | `.claude/skills/apple-design/SKILL.md` `references/*.md` `LICENSE` `ORIGIN.md` | 🔒 コア | Apple 風デザイン (HIG＋Liquid Glass) の仕様集。外部 MIT スキル (SudewaJay/apple-design-skill) を無改変収録。方向性に Apple 風を選んだ時に使用。 |
-| liquid-glass | `.claude/skills/liquid-glass/SKILL.md` `liquid-glass.js` `README.md` `LICENSE` `ORIGIN.md` | 🔒 コア | Liquid Glass の屈折表現を任意要素へ付ける依存ゼロの JS。外部 MIT スキル (deepika-builds/liquid-glass) を無改変収録。ガラス表現は自作せずこれを使う。 |
+| liquid-glass | `.claude/skills/liquid-glass/SKILL.md` `liquid-glass.js` `README.md` `demo/` `LICENSE` `ORIGIN.md` | 🔒 コア | Liquid Glass の屈折表現を任意要素へ付ける依存ゼロの JS。外部 MIT スキル (deepika-builds/liquid-glass) を無改変収録。ガラス表現は自作せずこれを使う。 |
 | steering | `.claude/skills/steering/SKILL.md` `templates/{requirements,design,tasklist}.md` | 🔒 コア | 作業単位のステアリングファイル管理スキル。`/add-feature` 等から内部的に呼ばれる。3つのテンプレ (要件/設計/タスクリスト) を保持。 |
 | tasklist-to-issues | `.claude/skills/tasklist-to-issues/SKILL.md` `scripts/{new-issues-from-tasklist,check-tasklist-issues}.ps1` | 🔒 コア | `tasklist.md` から GitHub issue (親1件＋子N件) を一括起票し番号を書き戻す／issue との食い違いを検出。実装着手前に使用。スクリプトは PowerShell (UTF-8 BOM付きで保持すること)。 |
 | orchestration | `.claude/skills/orchestration/SKILL.md` `templates/orchestration.md` | 🔒 コア | **司令塔の運用の正本**。編成の判断 / 委任の設計 / 受入検証 (3層ゲート) / 采配の記録の4モード。`/add-feature` ステップ3.5 で呼ばれる。 |
