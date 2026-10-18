@@ -1,0 +1,15 @@
+{
+  "$comment": "sync-codex.mjs の設定。skills.exclude は Codex に見せないスキル（synced = Claude のプラグイン同期領域、codex-verify = Claude→Codex 方向専用）。agents.modelMap は Claude の model 値 → Codex の TOML に足すキー（Codex では Claude のモデル名を指定できないので推論強度だけ写す。未知の値は何も足さない）。",
+  "skills": {
+    "exclude": ["synced", "codex-verify"]
+  },
+  "agents": {
+    "modelMap": {
+      "fable": { "model_reasoning_effort": "high" },
+      "opus": { "model_reasoning_effort": "high" },
+      "sonnet": { "model_reasoning_effort": "medium" },
+      "haiku": { "model_reasoning_effort": "low" },
+      "inherit": {}
+    }
+  }
+}
