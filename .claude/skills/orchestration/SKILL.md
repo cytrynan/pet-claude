@@ -541,20 +541,26 @@ allowed-tools: Read, Write, Edit, Grep, Glob, Bash, Task, TodoWrite
 別ベンダーのモデルなので「司令塔とレビュー係を同一モデルにしない」が自動で満たされる。計画段階の設計書レビューは対象外（上表のまま）。
 
 - **実行はスキル `codex-verify` で行う**。差分の収集、依頼文のひな形への差し込み、起動、前後比較のガード、指摘件数の集計までを1コマンドで行う。
-- 起動形（スキルの中身。読み取り専用・セッションを残さない・最終回答はファイルへ）:
+- 起動形（スキルの中身。隔離形＝リポジトリは書き込み不可・コマンドは実行可・セッションを残さない・最終回答はファイルへ）:
   ```bash
-  codex exec -s read-only --ephemeral -C <repo> -o <out.md> - < <prompt.md>
+  # cwd は結果フォルダ側の空フォルダ。TEMP/TMP=<結果>/codex-tmp、LOCALAPPDATA=空フォルダ、GIT_CONFIG_* で safe.directory=<repo>
+  codex exec --ignore-user-config --skip-git-repo-check -s workspace-write --ephemeral -C <結果>/codex-work \
+    -c windows.sandbox="elevated" -c model=<config.toml の値> -c model_reasoning_effort=<同> --json -o <out.md> - < <prompt.md> > <events.jsonl>
   ```
-  依頼文はファイルに書いて標準入力で渡す（長文・引用符の事故を避ける）。git 管理外のフォルダでは `--skip-git-repo-check` を足す。小さな差分で約1分。
+  リポジトリは作業場（cwd）の外なので、シェルでも apply_patch でも書き込みは拒否される。依頼文はファイルに書いて標準入力で渡す（長文・引用符の事故を避ける）。
+  旧来の `-s read-only -C <repo>` はスキルの `--readonly-sandbox` で残した。小さな差分でテストを回して約1分。
 - 依頼文に必ず入れる: 「ファイルは変更しない」「correctness に限定」「指摘はファイル:行・重大度・再現条件つき」「指摘が無ければ『指摘なし』とだけ書く」、
   差分の範囲（`git diff <base>` 等）、司令塔が特に見てほしい点。
-- **Codex がコマンドを実行できない環境がある**（実測: Windows でサンドボックス準備が同梱 `node_repl.exe` の使用中エラーで失敗し、`read-only`／`workspace-write`
-  とも全コマンドが `setup refresh had errors` で即失敗。ファイルは node_repl で読めるので差分レビューは成立）。その環境では
-  **品質ゲート（テスト・lint）の再実行は司令塔が行い、生出力を依頼文に添付して Codex に差分と突き合わせさせる**。司令塔は commit 前にもう一度実行する。
-  導入時に「シェルで `git --version` を実行して出力を報告」と1回依頼すれば、どちらの環境かが分かる。
+- **品質ゲートの再実行は、隔離形なら Codex に任せられる**（2026-10-18 実測。Windows では、ユーザー設定のままの起動だとサンドボックス準備が同梱
+  `node_repl.exe` の使用中エラー〔Codex 自身の MCP か、起動中のデスクトップアプリが使用〕で失敗し、全コマンドが `setup refresh had errors` で即失敗する。
+  `--ignore-user-config` と `LOCALAPPDATA` の差し替えで避けられる）。Node のリポジトリなら Codex が vitest・tsc・eslint を自分で選んで実行した。
+  - Codex のコマンドはサンドボックス用の別ユーザーで動く。ユーザー領域に入れたツール（Python・pwsh）は動かないことがあり、tsx も落ちた。
+    **Codex で動かないゲートは司令塔が実行し、生出力を依頼文に添付して Codex に差分と突き合わせさせる**。
+  - スキルの `summary.json` の `codex_could_run_commands` が false なら、コマンドが起動できていない。司令塔がゲートを回して渡し直す。
+  - Codex の報告したテスト結果も鵜呑みにしない。司令塔は commit 前にもう一度実行する。
 - 受理の仕方は Claude のレビュー係と同じ: 指摘は司令塔がコードを読んで再確認してから採る。「指摘なし」も鵜呑みにせず、壊しにいくケース1本は司令塔が自作する。
 - **代替**: Codex が使えない（未ログイン・利用上限・起動失敗）ときは `readonly-reviewer` を司令塔と別モデルで立て、代行したことを記録に残す。
-- 導入確認（2026-10-18）: 仕込みバグ2件の差分で2件とも、ファイル:行と再現値つきで検出。「ファイルを作れ」という指示は、シェル経由ならサンドボックスに阻まれた。内蔵の Node ツール経由は Codex が自分で断っただけで、仕組みで止まるかは未確認。だから読み取り専用の保証は、実行前後の作業ツリー比較で取る（development-guidelines の verification.md 原則49）。
+- 導入確認（2026-10-18）: 仕込みバグ2件の差分で2件とも、ファイル:行と再現値つきで検出。「ファイルを作れ」という指示は、シェル経由ならサンドボックスに阻まれた。内蔵の Node ツール経由は Codex が自分で断っただけで、仕組みで止まるかは未確認だった（旧来の read-only 形）。隔離形では、シェル・node の `fs.writeFileSync`・apply_patch のいずれもリポジトリへの書き込みが拒否されることを同日に実測した。それでもサンドボックスに頼り切らず、読み取り専用の保証は実行前後の作業ツリー比較で取る（development-guidelines の verification.md 原則49）。
 - スキル作成時の実測: スキル自身のスクリプトを2回検証させ、指摘は8件と5件。誤検出は0件で、11件を採用した。正しい変更には「指摘なし」を返した。
   `--dangerously-bypass-approvals-and-sandbox` はサンドボックスを外すので検証用途では使わない。実案件で使ったら結果を記録し、Claude のレビュー係と精度を比べる。
 

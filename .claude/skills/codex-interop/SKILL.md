@@ -52,8 +52,9 @@ description: Claude Code の個人設定（~/.claude の CLAUDE.md・skills・ag
 - Stop フックは Codex の rollout（会話記録）から `FileChange`（成功した編集）と `CommandExecution` を拾う。`--ephemeral` では記録が残らないので何も検知しない。
 - ジャンクションの掃除はリンク自体だけを消す。`rm -r` 系でリンクを消すとリンク先（正本）の中身まで消えることがあるので、手作業でも使わない。
 - Windows の elevated サンドボックスで、デスクトップアプリが書いた設定との組み合わせにより apply_patch もシェルも失敗する例がある
-  （サンドボックス準備ログに os error 32）。CLI は `--ignore-user-config -c windows.sandbox="elevated"` で回避できたが、
-  その場合 config.toml の writable_roots などは `-c` で渡し直す必要がある。
+  （サンドボックス準備ログに os error 32）。原因は同梱 `node_repl.exe` が使用中なこと（ユーザー設定の MCP で Codex 自身が起動したものか、起動中のデスクトップアプリのもの）。
+  CLI は `--ignore-user-config -c windows.sandbox="elevated"` で回避でき、デスクトップアプリ起動中は Codex を起動するプロセスの `LOCALAPPDATA` を空フォルダへ向けると通る。
+  その場合 config.toml の writable_roots・model・model_reasoning_effort などは `-c` で渡し直す必要がある。検証係としての完成形はスキル `codex-verify` の起動形。
 
 ## 同梱物
 
