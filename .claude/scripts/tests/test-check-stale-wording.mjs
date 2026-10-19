@@ -39,10 +39,21 @@ function run(stdinObj, raw) {
 }
 const ev = (extra = {}) => ({ session_id: 's', transcript_path: transcript, cwd: repo, hook_event_name: 'Stop', stop_hook_active: false, ...extra });
 const results = [];
+// 契約: 沈黙＝stdout が空文字。発火＝stdout 全体が {"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":"…"}} だけ
+// （部分一致で判定すると、沈黙すべき時の余計な出力や、JSON の前のゴミを見逃す＝受入検証で指摘）
+function contractOf(out) {
+  if (out === '') return { silent: true };
+  try {
+    const o = JSON.parse(out);
+    const h = o?.hookSpecificOutput;
+    const shapeOk = Object.keys(o).length === 1 && h && Object.keys(h).length === 2 && h.hookEventName === 'Stop' && typeof h.additionalContext === 'string' && h.additionalContext.length > 0;
+    return shapeOk ? { fired: true, text: h.additionalContext } : { broken: true };
+  } catch { return { broken: true }; }
+}
 const check = (name, r, expectFire, mustMention) => {
-  const fired = !r.spawnFail && !!r.out && r.out.includes('additionalContext');
-  const ok = !r.spawnFail && fired === expectFire && (!mustMention || r.out.includes(mustMention));
-  results.push({ name, ok, detail: r.spawnFail ? r.err : (r.out || '(沈黙)').slice(0, 240) });
+  const c = r.spawnFail ? { broken: true } : contractOf(r.out);
+  const ok = expectFire ? (!!c.fired && (!mustMention || c.text.includes(mustMention))) : !!c.silent;
+  results.push({ name, ok, detail: r.spawnFail ? r.err : (r.out === '' ? '(沈黙)' : r.out.slice(0, 240)) });
 };
 const logLines = () => (fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').trim().split('\n').filter(Boolean).map(l => JSON.parse(l)) : []);
 const bashEditIn = (dir) => ({ name: 'Bash', input: { command: `cd ${dir.replace(/\\/g, '/')} && python -I - <<'EOF' ...` } });
