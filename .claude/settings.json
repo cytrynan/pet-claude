@@ -25,6 +25,15 @@
             "statusMessage": "log.md追記漏れを検査中..."
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PROJECT_DIR}/.claude/scripts/check-stale-wording.mjs\"",
+            "timeout": 20
+          }
+        ]
       }
     ],
     "PreToolUse": [
