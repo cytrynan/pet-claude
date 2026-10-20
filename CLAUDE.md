@@ -304,3 +304,4 @@
 - READMEを作る・書き換えるときは、**「そのリポでできること」→「技術の詳細」の順**で書く
 - **簡潔に**。冒頭1〜3行で何のリポか分かるようにし、専門語・長い説明は後ろか `docs/` へ回す
 - 骨子: タイトル＋1行説明 → できること（3〜6項目）→ 使い方 → 技術の詳細 → ライセンス
+- 人間が読む成果物の文章（README・ドキュメント・記事・報告書。チャット返信は除く）は、文章品質の skill を使い分けて書く/直す: 英語→`humanizer`、README・API文書・技術文書→`technical-writing`、日本語→`stop-ai-slop-jp`。skill 本体はこのテンプレに同梱しない（各自 `~/.claude/skills/` に導入する。出どころ: [blader/humanizer](https://github.com/blader/humanizer)・[iKora128/stop-ai-slop-jp](https://github.com/iKora128/stop-ai-slop-jp)・`technical-writing` は旧 [tenzir/claude-plugins](https://github.com/tenzir/claude-plugins) の `plugins/dev/skills/technical-writing`）
