@@ -1,0 +1,52 @@
+# PR を開いたときに Claude Code が自動でレビューする（公式 anthropics/claude-code-action@v1）。
+# - 走るのは opened / ready_for_review / reopened だけ。push のたびには回さない（利用枠の節約）。
+#   push 後にもう一度見てほしいときは PR に `@claude 再レビューして` と書く（claude.yml が拾う）。
+# - draft の PR と bot（dependabot 等）の PR は飛ばす。fork からの PR は secret が渡らないので失敗して終わる。
+# - 指摘は correctness と docs/ に明記された要件だけ（全部拾うと過剰設計に発散するため）。
+# - 事前準備は claude.yml と同じ（GitHub App と Secret `CLAUDE_CODE_OAUTH_TOKEN`）。
+# - 書込権限は PR へのコメントだけ（contents は read）。
+name: Claude Review
+
+on:
+  pull_request:
+    types: [opened, ready_for_review, reopened]
+
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  review:
+    if: github.event.pull_request.draft == false && github.event.pull_request.user.type != 'Bot'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            この PR をレビューする。日本語で書く。
+
+            1. 先に CLAUDE.md、docs/（恒久仕様）、この PR に関係する .steering/ を読む。
+               仕様と実装の食い違いを最優先で探す。
+            2. 指摘してよいのは次だけ。それ以外（書き方の好み・命名・小さな整理）は書かない。
+               - correctness: バグ、境界値、例外処理の抜け、データ破壊、競合
+               - セキュリティ: 秘密情報の混入、入力検証の抜け、権限
+               - docs/ に明記された要件への違反
+            3. 指摘は該当行へのインラインコメントで、「どんな入力・状態で → 何が誤るか」を 1〜3 行で書く。
+               確信が持てないものは先頭に「要確認」と付ける。
+            4. 最後に `gh pr comment` で総評を 1 件だけ書く: 指摘の件数、マージを止めるべきもの（ブロッカー）の有無。
+               指摘が 0 件ならそう書く。
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*)"

@@ -256,7 +256,7 @@
 
 1. **`/init-stack`** — 技術スタックを対話的に選択し、設定ファイル一式を生成
 2. **`/init-project`** — プロジェクト名・著者名・ライセンス情報を初期化
-3. **`/init-extras`** — 追加ファイル群 (`.editorconfig`, CI, Issue/PR テンプレ等) を配置。**CI（lint / typecheck / test を PR と main で回す workflow）は必須**（既存リポも `.github/workflows/ci.yml` が無ければ足す。private の Free プランではブランチ保護が使えずマージは止まらないので、結果を見てから取り込む運用）
+3. **`/init-extras`** — 追加ファイル群 (`.editorconfig`, CI, Issue/PR テンプレ等) を配置。**CI（lint / typecheck / test を PR と main で回す workflow）は必須**（既存リポも `.github/workflows/ci.yml` が無ければ足す。private の Free プランではブランチ保護が使えずマージは止まらないので、結果を見てから取り込む運用）。同時に公式 claude-code-action（`claude.yml`＝`@claude` 応答／`claude-review.yml`＝PR を開いた時の自動レビュー）も置く。既存リポへの後付けは `claude-github-action` スキル
 4. **`/setup-project`** — 永続的ドキュメントを対話的に作成
 5. **`/add-feature [機能名]`** — 機能実装
 

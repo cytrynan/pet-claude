@@ -17,6 +17,7 @@ description: 開発開始時に便利な追加ファイル群 (editorconfig / .e
 - `.github/pull_request_template.md`
 - `.github/workflows/ci.yml` (検出スタックに応じたもの)
 - `.github/dependabot.yml` (検出スタックに応じたもの)
+- `.github/workflows/claude.yml` / `.github/workflows/claude-review.yml`（公式 claude-code-action。`@claude` 応答と PR 自動レビュー）
 
 ## 実行方法
 
@@ -53,6 +54,7 @@ description: 開発開始時に便利な追加ファイル群 (editorconfig / .e
 - `.github/ISSUE_TEMPLATE/bug_report.md`
 - `.github/ISSUE_TEMPLATE/feature_request.md`
 - `.github/pull_request_template.md`
+- `github/workflows/claude.yml` → `.github/workflows/claude.yml`、`github/workflows/claude-review.yml` → `.github/workflows/claude-review.yml`（スタック非依存。`none` でも置く）
 
 ### ステップ3: スタック対応ファイルの配置
 
@@ -65,6 +67,13 @@ description: 開発開始時に便利な追加ファイル群 (editorconfig / .e
 | go | `.claude/templates/extras/github/workflows/ci-go.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-go.yml` → `.github/dependabot.yml` |
 | rust | `.claude/templates/extras/github/workflows/ci-rust.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-rust.yml` → `.github/dependabot.yml` |
 | none | 配置しない (CI のテンプレが特定できないため、後で追加することを案内) | 配置しない |
+
+### ステップ3.5: claude-code-action の人の作業を案内する
+
+`claude.yml` / `claude-review.yml` は **main に入って初めて動く**（導入 PR 自体ではレビューは走らない）。次の 2 つは人にしかできないので、完了メッセージで案内する（詳細は `claude-github-action` スキル）:
+
+1. GitHub App のインストール: https://github.com/apps/claude → 対象リポを選ぶ
+2. Secret `CLAUDE_CODE_OAUTH_TOKEN` の登録: `claude setup-token` で発行 → `.claude/skills/claude-github-action/scripts/set-oauth-secret.ps1 -Repos owner/repo`（API 従量課金なら両ファイルの `claude_code_oauth_token` 行を `anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}` に直す）
 
 ### ステップ4: プレースホルダーの解決
 
@@ -94,6 +103,7 @@ Conventional Commits の自動チェックを追加するには、以下を実�
 
 - 共通ファイルがすべて配置されている
 - 検出スタックに応じた CI と Dependabot が配置されている
+- `claude.yml` / `claude-review.yml` が配置され、人の作業 2 つ（App・Secret）を案内した
 - セキュリティ/行動規範のメールアドレスプレースホルダーが置換されている
 
 完了時のメッセージ:
@@ -111,8 +121,10 @@ Conventional Commits の自動チェックを追加するには、以下を実�
 ✅ .github/pull_request_template.md
 ✅ .github/workflows/ci.yml ({stack} 向け)
 ✅ .github/dependabot.yml ({stack} 向け)
+✅ .github/workflows/claude.yml / claude-review.yml (claude-code-action)
 
 次のステップ:
+- claude-code-action を動かすには: ① https://github.com/apps/claude で App を入れる ② `claude setup-token` → Secret `CLAUDE_CODE_OAUTH_TOKEN` を登録（main に入ってから動く）
 - /setup-project を実行して永続ドキュメントを作成
 」
 ```
