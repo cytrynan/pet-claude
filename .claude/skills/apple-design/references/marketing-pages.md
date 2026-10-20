@@ -28,7 +28,7 @@ Copywriting voice: short declarative fragments. "Lightning fast. Lightyears ahea
 
 ## Signature visual moves (pick 1–2 per page, not all)
 
-- **Gradient headline text** — a key word or whole headline filled with a vivid gradient (`background-clip: text`) on a black section. Apple's classic "supercharged" move. (Local note 2026-10-20: a blue→purple→pink gradient on a plain price/feature headline reads as an AI-generated template and was removed in review — keep it for a product/brand name tied to real product colors, or skip it; a solid white headline is the safe default.)
+- **Gradient headline text** — a key word or whole headline filled with a vivid gradient (`background-clip: text`) on a black section. Apple's classic "supercharged" move. (Local note 2026-10-20, corrected: design-director's blacklist flags blue→purple gradients as an AI-template tell, but on one LP the owner explicitly chose to keep a blue→purple→pink gradient on the price headline. Treat it as the owner's call — propose, don't remove on your own; never more than one gradient headline per page.)
 - **Scroll-scrubbed product sequence** — a pinned section where scrolling scrubs through an image sequence or transforms the product (rotate, explode, zoom). Implementation in `code-implementation.md`.
 - **Sticky headline, scrolling visuals** — headline pins while feature cards/images scroll past.
 - **Bento grid** — a specs/feature summary as a grid of rounded cards (18–28px radius) with mixed spans, each card one stat or claim. Dark cards on black, or white cards on `#f5f5f7`.
