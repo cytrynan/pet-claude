@@ -48,6 +48,7 @@ Apple's SF Pro / SF Compact / New York fonts are licensed for Apple-platform des
 - **Client production work / non-Apple distribution**: recommend **Inter** (with `font-feature-settings: "cv05", "cv11"` for SF-like letterforms) and tell the client why. Never embed SF font files in deliverables.
 - **In Figma**: SF Pro is fine (free for design), Inter as fallback.
 - SF is a variable font with dynamic optical sizing; mimic it by tightening tracking as size grows: ~`-0.003em` at 17px → `-0.015em` at 48px → `-0.022em` at 80px+.
+- **Japanese / CJK UI (local note 2026-10-20)**: do NOT put `system-ui` before the CJK names — on Windows Chrome it resolves to Yu Gothic UI for both kana and Latin (verified via CDP `CSS.getPlatformFontsForNode`). Use `-apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif` — Mac keeps SF + Hiragino; Windows 10/11 ship Noto Sans JP since the 2025-03 updates (KB5053657) and Chrome's own Windows default lists it first. No font files bundled. Apply `palt` only to short UI text (buttons, rows, labels); keep body text unproportioned. Known issue: CJK can look blurry in Chromium at 96 DPI (100% scaling).
 
 ## Quality bar — self-check before delivering
 
