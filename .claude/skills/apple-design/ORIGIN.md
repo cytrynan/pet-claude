@@ -19,3 +19,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（同上）: marketing-pages.md のグラデーション見出しの注記に「持ち主によっては積極的に使う→入れられる所を探して提案」と「白い節のガラスのカードは背後に薄い色のにじみ＋本文の灰色を一段濃く（#5f5f64）」を追記
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のボタン文字の太さ）: code-implementation.md の Contrast trap に「標準の太さにすると 3:1 の特例が消える→青を濃く（ライト #0064cc・ダーク #006cda で 4.6:1 以上）」を追記
 - 2026-10-21 kuroko/claude-opus-5-5（memoro の UI 磨き込みの実装・本物の拡張での検証）: code-implementation.md に3点を追加 — ①⋯メニューの z-index は固定のガラスの見出し・上端のぼかしより下 ②全体の `button:active` の縮みが行のボタンにも掛かる→行は縮めず薄く塗る ③グレーのガラスの列の背後のにじみは左右に出さない（scrollWidth が増えて全言語のはみ出し検査に掛かる・blur は数えない）
+- 2026-10-21 kuroko/claude-opus-5-5（同上・評価係の指摘で本物の拡張の状態を撮り直して発見）: code-implementation.md の「浮いた下端の操作」を訂正（隙間はバー自身の bottom を負にして塞ぐ。擬似要素を下へ延ばすと短いカードでもスクロールバーが出てボタンの文字が折れる）＋キー表示はスクロールバーで狭い時だけ消す（コンテナクエリ）＋select の「すべてのタグ ⌄」は field-sizing: content
