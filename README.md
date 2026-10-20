@@ -12,12 +12,19 @@ Claude Code の作業状態に合わせて動く、Windows 用のデスクトッ
 
 ## 使い方
 
-Phase 0 の実装中。手順は実装後にここへ書く。
+Phase 0（ペットの窓）まで。Rust（rustup）と VS 2022 の C++ ツールが要る。
+
+```bash
+cargo build -p pet-app --all-targets
+./target/debug/pet-app.exe
+```
+
+トレイのアイコンから「位置をリセット」「終了」。
 
 ## 技術の詳細
 
-- Python 3.12 + PySide6（Qt 6）。単一プロセスでトレイ常駐
-- Claude Code hooks → loopback HTTP → アプリ。hook は常に exit 0 で、アプリが居なくても Claude Code を止めない
+- Rust。ペット本体は Win32 の layered window（透明な画素のクリックは OS が背後へ通す）、トレイと今後の UI は Tauri 2。1 プロセスでトレイ常駐
+- Claude Code hooks → loopback HTTP → アプリ（Phase 2）。hook は常に exit 0 で、アプリが居なくても Claude Code を止めない
 - 計画: [docs/roadmap.md](docs/roadmap.md)。要件: [docs/product-requirements.md](docs/product-requirements.md)。設計: [docs/architecture.md](docs/architecture.md)。参考にした OpenPets の解析: [docs/openpets-analysis.md](docs/openpets-analysis.md)
 
 ## ライセンス

@@ -5,34 +5,31 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  CARGO_TERM_COLOR: always
+
 jobs:
   build:
-    runs-on: windows-latest  # 対象 OS が Windows のため（PySide6 の挙動を本番と揃える）
-
-    strategy:
-      matrix:
-        python-version: ['3.12']
+    runs-on: windows-latest  # 対象 OS が Windows（Win32 API を使う）
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v3
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
 
-      - name: Setup Python ${{ matrix.python-version }}
-        run: uv python install ${{ matrix.python-version }}
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies
-        run: uv sync --all-extras --dev
+      - name: Format check
+        run: cargo fmt --all --check
 
-      - name: Lint (ruff)
-        run: uv run ruff check .
+      - name: Lint (clippy)
+        run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Format check (ruff)
-        run: uv run ruff format --check .
-
-      - name: Typecheck (mypy)
-        run: uv run mypy src
+      - name: Build
+        run: cargo build --workspace --all-targets
 
       - name: Test
-        run: uv run pytest
+        run: cargo test --workspace

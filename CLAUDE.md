@@ -2,24 +2,25 @@
 
 ## 技術スタック
 
-- 開発環境: devcontainer
-- Python 3.12+
-- パッケージ管理: uv
-- Lint + Format: ruff
-- 型チェック: mypy (strict)
-- テストフレームワーク: pytest (+ pytest-cov)
+- Rust（edition 2024, stable）の Cargo ワークスペース。対象は Windows 11 のみ
+- `crates/pet-core`: OS 非依存のロジック（置き場所・スプライト規約・仮画像）。テストはここに集める
+- `crates/pet-app`: Win32 のペット窓（layered window）＋ Tauri 2（トレイ・後で UI）
+- Lint: clippy（警告も拒否）/ Format: rustfmt / テスト: `cargo test`
+- 設計の正本は `docs/architecture.md`、計画は `docs/roadmap.md`
 
 ## 主要コマンド
 
 ```bash
-uv sync               # 依存関係を解決・インストール
-uv run ruff check .   # Lint
-uv run ruff format .  # Format
-uv run mypy src       # 型チェック
-uv run pytest         # テスト実行 (カバレッジ込み)
-bash scripts/gate.sh  # 品質ゲート一式（format/check → mypy → pytest・カバレッジ 80%）。PowerShell は pwsh -File scripts/gate.ps1
-bash scripts/gate-commit.sh <msg-file>  # ゲートが通った時だけ add→commit（commit はこれだけを使う）
+cargo build -p pet-app --all-targets          # ビルド（実機確認の前に必ず。ゲートは exe を作り直さない）
+./target/debug/pet-app.exe                    # 起動（PET_TRACE=1 でドラッグ座標もログへ）
+./target/debug/pet-app.exe --probe            # ディスプレイ構成（物理座標・DPI）を表示
+cargo run -p pet-app --example winctl -- find # 実機検証ツール（click/drag/shot/displaychange など）
+cargo run -p pet-core --example gen_assets    # 仮画像とアイコンを再生成
+bash scripts/gate.sh                          # 品質ゲート（fmt → clippy -D warnings → test）
+bash scripts/gate-commit.sh <msg-file>        # ゲートが通った時だけ add→commit（commit はこれだけを使う）
 ```
+
+ログ: `%LOCALAPPDATA%\pet-claude\logs\pet.log`、状態: `%LOCALAPPDATA%\pet-claude\state.json`。
 
 commit の直打ちは PreToolUse フック `.claude/scripts/guard-gated-commit.mjs` が deny する（このプロジェクト配下だけ。他リポジトリへの commit は通るが、対象を変数で書くと解決できないので止まる＝リテラルのパスで書く。Bash のコマンド文字列に「区切りの直後の git commit」を含む文面があると止まるので、そういう文面は Write でファイルに書いてから実行する）。故障注入: `node .claude/scripts/tests/test-guard-gated-commit.mjs`。
 

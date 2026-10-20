@@ -10,6 +10,9 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md) — 技術を Python + PySide6 から Rust（Win32 layered window ＋ Tauri 2）へ変更。Phase 0 の実測結果を §3 に反映 (kuroko/claude-opus-5-5)
+* **Update**: [ロードマップ](roadmap.md) — Phase 0 を実施済みに。Phase 2〜3 の実装言語を Rust に合わせて修正 (kuroko/claude-opus-5-5)
+* **Update**: [プロダクト要求定義書](product-requirements.md) — 受け入れ条件のテスト手段を `cargo test` に (kuroko/claude-opus-5-5)
 * **Creation**: [初期要件](ideas/initial-requirements.md) — K の指示（2026-10-21）を整理。状態→動きの表を含む (kuroko/claude-fable-5-1)
 * **Creation**: [OpenPets 解析](openpets-analysis.md) — 転用する設計 9 点・転用しない設計 7 点・hook 対応表・シート仕様 (kuroko/claude-fable-5-1)
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版。未決 U1〜U3 は K 確認待ち（未承認） (kuroko/claude-fable-5-1)

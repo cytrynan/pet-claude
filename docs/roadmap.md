@@ -9,23 +9,23 @@ stale_after: 2027-01-21
 
 各 Phase は `.steering/<日付>-<名前>/` を 1 つ作り、受け入れ条件（PRD §7）を満たしたら次へ進む。
 
-## Phase 0: 窓の土台を 2 画面×倍率違いで実測する
+## Phase 0: 窓の土台を 2 画面×倍率違いで実測する（2026-10-21 実施）
 
-- `uv add pyside6`、仮画像（Pillow で 8 列×11 行の単色キャラを生成）
-- 透過・最前面・フォーカス非取得・マスクによるクリック判定・ドラッグ・クランプ・ディスプレイ変化
-- チェックリスト `docs/checklists/phase0-window.md` を全 PASS（スクショ）
-- 全画面アプリ中の挙動を実測し、最前面の取り直しが要るか決める
+- Rust ワークスペース（`pet-core`・`pet-app`）、仮画像（手続き生成の 8 列×11 行）
+- 透過・最前面・フォーカス非取得・不透明部分だけのクリック・ドラッグ・クランプ・ディスプレイ変化
+- チェックリスト `docs/checklists/phase0-window.md`: W1〜W9・W11・W12 合格。W10 は通知の経路まで合格で、実際に画面を外す試験は K の了承待ち（記録 `.steering/20261021-phase0-window/`）
+- 全画面アプリ: 前面の間は譲り、閉じたら 1 秒以内に最前面へ戻る
 
 ## Phase 1: 行動と素材規約
 
-- `behavior/` の状態機械（待機・散歩・睡眠・つままれ＋Agent 状態の優先順位）を pytest 先行で
+- `behavior/` の状態機械（待機・散歩・睡眠・つままれ＋Agent 状態の優先順位）を `cargo test` 先行で
 - `assets/pets/<name>/pet.json` の規約と読み込み、行の代替
 - 右クリックメニュー（設定／バーを非表示／終了）、トレイ、設定の保存
 - クリック反応（喜ぶ・振り向く）
 
 ## Phase 2: Claude Code 連携と承認
 
-- `hooks/pet_hook.py`、`settings.json` への管理マーカー付き登録・解除コマンド
+- `crates/pet-hook`（Rust の小さな exe）、`settings.json` への管理マーカー付き登録・解除コマンド
 - IPC（loopback HTTP＋token＋発見ファイル）と間引き
 - 吹き出し（検証済み短文）と、`PermissionRequest` の許可・拒否の往復
 - 故障注入（アプリ停止／token 不一致／応答遅延）
@@ -33,7 +33,7 @@ stale_after: 2027-01-21
 ## Phase 3: 声とチャット
 
 - AivisSpeech TTS（固定文言＋答え）、設定画面（大きさ・音声出力・音声トリガー）
-- バー（チャット／音声入力）、faster-whisper で文字起こし
+- バー（チャット／音声入力）、ローカルで文字起こし（whisper-rs かサイドカーの faster-whisper。architecture §6）
 - チャットの送り先（PRD U1）を K と決めてから Agent SDK 連携
 
 ## Phase 4: ウェイクワードと本番素材

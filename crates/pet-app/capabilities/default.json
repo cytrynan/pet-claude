@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Phase 0 は webview を持たないので権限は空",
+  "windows": [],
+  "permissions": []
+}
