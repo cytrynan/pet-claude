@@ -39,7 +39,7 @@ jobs:
       id-token: write
       actions: read # PR の CI 結果を読むため
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
