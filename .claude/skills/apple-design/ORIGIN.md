@@ -11,3 +11,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の完了画面 P4）: SKILL.md の日本語／CJK UI の項に「フォントを変えたら固定余白の SVG 文字（グラフの目盛り）を撮り直す」を追記
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のオプション O1・O2）: code-implementation.md の Local refinements に「操作つきの一覧の行（⋯メニュー・行クリックで編集・3段の行）」と「本題が下に埋もれたページの見出しにセグメント」を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の設定 O3）: code-implementation.md の Local refinements に「設定行（時刻のカプセル・外部設定へ行く ↗ の行・日本語の脚注に text-wrap: pretty）」を追加
+- 2026-10-20 kuroko/claude-opus-5-5（memoro のデータ入出力 O5）: code-implementation.md のセグメントの値を訂正（ダークの選択中は #636366。--bg-cell では見分けられない）＋2〜3択の排他選択に使う旨
