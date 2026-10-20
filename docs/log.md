@@ -9,6 +9,13 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-21
+* **Creation**: [初期要件](ideas/initial-requirements.md) — K の指示（2026-10-21）を整理。状態→動きの表を含む (kuroko/claude-fable-5-1)
+* **Creation**: [OpenPets 解析](openpets-analysis.md) — 転用する設計 9 点・転用しない設計 7 点・hook 対応表・シート仕様 (kuroko/claude-fable-5-1)
+* **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版。未決 U1〜U3 は K 確認待ち（未承認） (kuroko/claude-fable-5-1)
+* **Creation**: [技術仕様書](architecture.md) — Python 3.12 + PySide6 を採用。窓・行動・hooks・声・IPC の設計 (kuroko/claude-fable-5-1)
+* **Creation**: [ロードマップ](roadmap.md) — Phase 0〜4 (kuroko/claude-fable-5-1)
+* **Creation**: [Phase 0 チェックリスト](checklists/phase0-window.md) — 窓の実測項目 W1〜W12 (kuroko/claude-fable-5-1)
 - 2026-10-20 extras/github/workflows: ci-node.yml を改訂（paths-ignore・concurrency・permissions・TZ・生成物の注記・本番と同じ Node）、pnpm 版 ci-node-pnpm.yml を追加、init-extras の表に反映
 - 2026-10-20 CLAUDE.md: /init-extras の CI を必須にし、検証の原則に「GitHub Actions でも回す」を追記
 - 2026-10-20 extras/github/workflows: 起動時 env 検証向けのダミー値の注記を ci-node / ci-node-pnpm に追加

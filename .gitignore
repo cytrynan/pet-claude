@@ -38,3 +38,12 @@ build/
 .claude/worktrees/
 
 # ↓ /init-stack 実行で言語固有のエントリがここに追記されます
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+htmlcov/
