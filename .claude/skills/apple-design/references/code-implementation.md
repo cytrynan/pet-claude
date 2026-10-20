@@ -149,6 +149,10 @@ Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gra
 
 **Choice sets with one prominent option** (e.g. Again / Good / Easy): equal size, equal label size (19px bold for the whole set so the tinted one qualifies as large text), only the recommended option gets the tinted glass, the others gray glass with `--label` text — no tinted *text* on the gray ones. Put per-option secondary info (e.g. "next in 15 days") as a 13px `--label-2` caption row **above** the buttons in the same 3-column grid, not inside them: small white text on a systemBlue glass fill never reaches 4.5:1 (measured 4.2–4.6:1 at best).
 
+**List rows with actions (management pages):** no per-row Edit/Delete pills (a red "Delete" repeated on every row is noise). Row click = edit; trailing "⋯" = 36px circle, `--label-2` glyph, `--fill` only on hover/open → glass popover menu (min-width 200px, radius 18, padding 6, items 40px with 18px line icons, only the destructive item in `--red-text`). The list needs `overflow: visible` so the menu can escape — round the first/last row instead of clipping the list. Compact rows to title / 2-line clamped detail / one 13px meta line (chips · source link · status).
+
+**Page whose title names the main content but opens on settings:** put a segmented control ("Content | Settings") inside the floating glass header and open on the content. Segmented: track `--fill`, 2px padding, capsule; segments 30px high, 13px/600; selected = `--bg-cell` with `0 1px 3px rgba(0,0,0,.12)`.
+
 **Determinate progress (review/quiz flows):** 4px capsule track `--fill-2`, fill `--tint`, label "N left" 13px `--label-2` tnum on the trailing side; count re-queued items as remaining so the bar never moves backwards (HIG: even out the pace).
 
 **Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes.
