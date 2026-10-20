@@ -12,3 +12,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のオプション O1・O2）: code-implementation.md の Local refinements に「操作つきの一覧の行（⋯メニュー・行クリックで編集・3段の行）」と「本題が下に埋もれたページの見出しにセグメント」を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の設定 O3）: code-implementation.md の Local refinements に「設定行（時刻のカプセル・外部設定へ行く ↗ の行・日本語の脚注に text-wrap: pretty）」を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のデータ入出力 O5）: code-implementation.md のセグメントの値を訂正（ダークの選択中は #636366。--bg-cell では見分けられない）＋2〜3択の排他選択に使う旨
+- 2026-10-20 kuroko/claude-opus-5-5（memoro の保存ダイアログ C1）: code-implementation.md の「撮影画素で確かめる」に「撮る前に出現アニメーションを止める・ビューポートを撮影範囲以上に」を追加
