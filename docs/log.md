@@ -11,3 +11,4 @@
 -->
 - 2026-10-20 extras/github/workflows: ci-node.yml を改訂（paths-ignore・concurrency・permissions・TZ・生成物の注記・本番と同じ Node）、pnpm 版 ci-node-pnpm.yml を追加、init-extras の表に反映
 - 2026-10-20 CLAUDE.md: /init-extras の CI を必須にし、検証の原則に「GitHub Actions でも回す」を追記
+- 2026-10-20 extras/github/workflows: 起動時 env 検証向けのダミー値の注記を ci-node / ci-node-pnpm に追加

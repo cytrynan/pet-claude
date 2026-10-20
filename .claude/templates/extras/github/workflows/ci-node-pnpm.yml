@@ -32,6 +32,10 @@ jobs:
     timeout-minutes: 20
     env:
       TZ: UTC
+      # import 時に process.env を検証して throw するモジュール（例: lib/env.ts）があるなら、形式だけ満たす
+      # ダミー値をここに置く（手元では Prisma Client 等が .env を読むので気づかない。CI には .env が無い）。
+      # DATABASE_URL: postgresql://ci:ci@localhost:5432/ci_dummy
+      # AUTH_SECRET: ci-dummy-secret-0123456789abcdef
     steps:
       - uses: actions/checkout@v4
 
