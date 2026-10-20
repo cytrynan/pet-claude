@@ -103,4 +103,4 @@ Minimums: iOS 11pt, macOS 10pt, tvOS 23pt (default 29), watchOS 12pt (default 16
 
 Control sizes (default / minimum): iOS & watchOS 44×44 / 28×28pt; macOS 28×28 / 20×20pt; tvOS 66×66 / 56×56pt; visionOS 60×60 / 28×28pt. Pad ~12pt around bezeled controls, ~24pt around bare glyphs.
 
-Contrast: 4.5:1 for text ≤17pt; 3:1 for ≥18pt or bold; meet it in light *and* dark, or at least when Increase Contrast is on. Every gesture needs an on-screen alternative; every element needs a VoiceOver label; no auto-dismissing timed UI.
+Contrast: 4.5:1 for text ≤17pt; 3:1 only for WCAG "large text" = ≥18pt (24px) regular or ≥14pt (18.66px) **bold** — a 17px semibold button label is NOT large (local fix 2026-10-20, see code-implementation "Local refinements"); meet it in light *and* dark, or at least when Increase Contrast is on. Every gesture needs an on-screen alternative; every element needs a VoiceOver label; no auto-dismissing timed UI.

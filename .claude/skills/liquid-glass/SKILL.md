@@ -36,3 +36,8 @@ radius, fallbackBlur })` returns `{ supported, refresh, destroy }`.
   lower `scale`, raise `blur`, or increase `border`.
 - Avoid the effect on elements larger than ~800px per side (GPU cost), and
   don't regenerate the map for position-only animation — only size changes.
+- (Local note 2026-10-20) Refraction only shows when something with detail is
+  behind the element. Over a plain single-color surface (app cells, popups,
+  buttons on a white card) it is invisible and only costs GPU — use the layered
+  "stained-glass" CSS recipe in `apple-design/references/code-implementation.md`
+  (Local refinements) instead, and measure text contrast on the rendered pixels.

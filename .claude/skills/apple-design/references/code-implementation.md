@@ -107,6 +107,50 @@ Key behavior: content scrolls edge-to-edge *beneath* bars (no `padding-top` shov
 ```
 Marketing CTA: same pill, `--mk-cta` background, 12px/24px padding, hover lightens to `--mk-cta-hover` — no lift, no shadow.
 
+> **Contrast trap (local fix 2026-10-20):** `.btn-filled` as written (white 17px/600 on `--tint #0088ff`) is **3.52:1 → fails WCAG AA** (17px semibold is not "large text"). Pick one: (a) fill `#0071e3` (4.7:1) at 17px, or (b) keep the bright systemBlue look and set the label to **≥19px bold** (WCAG large ⇒ 3:1 suffices: `#0088ff` 3.52 / dark `#0091ff` 3.23). On light backgrounds a slightly deeper fill (`#006cdc`) reads closer to iOS than raw `#0088ff`.
+
+## Local refinements (2026-10-20, from a Chrome-extension popup redesign — not upstream)
+
+**Stained-glass prominent button** (iOS 26 alert primary look; works on a plain cell where SVG refraction shows nothing). Layers: translucent tint + top gloss + bottom bounce light + 1px rim that catches light at top-left/bottom-right + faint tinted glow. No text-shadow.
+```css
+:root { --glass-tint: rgba(0,108,220,.97); --glass-glow: rgba(0,108,220,.30); }
+@media (prefers-color-scheme: dark) { :root { --glass-tint: rgba(0,145,255,.93); --glass-glow: rgba(0,145,255,.26); } }
+.btn-glass { position: relative; isolation: isolate; min-height: 54px; padding: 15px 20px;
+  font-size: 19px; line-height: 24px; font-weight: 700; color: #fff; border-radius: 999px;
+  background: linear-gradient(180deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.05) 35%,
+      rgba(255,255,255,.02) 50%, rgba(255,255,255,0) 60%, rgba(255,255,255,.07) 100%), var(--glass-tint);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.42), inset 0 -2px 6px rgba(255,255,255,.10),
+      0 8px 20px -12px var(--glass-glow); }
+.btn-glass::before { content:''; position:absolute; inset:0; z-index:-1; padding:1px; border-radius:inherit;
+  background: linear-gradient(160deg, rgba(255,255,255,.6), rgba(255,255,255,.12) 32%, rgba(255,255,255,0) 55%, rgba(255,255,255,.3));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude; pointer-events:none; }  /* rim */
+.btn-glass::after { content:''; position:absolute; inset:0; z-index:-1; border-radius:inherit; pointer-events:none;
+  background: radial-gradient(55% 90% at 18% 0%, rgba(255,255,255,.10), transparent 55%); }  /* reflection */
+.btn-glass:active { filter: brightness(1.08); transform: scale(.985); }  /* "illuminates from within" */
+```
+Strength knob: doubling every alpha above (tint .90, gloss .30, rim .85, reflection .20, glow .55) gives a "more transparent" look; the values above are the toned-down version a reviewer preferred. Hover: strengthen the rim, never mix white into the fill (pushes white text under 3:1).
+
+**Gray glass secondary button** (iOS 26 alert *Cancel*): measured on a real screenshot it is just **one step brighter than the panel behind it** (≈ +10% white), picks up the background hue, faint rim, bold label.
+```css
+.btn-glass-gray { /* same metrics, ::before rim with rgba(255,255,255,.95)→.08→0→50% */
+  background: linear-gradient(180deg, rgba(255,255,255,.14), rgba(255,255,255,.03) 40%, transparent 60%, rgba(255,255,255,.05)),
+              rgba(120,120,128,.10);                        /* dark: rgba(255,255,255,.10) */
+  backdrop-filter: blur(18px) saturate(190%);
+  box-shadow: inset 0 1px 1px rgba(255,255,255,.75), inset 0 -1px 2px rgba(255,255,255,.35),
+              inset 0 0 0 .5px rgba(0,0,0,.05), 0 6px 16px -12px rgba(0,0,0,.22); }
+```
+Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gray-10% over `#f2f2f7` → use `#005fc0` (≈4.9:1). Gray 16% drops `#0066cc` to 4.13:1.
+
+**Floating bottom action bar inside a padded scroller** (popup/sheet): drop the full-width glass strip; let the buttons float and use ONE soft scroll-edge layer behind them.
+- `position: sticky; bottom: 0` stops at the scroller's **padding-bottom** above the edge (measured: bar bottom 564px vs scroller 580px). A transparent bar leaks content through that gap → extend the edge layer: `::before { top: -<gap between content and bar>; bottom: -<scroller padding-bottom>; z-index: -1; }`.
+- Start the layer *inside* the gap (not 28px above) or it darkens unscrolled content (very visible in dark mode).
+- Make it dense where the buttons sit: `background: linear-gradient(to top, color-mix(in srgb, var(--bg-grouped) 94%, transparent) 75%, transparent); backdrop-filter: blur(10px); mask-image: linear-gradient(to top, #000 78%, transparent);` — at 55%/60% text stayed readable between the buttons.
+
+**Determinate progress (review/quiz flows):** 4px capsule track `--fill-2`, fill `--tint`, label "N left" 13px `--label-2` tnum on the trailing side; count re-queued items as remaining so the bar never moves backwards (HIG: even out the pace).
+
+**Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes.
+
 ## Grouped list (Settings style)
 
 ```css
