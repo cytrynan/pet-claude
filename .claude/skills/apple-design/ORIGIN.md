@@ -25,3 +25,4 @@
 - 2026-10-21 kuroko/claude-opus-5-5（同上・持ち主の判定から）: キー表示は「一列のどれか 1 つでも入らなければ列ぜんぶ消す」（組としてそろえる・ResizeObserver で測る）を追記
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のストア画像の見出し）: marketing-pages.md のグラデーション見出しに「明るい地では濃い停止色（#0071e3→#8e44ec→#d6336c・撮影画素で ≥4.35:1）」と「中央寄せの見出しは幅 100% でなく縮めて置く（グラデーションが文字の端から端に乗る）」を追記
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の LP 9 言語を v0.4.0 に追随）: code-implementation.md に「節の光の疑似要素の横あふれは section に overflow-x: clip（375px で 38px）」と「折り返しより下の節を撮るときは lazy の画像を eager＋decode、浮いたナビを隠す」を追記
+- 2026-10-20 kuroko/claude-opus-5-5（memoro の LP の機能の見出しをグラデーション文字に）: marketing-pages.md に「19px・600 の小さい見出しは大きい文字に当たらない＝停止色はすべて 4.5:1 以上。白なら #0071e3/#8e44ec/#d6336c で可、#f5f5f7 では青が 4.31」を追記
