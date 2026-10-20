@@ -444,6 +444,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
             WM_TIMER => match wp.0 {
                 TIMER_ANIM => pet.tick(),
                 TIMER_TOPMOST => pet.reassert_topmost(),
+                // ドラッグ中は置き直さない（掴んでいるペットが保存位置へ飛ぶ）。
+                // タイマーは止めずに残し、離した後の次の発火で置き直す
+                TIMER_DISPLAY if pet.drag.is_some() => {}
                 TIMER_DISPLAY => {
                     // SAFETY: 自分の窓のタイマーを止める
                     let _ = unsafe { KillTimer(Some(pet.hwnd), TIMER_DISPLAY) };

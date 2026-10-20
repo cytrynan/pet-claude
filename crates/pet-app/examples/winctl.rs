@@ -12,6 +12,7 @@
 //! cargo run -p pet-app --example winctl -- place <class> <x> <y> <w> <h>
 //! cargo run -p pet-app --example winctl -- shot <x> <y> <w> <h> <out.png>
 //! cargo run -p pet-app --example winctl -- displaychange   # ペットに WM_DISPLAYCHANGE を送る
+//! cargo run -p pet-app --example winctl -- down <x> <y> / move <x> <y> / up   # 押したままの状態を作る
 //! ```
 //! ⚠️ click / drag は本物のマウスを動かす。
 
@@ -210,6 +211,20 @@ fn main() {
             sleep(Duration::from_millis(80));
             mouse(MOUSEEVENTF_LEFTUP);
             println!("dragged");
+        }
+        Some("down") => {
+            move_to(n(&args, 1), n(&args, 2));
+            sleep(Duration::from_millis(80));
+            mouse(MOUSEEVENTF_LEFTDOWN);
+            println!("down");
+        }
+        Some("move") => {
+            move_to(n(&args, 1), n(&args, 2));
+            println!("moved");
+        }
+        Some("up") => {
+            mouse(MOUSEEVENTF_LEFTUP);
+            println!("up");
         }
         Some("focus") => match find(&args[1]) {
             // SAFETY: 前面化の要求のみ

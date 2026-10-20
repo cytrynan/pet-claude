@@ -18,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from pathlib import Path
 
 for _s in (sys.stdout, sys.stderr):
@@ -336,6 +337,15 @@ def build_prompt(args, rng, diff_body, repo):
     return t.replace("{{DIFF}}", diff_body, 1)
 
 
+def feed_stdin(proc, data):
+    """依頼文を書いて閉じる。codex が読まずに終わっても止まらないよう別スレッドで呼ぶ。"""
+    try:
+        proc.stdin.write(data)
+        proc.stdin.close()
+    except OSError:
+        pass
+
+
 def kill_tree(proc):
     """子プロセスごと止める。Windows は taskkill /T、それ以外はプロセスグループごと SIGKILL。"""
     if os.name == "nt":
@@ -434,11 +444,14 @@ def main():
     t0 = datetime.datetime.now()
     timed_out = False
     try:
-        with open(log_path, "wb") as log, open(events_path, "wb") as events, open(prompt_path, "rb") as stdin:
+        with open(log_path, "wb") as log, open(events_path, "wb") as events:
             # 標準出力は --json のイベント列、標準エラーは実行ログ。
             # POSIX では新しいセッションにして、時間切れのときプロセスグループごと止められるようにする
-            proc = subprocess.Popen(full, stdin=stdin, stdout=events, stderr=log, env=env,
+            # 依頼文はパイプで渡す。ファイルを stdin に直接つなぐと、npm のシム（codex.CMD）経由では
+            # node に届かず「No prompt provided via stdin.」で即終了する（2026-10-21 実測・codex-cli 0.155.1）
+            proc = subprocess.Popen(full, stdin=subprocess.PIPE, stdout=events, stderr=log, env=env,
                                     start_new_session=(os.name != "nt"))
+            threading.Thread(target=feed_stdin, args=(proc, prompt_path.read_bytes()), daemon=True).start()
             try:
                 rc = proc.wait(timeout=args.timeout)
             except subprocess.TimeoutExpired:
