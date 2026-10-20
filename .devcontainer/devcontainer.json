@@ -1,10 +1,11 @@
 {
+  // Linux コンテナでは Win32 を使う pet-app はビルドできない。pet-core（OS 非依存）のテストと docs 作業用
   "name": "pet-claude",
   "image": "mcr.microsoft.com/devcontainers/base:bookworm",
   "workspaceFolder": "/workspaces/pet-claude",
   "features": {
     "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {},
-    "ghcr.io/devcontainers/features/python:1": { "version": "3.12" }
+    "ghcr.io/devcontainers/features/rust:1": { "version": "latest" }
   },
-  "postCreateCommand": "uv sync"
+  "postCreateCommand": "cargo fetch"
 }

@@ -1,0 +1,14 @@
+# W4〜W6 再測 2026-10-21 08:20:49（pet: rect=(894,696)-(1105,925) size=211x229 exstyle=0x08080088 visible=true）
+# 形式: 点 | クリック前の WindowFromPoint | クリック前の前面 | クリック後の前面
+体(不透明) (1500,900) #1 | class=PetClaudeWindow root=PetClaudeWindow | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +1
+体(不透明) (1500,900) #2 | class=PetClaudeWindow root=PetClaudeWindow | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +1
+体(不透明) (1500,900) #3 | class=PetClaudeWindow root=PetClaudeWindow | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +1
+左上の角(透明) (1400,802) #1 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+左上の角(透明) (1400,802) #2 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+左上の角(透明) (1400,802) #3 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+体の穴(透明) (1501,962) #1 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+体の穴(透明) (1501,962) #2 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+体の穴(透明) (1501,962) #3 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+左下(透明) (1400,1020) #1 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+左下(透明) (1400,1020) #2 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0
+左下(透明) (1400,1020) #3 | class=Edit root=Notepad | before: class=Notepad title=*無題 - メモ帳 | after: class=Notepad title=*無題 - メモ帳 | pet-click-log +0

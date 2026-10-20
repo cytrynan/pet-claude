@@ -1,0 +1,1 @@
+rect=(894,696)-(1105,925) size=211x229 exstyle=0x08080088 visible=true
