@@ -8,3 +8,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の評価ボタン P3）: code-implementation.md の Local refinements に「主の1つだけを色付きにした選択肢の組」（同じ大きさ・19px 太字・補足は上の行に 13px で外出し）を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のフォント F1）: SKILL.md の Font strategy に「日本語／CJK UI」の1項（system-ui を CJK 名より前に置かない・Noto Sans JP を含む指定順・palt は短い UI 文字だけ・96 DPI の既知の問題）を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のフォント F1・K 指定の組み合わせ）: SKILL.md の日本語／CJK UI の項に「太字だけ別の書体にする合成フォント（@font-face＋local()＋font-weight 範囲）」と「可変フォントが -Thin と報告される罠」を追記
+- 2026-10-20 kuroko/claude-opus-5-5（memoro の完了画面 P4）: SKILL.md の日本語／CJK UI の項に「フォントを変えたら固定余白の SVG 文字（グラフの目盛り）を撮り直す」を追記
