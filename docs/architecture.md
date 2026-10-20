@@ -48,8 +48,8 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 | ドラッグ | `WM_LBUTTONDOWN` で `SetCapture`。4px 以上動いたらドラッグ扱いにして「つままれ」ポーズ。座標は `GetMessagePos`（メッセージ発生時点。`GetCursorPos` だと速いドラッグで掴んだ位置がずれた） | 合格 |
 | 画面外に出ない | ドラッグ中はカーソルの居る画面の作業領域に、離したら最も重なる画面の作業領域にクランプ | 合格 |
 | 倍率の違う画面 | Per-Monitor DPI v2。窓の大きさ＝192×208 × `scale` × DPI/96。画面をまたいだら足元（下端中央）を基準に描き直す | 合格 |
-| 位置の保存 | 画面ごとに足元を保存（鍵は物理 bounds `"x,y,WxH"`、最大 8 件）。`home` は最後に置いた画面で、その画面が外れている間も消さない | ロジックは単体テスト済み |
-| 画面構成の変化 | `WM_DISPLAYCHANGE`・`WM_DPICHANGED`・`WM_SETTINGCHANGE(SPI_SETWORKAREA)` を 200ms まとめて置き直す | 通知の経路は合格。実際に画面を外す試験は未実施 |
+| 位置の保存 | 画面ごとに足元を保存（鍵は物理 bounds `"x,y,WxH"`、最大 8 件）。`home` は最後に置いた画面で、その画面が外れている間も消さない | 合格（単体テスト＋実機で外して付け直し） |
+| 画面構成の変化 | `WM_DISPLAYCHANGE`・`WM_DPICHANGED`・`WM_SETTINGCHANGE(SPI_SETWORKAREA)` を 200ms まとめて置き直す。ドラッグ中は保留 | 合格（`DisplaySwitch` でノートだけ→拡張に戻して実測） |
 | 全画面アプリ | 1 秒ごとに `HWND_TOPMOST` を取り直す。ただし全画面の窓が前面の間は譲る | 合格 |
 | 二重起動 | 名前付きミューテックス `Local\pet-claude-single-instance` | 合格 |
 

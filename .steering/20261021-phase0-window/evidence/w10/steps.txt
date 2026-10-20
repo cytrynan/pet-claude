@@ -1,0 +1,13 @@
+## 0. 開始（ウルトラワイドに置いた）08:37:59
+0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
+rect=(1947,-351)-(2053,-237) size=106x114 exstyle=0x08080088 visible=true
+"home":{"anchor":{"x":2000,"y":-237
+## 1. DisplaySwitch /internal（Git Bash から＝失敗。MSYS が引数を書き換え、画面は切り替わらなかった）08:38:12
+0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
+rect=(1947,-351)-(2053,-237) size=106x114 exstyle=0x08080088 visible=true
+## 1. DisplaySwitch /internal（ノートだけ・PowerShell から）08:38:41
+0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true
+rect=(2655,1571)-(2866,1800) size=211x229 exstyle=0x08080088 visible=true
+## 2. DisplaySwitch /extend（拡張に戻す）08:39:04
+0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
+rect=(1947,-351)-(2053,-237) size=106x114 exstyle=0x08080088 visible=true

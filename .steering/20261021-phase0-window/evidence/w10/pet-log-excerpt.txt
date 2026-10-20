@@ -1,0 +1,7 @@
+2026-10-21 08:38:12.680 probe: 0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
+2026-10-21 08:38:24.259 probe: 0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
+2026-10-21 08:38:34.562 relayout(display-change) monitors=1 -> PrimarySaved at (2655,1571) 211x229 dpi=192
+2026-10-21 08:38:41.108 probe: 0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true
+2026-10-21 08:38:56.869 relayout(display-change) monitors=2 -> Home at (1947,-351) 106x114 dpi=96
+2026-10-21 08:38:58.117 relayout(display-change) monitors=2 -> Home at (1947,-351) 106x114 dpi=96
+2026-10-21 08:39:04.487 probe: 0,0,2880x1800 work=(96,0)-(2880,1800) dpi=192 primary=true | -383,-1440,3440x1440 work=(-335,-1440)-(3057,0) dpi=96 primary=false
