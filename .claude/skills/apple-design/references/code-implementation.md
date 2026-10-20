@@ -161,6 +161,12 @@ Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gra
 
 **Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes. Before shooting sheets/dialogs, disable their entrance animation (a 0.28s opacity fade got captured half-transparent in one scheme) and make the viewport at least as tall as the clip, or `position: fixed` dimming layers stop short of the bottom. Headless Chrome follows the OS color scheme — when generating marketing/store images, set `prefers-color-scheme` explicitly (an embedded app screen came out dark on a dark-mode PC).
 
+**Touch-first devices (ChromeOS / Android / tablets) — 48px, not 44:** keep the 44px Apple metric for mouse, and raise every tappable element to **48px with ≥8px between neighbours only under `@media (pointer: coarse)`** (Android/ChromeOS guidance is 48dp; web.dev "accessible tap targets" agrees). Mouse layouts stay pixel-identical, so the change needs no new screenshots for desktop. Audit *all* tappables in the surface (a 20-element popup had several 36–40px links), not just the main buttons.
+
+**Emulating touch in headless Chrome for screenshots/tests:** puppeteer's `page.emulateMediaFeatures` does not accept `pointer`. Use `Emulation.setTouchEmulationEnabled` or a viewport with `hasTouch: true` to make `pointer: coarse` match — and put `hasTouch` on the same `setViewport` call, because a later `setViewport` without it resets touch emulation. Run the overflow/target-size checks once with mouse and once with touch.
+
+**Secondary action under the primary button** (e.g. "Card from the selected text" below "Start review"): one line of tint-colored text with a leading "＋" glyph, no fill, no capsule — it must read as clearly secondary to the glass primary. Keep its hit area ≥44px (48px on touch) with padding even though the visible text is small.
+
 ## Grouped list (Settings style)
 
 ```css
