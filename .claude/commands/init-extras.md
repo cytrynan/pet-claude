@@ -60,7 +60,7 @@ description: 開発開始時に便利な追加ファイル群 (editorconfig / .e
 
 | スタック | CI ワークフロー | Dependabot |
 |---|---|---|
-| node-ts | `.claude/templates/extras/github/workflows/ci-node.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-node.yml` → `.github/dependabot.yml` |
+| node-ts | `.claude/templates/extras/github/workflows/ci-node.yml` → `.github/workflows/ci.yml`（`pnpm-lock.yaml` があれば `ci-node-pnpm.yml` を使う。`node-version` は本番と同じメジャーに直す） | `.claude/templates/extras/github/dependabot-node.yml` → `.github/dependabot.yml` |
 | python | `.claude/templates/extras/github/workflows/ci-python.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-python.yml` → `.github/dependabot.yml` |
 | go | `.claude/templates/extras/github/workflows/ci-go.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-go.yml` → `.github/dependabot.yml` |
 | rust | `.claude/templates/extras/github/workflows/ci-rust.yml` → `.github/workflows/ci.yml` | `.claude/templates/extras/github/dependabot-rust.yml` → `.github/dependabot.yml` |

@@ -1,0 +1,57 @@
+# Node（pnpm）向け CI。lint / typecheck / test を PR と main への push で回す。
+# - pnpm の版は package.json の `packageManager`（例: "pnpm@11.1.0"）を pnpm/action-setup が読む。二重管理しない。
+# - node-version は**本番と同じメジャー**に固定する（版差で落ちる。例: Node 26 の jsdom は localStorage で落ちる）。
+# - DB を使わないテスト（jsdom 等）を前提にしている。DB が要るなら services: postgres と DATABASE_URL を足す。
+# - private リポジトリではブランチ保護（必須チェック）は GitHub Pro が要る。CI は表示までで、マージは止めない。
+name: CI
+
+on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".steering/**"
+  push:
+    branches: [main]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".steering/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: lint / typecheck / test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4 # version は package.json の packageManager から
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # 本番と同じメジャーに合わせて変える
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # postinstall が無く、typecheck/test が生成物（例: Prisma Client）を参照するならここで生成する。
+      # - run: pnpm exec prisma generate
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test:run

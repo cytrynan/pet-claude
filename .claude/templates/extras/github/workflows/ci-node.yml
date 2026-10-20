@@ -1,30 +1,49 @@
-# 注: npm ci と cache:'npm' は package-lock.json を必要とします。
-# 初回に `npm install` を実行して生成された package-lock.json をコミットしてください。
+# Node（npm）向け CI。lint / typecheck / test を PR と main への push で回す。
+# - npm ci と cache:'npm' は package-lock.json を必要とする（初回の `npm install` で生成してコミット）。
+# - pnpm のプロジェクトは ci-node-pnpm.yml を使う。
+# - node-version は**本番と同じメジャー**に固定する（版差で落ちる。例: Node 26 の jsdom は localStorage で落ちる）。
+# - private リポジトリではブランチ保護（必須チェック）は GitHub Pro が要る。CI は表示までで、マージは止めない。
 name: CI
 
 on:
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".steering/**"
   push:
     branches: [main]
-  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+      - ".steering/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
-  build:
+  check:
+    name: lint / typecheck / test
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [22.x]
-
+    timeout-minutes: 20
+    env:
+      TZ: UTC
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: 'npm'
+          node-version: 22 # 本番と同じメジャーに合わせて変える
+          cache: npm
 
       - run: npm ci
+
+      # postinstall が無く、typecheck/test が生成物（例: Prisma Client）を参照するならここで生成する。
+      # - run: npx prisma generate
 
       - name: Lint
         run: npm run lint
