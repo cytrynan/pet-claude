@@ -14,3 +14,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のデータ入出力 O5）: code-implementation.md のセグメントの値を訂正（ダークの選択中は #636366。--bg-cell では見分けられない）＋2〜3択の排他選択に使う旨
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の保存ダイアログ C1）: code-implementation.md の「撮影画素で確かめる」に「撮る前に出現アニメーションを止める・ビューポートを撮影範囲以上に」を追加
 - 2026-10-20 kuroko/claude-opus-5-5（memoro のトースト C2）: code-implementation.md の Local refinements に「任意のページに出すトースト（日本語）」（角丸 22・380px・auto-phrase と balance を併用しない・表示時間と一時停止）を追加
+- 2026-10-20 kuroko/claude-opus-5-5（memoro の LP L1）: marketing-pages.md のグラデーション見出しに「価格・機能の見出しに青→紫→ピンクはテンプレ臭（レビューで外した）。白が既定」を追記／code-implementation.md の撮影の注意に「headless は OS の配色に従う→宣伝画像は配色を明示」を追加

@@ -159,7 +159,7 @@ Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gra
 
 **Determinate progress (review/quiz flows):** 4px capsule track `--fill-2`, fill `--tint`, label "N left" 13px `--label-2` tnum on the trailing side; count re-queued items as remaining so the bar never moves backwards (HIG: even out the pace).
 
-**Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes. Before shooting sheets/dialogs, disable their entrance animation (a 0.28s opacity fade got captured half-transparent in one scheme) and make the viewport at least as tall as the clip, or `position: fixed` dimming layers stop short of the bottom.
+**Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes. Before shooting sheets/dialogs, disable their entrance animation (a 0.28s opacity fade got captured half-transparent in one scheme) and make the viewport at least as tall as the clip, or `position: fixed` dimming layers stop short of the bottom. Headless Chrome follows the OS color scheme — when generating marketing/store images, set `prefers-color-scheme` explicitly (an embedded app screen came out dark on a dark-mode PC).
 
 ## Grouped list (Settings style)
 
