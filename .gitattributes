@@ -1,0 +1,6 @@
+# 改行は LF に固定する。rustfmt.toml が newline_style = "Unix" なので、Windows の
+# core.autocrlf=true で CRLF に変わると `cargo fmt --check` が全ファイルで落ちる（2026-10-21 の CI で実測）
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.webp binary
