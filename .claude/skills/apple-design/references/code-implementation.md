@@ -147,6 +147,8 @@ Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gra
 - Start the layer *inside* the gap (not 28px above) or it darkens unscrolled content (very visible in dark mode).
 - Make it dense where the buttons sit: `background: linear-gradient(to top, color-mix(in srgb, var(--bg-grouped) 94%, transparent) 75%, transparent); backdrop-filter: blur(10px); mask-image: linear-gradient(to top, #000 78%, transparent);` — at 55%/60% text stayed readable between the buttons.
 
+**Choice sets with one prominent option** (e.g. Again / Good / Easy): equal size, equal label size (19px bold for the whole set so the tinted one qualifies as large text), only the recommended option gets the tinted glass, the others gray glass with `--label` text — no tinted *text* on the gray ones. Put per-option secondary info (e.g. "next in 15 days") as a 13px `--label-2` caption row **above** the buttons in the same 3-column grid, not inside them: small white text on a systemBlue glass fill never reaches 4.5:1 (measured 4.2–4.6:1 at best).
+
 **Determinate progress (review/quiz flows):** 4px capsule track `--fill-2`, fill `--tint`, label "N left" 13px `--label-2` tnum on the trailing side; count re-queued items as remaining so the bar never moves backwards (HIG: even out the pace).
 
 **Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes.
