@@ -153,6 +153,8 @@ Tint-colored label on it in light mode: `#0066cc` lands at exactly 4.50:1 on gra
 
 **Page whose title names the main content but opens on settings:** put a segmented control ("Content | Settings") inside the floating glass header and open on the content. Segmented: track `--fill`, 2px padding, capsule; segments 30px high, 13px/600; selected = `--bg-cell` with `0 1px 3px rgba(0,0,0,.12)`.
 
+**Settings rows (web):** compact time value = one `--fill` capsule (radius 8, 15px tnum) wrapping the hour/minute `<select>`s with their chevrons removed — not two loose dropdowns. A row that opens an outside settings page (e.g. `chrome://extensions/shortcuts`) = a tint-text row inside the group with a trailing ↗, never a bare link under the section with the URL in the label. Japanese footers: `text-wrap: pretty` stops a lone "ん。" from dropping to its own line.
+
 **Determinate progress (review/quiz flows):** 4px capsule track `--fill-2`, fill `--tint`, label "N left" 13px `--label-2` tnum on the trailing side; count re-queued items as remaining so the bar never moves backwards (HIG: even out the pace).
 
 **Verify contrast on rendered pixels, not on paper:** gloss/reflection layers change the color under the glyphs. A computed 3.13:1 measured 2.86:1 on the screenshot. Sample the pixels in the text band (35–65% of button height, skipping glyph pixels) in both schemes.
