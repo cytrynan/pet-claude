@@ -17,3 +17,4 @@
 - 2026-10-20 kuroko/claude-opus-5-5（memoro の LP L1）: marketing-pages.md のグラデーション見出しに「価格・機能の見出しに青→紫→ピンクはテンプレ臭（レビューで外した）。白が既定」を追記／code-implementation.md の撮影の注意に「headless は OS の配色に従う→宣伝画像は配色を明示」を追加
 - 2026-10-20 kuroko/claude-opus-5-5（同上・訂正）: marketing-pages.md のグラデーション見出しの注記を訂正（「レビューで外した」は誤り。持ち主が残す判断をした＝持ち主の判断事項として提案に留め、勝手に外さない）
 - 2026-10-20 kuroko/claude-opus-5-5（同上）: marketing-pages.md のグラデーション見出しの注記に「持ち主によっては積極的に使う→入れられる所を探して提案」と「白い節のガラスのカードは背後に薄い色のにじみ＋本文の灰色を一段濃く（#5f5f64）」を追記
+- 2026-10-20 kuroko/claude-opus-5-5（memoro のボタン文字の太さ）: code-implementation.md の Contrast trap に「標準の太さにすると 3:1 の特例が消える→青を濃く（ライト #0064cc・ダーク #006cda で 4.6:1 以上）」を追記

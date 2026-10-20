@@ -107,7 +107,7 @@ Key behavior: content scrolls edge-to-edge *beneath* bars (no `padding-top` shov
 ```
 Marketing CTA: same pill, `--mk-cta` background, 12px/24px padding, hover lightens to `--mk-cta-hover` — no lift, no shadow.
 
-> **Contrast trap (local fix 2026-10-20):** `.btn-filled` as written (white 17px/600 on `--tint #0088ff`) is **3.52:1 → fails WCAG AA** (17px semibold is not "large text"). Pick one: (a) fill `#0071e3` (4.7:1) at 17px, or (b) keep the bright systemBlue look and set the label to **≥19px bold** (WCAG large ⇒ 3:1 suffices: `#0088ff` 3.52 / dark `#0091ff` 3.23). On light backgrounds a slightly deeper fill (`#006cdc`) reads closer to iOS than raw `#0088ff`.
+> **Contrast trap (local fix 2026-10-20):** `.btn-filled` as written (white 17px/600 on `--tint #0088ff`) is **3.52:1 → fails WCAG AA** (17px semibold is not "large text"). Pick one: (a) fill `#0071e3` (4.7:1) at 17px, or (b) keep the bright systemBlue look and set the label to **≥19px bold** (WCAG large ⇒ 3:1 suffices: `#0088ff` 3.52 / dark `#0091ff` 3.23). On light backgrounds a slightly deeper fill (`#006cdc`) reads closer to iOS than raw `#0088ff`. If the owner then asks for **regular-weight** labels, the 3:1 exemption is gone: with the glass layers, white 19px/400 needed fills of `#0064cc` (light, 4.64:1 measured) and `#006cda` (dark, 4.74:1; `#0070e0` gave 4.49:1) — darken first, then re-measure pixels.
 
 ## Local refinements (2026-10-20, from a Chrome-extension popup redesign — not upstream)
 
