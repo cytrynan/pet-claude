@@ -194,6 +194,24 @@ mod tests {
     }
 
     #[test]
+    fn fit_handles_one_pixel_sources_and_shrinking() {
+        // 1×1 から引き伸ばしても範囲外を読まず、全部同じ色（壊しにいくケース。2026-10-21 司令塔）
+        let out = fit(vec![5, 6, 7, 200], (1, 1), (3, 2));
+        assert!(out.chunks(4).all(|p| p == [5, 6, 7, 200]));
+        // 縮めるとき（4×1 → 2×1）も添字は範囲内で、両端の色に寄る
+        let px = [
+            [0u8, 0, 0, 255],
+            [0, 0, 0, 255],
+            [200, 200, 200, 255],
+            [200, 200, 200, 255],
+        ]
+        .concat();
+        let out = fit(px, (4, 1), (2, 1));
+        assert_eq!(out.len(), 8);
+        assert!(out[0] < 100 && out[4] > 100, "{out:?}");
+    }
+
+    #[test]
     fn stretch_keeps_the_bottom_row() {
         // 1×4 で一番下だけ不透明。伸ばしても一番下は不透明のまま（足元を固定）
         let mut px = vec![0u8; 16];
