@@ -10,6 +10,8 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md) — §5 を検証係の指摘の回収に合わせた（許可を出す 3 条件・放置した承認の失効と見回り・接続ごとのスレッドと要求全体の期限・乱数が取れなければ受け口を開かない） (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md)・[ロードマップ](roadmap.md)・[DESIGN.md](../DESIGN.md) — Phase 2 を実装どおりに（hook の登録内容・承認の往復・許可を出さない条件・IPC・間引きを置かない理由）、吹き出しの部品と「半透明の面は値より薄く写る」 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [プロダクト要求定義書](product-requirements.md)・[技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — 放置したときの散歩を設定でオン・オフ（既定オフ） (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [プロダクト要求定義書](product-requirements.md) — N1（メモリは子孫プロセス込みの専有で判定。普段 50MB・UI 表示中 150MB）を K 承認済みに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[ロードマップ](roadmap.md)・[プロダクト要求定義書](product-requirements.md) — メモリの数値を実測の幅（専有とワーキングセット）に。N1 の改訂は K 未承認と明記（評価係の指摘） (kuroko/claude-opus-5-5)

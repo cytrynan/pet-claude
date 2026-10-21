@@ -5,6 +5,7 @@
   --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
     "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif;
   --surface: rgba(246, 246, 248, .92);
+  --surface-solid: rgb(246, 246, 248);
   --surface-hover: rgba(0, 0, 0, .06);
   --surface-press: rgba(0, 0, 0, .10);
   --rim: rgba(0, 0, 0, .10);
@@ -19,6 +20,7 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --surface: rgba(38, 38, 40, .92);
+    --surface-solid: rgb(38, 38, 40);
     --surface-hover: rgba(255, 255, 255, .08);
     --surface-press: rgba(255, 255, 255, .14);
     --rim: rgba(255, 255, 255, .10);

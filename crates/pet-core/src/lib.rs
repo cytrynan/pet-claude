@@ -6,6 +6,8 @@
 
 pub mod behavior;
 pub mod geometry;
+pub mod hook;
+pub mod ipc;
 pub mod placeholder;
 pub mod placement;
 pub mod sprite;

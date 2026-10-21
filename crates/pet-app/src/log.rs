@@ -4,7 +4,11 @@ use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
 
+/// 状態・ログ・発見ファイルの置き場所。`PET_CLAUDE_DATA_DIR` で差し替えられる（試験用。pet-hook と同じ規則）。
 pub fn data_dir() -> PathBuf {
+    if let Some(d) = std::env::var_os("PET_CLAUDE_DATA_DIR") {
+        return PathBuf::from(d);
+    }
     let base = std::env::var_os("LOCALAPPDATA").map_or_else(std::env::temp_dir, PathBuf::from);
     base.join("pet-claude")
 }

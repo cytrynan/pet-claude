@@ -27,12 +27,13 @@ stale_after: 2027-01-21
 - 右クリックメニュー（設定／バーを非表示／終了）、トレイ、設定の保存
 - クリック反応（喜ぶ・振り向く）
 
-## Phase 2: Claude Code 連携と承認
+## Phase 2: Claude Code 連携と承認（2026-10-21 実装）
 
 - `crates/pet-hook`（Rust の小さな exe）、`settings.json` への管理マーカー付き登録・解除コマンド
-- IPC（loopback HTTP＋token＋発見ファイル）と間引き
-- 吹き出し（検証済み短文）と、`PermissionRequest` の許可・拒否の往復
-- 故障注入（アプリ停止／token 不一致／応答遅延）
+- IPC（loopback HTTP＋token＋発見ファイル）。間引きは不要と判断して置かない（architecture §5.1）
+- 吹き出し（固定文言）と、`PermissionRequest` の許可・拒否の往復
+- 故障注入（アプリ停止／token 不一致／応答遅延）と `claude -p` の E2E（allow・deny・ask）
+- 残り: K の `~/.claude/settings.json` への登録（K の了承後）、ボタンを実際に押す確認（K が PC を使っていない時）
 
 ## Phase 3: 声とチャット
 

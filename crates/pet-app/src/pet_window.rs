@@ -16,8 +16,9 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use image::RgbaImage;
-use pet_core::behavior::{Behavior, BehaviorConfig, UserEvent};
+use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
 use pet_core::geometry::{Point, Rect};
+use pet_core::ipc::WireEvent;
 use pet_core::placement::{self, Monitor};
 use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, cell_origin, rows_in};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
@@ -218,6 +219,7 @@ impl Pet {
         if let Err(e) = blit(self.hwnd, &self.rect, pixels, w, h) {
             log(format!("UpdateLayeredWindow に失敗: {e}"));
         }
+        ui::note_pet(self.rect, self.dpi);
     }
 
     /// 窓の大きさを `dpi` に合わせる。足元（下端中央）を基準に置き直す。
@@ -693,6 +695,56 @@ pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
             pet.state.save();
         }
     });
+}
+
+/// hook から届いた出来事を行動に渡す（受け口のスレッドから run_on_main_thread で呼ばれる）。
+/// 対応は `pet_core::hook::to_agent_event` と同じ（WireEvent の kind と detail から戻す）。
+pub fn on_wire_event(ev: &WireEvent) {
+    let session = ev.session.clone();
+    let agent = match ev.kind.as_str() {
+        "prompt" => Some(AgentEvent::Prompt { session }),
+        "tool_start" => Some(AgentEvent::ToolStart { session }),
+        "permission" => Some(AgentEvent::NeedsInput { session }),
+        "notification"
+            if matches!(
+                ev.detail.as_deref(),
+                Some("permission_prompt" | "elicitation_dialog")
+            ) =>
+        {
+            Some(AgentEvent::NeedsInput { session })
+        }
+        "stop" => Some(AgentEvent::Done { session }),
+        "stop_failure" => Some(AgentEvent::Error { session }),
+        _ => None,
+    };
+    // 吹き出しの固定文言（承認はカードを出すので除く）
+    let phrase = match ev.kind.as_str() {
+        "stop" => Some("できたよ"),
+        "stop_failure" => Some("失敗しちゃった"),
+        "notification" if ev.detail.as_deref() == Some("elicitation_dialog") => {
+            Some("入力を待ってるよ")
+        }
+        _ => None,
+    };
+    if std::env::var_os("PET_TRACE").is_some() {
+        log(format!(
+            "wire event kind={} session={}",
+            ev.kind, ev.session
+        ));
+    }
+    if let Some(agent) = agent {
+        with_pet(move |pet| {
+            let now = now_ms(pet.epoch);
+            pet.behavior.on_agent(agent, now);
+        });
+    }
+    // 新しい依頼・応答の終わりが来た＝出ていた承認はターミナルで済んだ（並行のツール呼び出しがあるので tool_start では下げない）
+    if matches!(ev.kind.as_str(), "prompt" | "stop" | "stop_failure") {
+        ui::drop_permissions_for(&ev.session);
+    }
+    if let Some(text) = phrase {
+        ui::show_status(text);
+    }
 }
 
 /// 位置を既定（主画面の右下）に戻す。

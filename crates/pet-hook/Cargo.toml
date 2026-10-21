@@ -1,0 +1,13 @@
+[package]
+name = "pet-hook"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+pet-core = { version = "0.1.0", path = "../pet-core" }
+serde_json = "1.0.154"
+
+[lints]
+workspace = true

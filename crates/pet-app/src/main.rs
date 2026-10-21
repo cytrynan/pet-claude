@@ -6,9 +6,13 @@
 //! 引数:
 //! - `--probe`        ディスプレイ構成をログと標準出力に書いて終了
 //! - `--pet <dir>`    `pet.json` と スプライトシートのあるフォルダを使う（既定は内蔵の仮画像）
+//! - `--install-hooks [--settings <path>]`   Claude Code の settings.json に pet-hook を登録して終了
+//! - `--uninstall-hooks [--settings <path>]` 登録を外して終了（既定は `~/.claude/settings.json`）
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod install;
+mod ipc_server;
 mod log;
 mod monitors;
 mod pet_window;
@@ -71,6 +75,18 @@ fn bar_shown() -> bool {
     ui::bar_visible_for_menu()
 }
 
+/// 吹き出しのページが読み込まれたときに呼ぶ。今出す中身
+#[tauri::command]
+fn bubble_state() -> serde_json::Value {
+    ui::bubble_state()
+}
+
+/// 吹き出しの承認のボタン。`decision` は allow / deny / ask
+#[tauri::command]
+fn permission_decide(id: String, decision: String) {
+    ui::permission_decide(id, decision);
+}
+
 #[tauri::command]
 fn settings_get() -> serde_json::Value {
     pet_window::settings()
@@ -100,6 +116,15 @@ fn main() {
         return;
     }
 
+    let install = args.iter().any(|a| a == "--install-hooks");
+    if install || args.iter().any(|a| a == "--uninstall-hooks") {
+        let line = install::run(install, arg_value(&args, "--settings").as_deref())
+            .unwrap_or_else(|e| format!("失敗: {e}"));
+        log(format!("hooks: {line}"));
+        println!("{line}");
+        return;
+    }
+
     // 二重起動しない（名前付きミューテックス。プロセス終了で OS が解放する）
     // SAFETY: 名前は 'static。ハンドルはプロセスの寿命まで保持する
     let _mutex = unsafe { CreateMutexW(None, false, w!("Local\\pet-claude-single-instance")) };
@@ -124,7 +149,9 @@ fn main() {
             bar_shown,
             chat_submit,
             settings_get,
-            settings_set
+            settings_set,
+            bubble_state,
+            permission_decide
         ])
         .setup(move |app| {
             let settings = MenuItem::with_id(app, "settings", "設定", true, None::<&str>)?;
@@ -142,6 +169,7 @@ fn main() {
                 "reset" => pet_window::reset_position(),
                 "quit" => {
                     pet_window::shutdown();
+                    ipc_server::stop();
                     log("quit");
                     app.exit(0);
                 }
@@ -150,6 +178,7 @@ fn main() {
             .build(app)?;
             ui::init(app.handle());
             pet_window::create(sheet, state::AppState::load())?;
+            ipc_server::start(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!());

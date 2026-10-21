@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pet-claude bubble</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  .status { display: flex; align-items: center; justify-content: center; padding: 0 16px;
+    font-feature-settings: "palt"; white-space: nowrap; }
+  /* 承認の判断に使う文面なので、背後の文字が透けないほぼ不透明の面にする */
+  .card { border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
+    background: var(--surface-solid); }
+  .card > * { flex-shrink: 0; }
+  .title { font-weight: 600; font-feature-settings: "palt"; }
+  .tool { font-size: 12px; color: var(--label-2); }
+  /* 要約は省略せず折り返して全文を出す（省略すると後半を見ずに許可できてしまう）。
+     行の高さは ui.rs の SUMMARY_LINE_HEIGHT と同じ 17px */
+  .summary {
+    font-family: "Cascadia Mono", Consolas, "BIZ UDGothic", monospace; font-size: 12px; line-height: 17px;
+    white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
+    background: var(--surface-hover); border-radius: 6px; padding: 4px 8px;
+  }
+  .summary:empty { display: none; }
+  .actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 2px; }
+  .btn {
+    height: 32px; padding: 0 14px; border: 0; border-radius: 999px;
+    font: inherit; font-feature-settings: "palt";
+    background: var(--surface-hover); color: var(--label);
+    transition: opacity .15s var(--ease), background-color .15s var(--ease);
+  }
+  .btn:hover { background: var(--surface-press); }
+  .btn.plain { background: transparent; color: var(--label-2); }
+  .btn.plain:hover { background: var(--surface-hover); }
+  .btn.primary { background: var(--tint); color: #fff; font-weight: 600; }
+  .btn.primary:hover { background: var(--tint); opacity: .9; }
+  .btn:active { opacity: .8; }
+  .note { font-size: 11px; color: var(--label-2); }
+  .more { font-size: 11px; color: var(--label-2); margin-right: auto; align-self: center; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="ui.js"></script>
+<script>
+  const root = document.getElementById("root");
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // Rust 側が中身を変えるたびに呼ぶ（作った直後は読み込み前で空振りするので、読み込み時に自分でも聞く）
+  window.render = (s) => {
+    if (!s || !s.mode) { root.innerHTML = ""; return; }
+    if (s.mode === "status") {
+      root.innerHTML = `<div class="island capsule status" role="status">${esc(s.text)}</div>`;
+      return;
+    }
+    const more = s.more > 0 ? `<span class="more">ほかに ${s.more} 件</span>` : "";
+    root.innerHTML = `
+      <div class="island card" role="alertdialog" aria-label="許可しますか？">
+        <div class="title">許可しますか？</div>
+        <div class="tool">${esc(s.tool)}</div>
+        <div class="summary">${esc(s.summary)}</div>
+        ${s.canAllow ? "" : '<div class="note">全文が見えないので、許可はターミナルで</div>'}
+        <div class="actions">
+          ${more}
+          <button class="btn plain" data-d="ask" title="Claude Code の画面で答える">ターミナルで</button>
+          <button class="btn" data-d="deny">拒否</button>
+          ${s.canAllow ? '<button class="btn primary" data-d="allow">許可</button>' : ""}
+        </div>
+      </div>`;
+    for (const b of root.querySelectorAll("[data-d]")) {
+      b.onclick = () => invoke("permission_decide", { id: s.id, decision: b.dataset.d });
+    }
+    requestAnimationFrame(guardOverflow);
+  };
+  // 行数の見積もり（ui.rs）が外れてカードの中身が窓からはみ出したら、「許可」を隠して注記を出す。
+  // 窓の大きさが後から合えば戻す（作った直後は窓が前の大きさのままのことがある）
+  function guardOverflow() {
+    const card = root.querySelector(".card");
+    const allow = root.querySelector('[data-d="allow"]');
+    if (!card || !allow) return;
+    // 自分で足した注記は外してから測る（注記込みで測ると、窓が合っても戻らない。2026-10-21 検証係の指摘）
+    root.querySelector(".note[data-guard]")?.remove();
+    const over = card.scrollHeight > card.clientHeight + 1;
+    allow.hidden = over;
+    if (over) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.dataset.guard = "1";
+      note.textContent = "全文が見えないので、許可はターミナルで";
+      root.querySelector(".summary").after(note);
+    }
+  }
+  window.addEventListener("resize", guardOverflow);
+  invoke("bubble_state").then(window.render);
+</script>
+</body>
+</html>

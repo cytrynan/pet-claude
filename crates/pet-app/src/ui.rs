@@ -13,9 +13,11 @@
 //!   「開いている間は散歩も睡眠もしない」を決める
 
 use std::cell::{Cell, RefCell};
+use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
 use pet_core::geometry::{Point, Rect};
+use pet_core::ipc::{PermissionState, WireEvent};
 use pet_core::placement;
 use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
@@ -35,6 +37,7 @@ pub const BAR: &str = "bar";
 pub const CHAT: &str = "chat";
 pub const MENU: &str = "menu";
 pub const SETTINGS: &str = "settings";
+pub const BUBBLE: &str = "bubble";
 const POPUPS: [&str; 3] = [BAR, CHAT, MENU];
 
 /// 島の大きさ（論理ピクセル）。窓は影のために四方 12px 大きい。DESIGN.md と合わせる。
@@ -42,6 +45,22 @@ const SHADOW_PAD: f64 = 12.0;
 const BAR_ISLAND: (f64, f64) = (96.0, 48.0);
 const CHAT_ISLAND: (f64, f64) = (360.0, 48.0);
 const MENU_ISLAND: (f64, f64) = (200.0, 150.0);
+/// 吹き出し: 固定文言のカプセルと、承認のカード（DESIGN.md）。
+const STATUS_ISLAND: (f64, f64) = (180.0, 40.0);
+const PERMISSION_ISLAND: (f64, f64) = (320.0, 148.0);
+/// 「許可」を出さないカードは注記が 1 行増える（撮影で要約の行が潰れたので分けた）。
+const PERMISSION_NOTE_ISLAND: (f64, f64) = (320.0, 172.0);
+/// 吹き出しの下端を、ペットの窓の上端からこの分だけ下げる（素材の上の透明な余白を詰める。論理ピクセル）。
+const BUBBLE_DROP: f64 = 20.0;
+/// 承認の要約: 折り返して全文を出す。行数の上限・1 行の桁数（多めに数える）・1 行の高さ（論理ピクセル）。
+/// 上限を超える要約には「許可」を出さない（4 行＝半角 144 桁で、要約の上限 120 字は半角なら収まる）。
+const MAX_SUMMARY_LINES: usize = 4;
+const SUMMARY_COLS: usize = 36;
+const SUMMARY_LINE_HEIGHT: f64 = 17.0;
+/// hook が「要約は元の文字列と同じ」と確かめたときに `detail` に付ける印（pet-hook と同じ値）。
+const EXACT: &str = "exact";
+/// 固定文言を出しておく時間。
+const STATUS_MS: u64 = 3000;
 /// ペットの足元とバーの上端の重なり（論理ピクセル）。ペットの下端の透明な余白を詰める。
 const BAR_OVERLAP: f64 = 6.0;
 /// 全部の窓が隠れてからこれだけたったら破棄する（すぐ使い直すときは作り直さずに済む）。
@@ -62,6 +81,16 @@ thread_local! {
     /// いま出している窓。出した・隠したは自分で記録する（毎フレームの問い合わせを減らす）。
     /// 「`hide()` 直後の `is_visible()` が古い値を返す」は当初の推測で、確かめていない
     static SHOWN: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
+    /// ペットの窓の矩形と DPI（吹き出しの位置合わせ用。ペットが描くたびに更新）
+    static PET_AT: Cell<Option<(Rect, u32)>> = const { Cell::new(None) };
+    /// 答えを待っている承認（古い順）。先頭を吹き出しに出す
+    static PERMS: RefCell<VecDeque<(String, WireEvent)>> = const { RefCell::new(VecDeque::new()) };
+    /// 吹き出しに今出している中身（bubble.html が読み込み時に bubble_state で聞く）
+    static BUBBLE_STATE: RefCell<serde_json::Value> = const { RefCell::new(serde_json::Value::Null) };
+    /// 固定文言の世代（新しい文言が出たら古いタイマーは何もしない）
+    static STATUS_GEN: Cell<u64> = const { Cell::new(0) };
+    /// 承認のカードの見回り（期限切れを下げる）が動いているか
+    static PRUNING: Cell<bool> = const { Cell::new(false) };
 }
 
 fn app() -> Option<AppHandle> {
@@ -109,6 +138,7 @@ fn island(label: &str) -> Option<WebviewWindow> {
     let (page, size, focusable) = match label {
         BAR => ("bar.html", BAR_ISLAND, false),
         CHAT => ("chat.html", CHAT_ISLAND, true),
+        BUBBLE => ("bubble.html", STATUS_ISLAND, false),
         _ => ("menu.html", MENU_ISLAND, false),
     };
     let built = WebviewWindowBuilder::new(&app, label, WebviewUrl::App(page.into()))
@@ -347,7 +377,7 @@ fn schedule_close() {
         std::thread::sleep(IDLE_CLOSE);
         let _ = handle.run_on_main_thread(move || {
             let still = HIDDEN_SINCE.with(Cell::get) == Some(since);
-            if !still || popups_visible() || visible(SETTINGS) {
+            if !still || popups_visible() || visible(SETTINGS) || visible(BUBBLE) {
                 return;
             }
             let Some(app) = app() else { return };
@@ -424,6 +454,7 @@ pub fn action(action: String) {
         }
         "menu:quit" => {
             crate::pet_window::shutdown();
+            crate::ipc_server::stop();
             log("quit");
             if let Some(app) = app() {
                 app.exit(0);
@@ -431,6 +462,261 @@ pub fn action(action: String) {
         }
         _ => {}
     });
+}
+
+// ---- 吹き出し（Phase 2）: 承認のカードと固定文言 ----
+
+/// ペットが描くたびに呼ぶ（ウィンドウプロシージャの中なので、窓に触る処理は後回し）。
+pub fn note_pet(rect: Rect, dpi: u32) {
+    let moved = PET_AT.with(|c| {
+        let old = c.get();
+        c.set(Some((rect, dpi)));
+        old != Some((rect, dpi))
+    });
+    if moved && visible(BUBBLE) {
+        defer(place_bubble);
+    }
+}
+
+fn bubble_island() -> (f64, f64) {
+    BUBBLE_STATE.with(|s| {
+        let s = s.borrow();
+        if s["mode"] != "permission" {
+            return STATUS_ISLAND;
+        }
+        let base = if s["canAllow"] == true {
+            PERMISSION_ISLAND
+        } else {
+            PERMISSION_NOTE_ISLAND
+        };
+        // 要約は折り返して全文を出すので、2 行目から 1 行ごとに高くする
+        let lines = s["lines"]
+            .as_u64()
+            .unwrap_or(1)
+            .clamp(1, MAX_SUMMARY_LINES as u64);
+        (base.0, base.1 + (lines - 1) as f64 * SUMMARY_LINE_HEIGHT)
+    })
+}
+
+/// 要約を承認のカードで折り返したときの行数の見積もり（多めに数える）。
+/// 等幅 12px の要約欄は幅 276px＝半角 38 字。字幅の誤差を見込んで 1 行 36 桁、全角は 2 桁で数える。
+/// 見積もりが外れて欄からはみ出したら、ページ側が「許可」を消す（bubble.html）。
+fn summary_lines(summary: &str) -> usize {
+    let cols: usize = summary
+        .chars()
+        .map(|c| if (c as u32) < 0x1100 { 1 } else { 2 })
+        .sum();
+    cols.div_ceil(SUMMARY_COLS).max(1)
+}
+
+/// 吹き出しをペットの真上・中央に置く（作業領域にクランプ）。
+fn place_bubble() {
+    let Some((pet, dpi)) = PET_AT.with(Cell::get) else {
+        return;
+    };
+    let Some(w) = window(BUBBLE) else { return };
+    let (bw, bh) = window_size(bubble_island(), dpi);
+    let bottom = pet.top + (BUBBLE_DROP * scale(dpi)).round() as i32;
+    let rect = clamp_to_screen(Rect::from_xywh(
+        pet.center().x - bw / 2,
+        bottom - bh,
+        bw,
+        bh,
+    ));
+    place_and_show(BUBBLE, &w, rect, false);
+}
+
+fn render_bubble(state: serde_json::Value) {
+    BUBBLE_STATE.with(|s| *s.borrow_mut() = state.clone());
+    if state.is_null() {
+        hide(BUBBLE);
+        return;
+    }
+    let Some(w) = island(BUBBLE) else { return };
+    let _ = w.eval(format!("window.render && window.render({state})"));
+    place_bubble();
+}
+
+/// 吹き出しから「許可」を押せるか。見えている要約が操作の全部であるときだけ許す。
+/// - hook が「要約は元の文字列と同じ」の印（`detail == "exact"`）を付けていない
+///   （改行を潰した・切り詰めた・要約の無いツール）
+/// - 表示順を変える／見えない書式文字（双方向制御・ゼロ幅など）を含む
+/// - 折り返しても `MAX_SUMMARY_LINES` 行に収まらない
+///
+/// のどれかなら、ターミナルで全文を見て答えてもらう（隠れた後半や並べ替えで、見た目と違う
+/// コマンドを一押しで通させないため。2026-10-21 セキュリティレビューと検証係の指摘）。
+fn can_allow(ev: &WireEvent) -> bool {
+    let summary = ev.summary.as_deref().unwrap_or("");
+    let hidden = |c: char| {
+        matches!(c,
+            '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+    };
+    ev.detail.as_deref() == Some(EXACT)
+        && !summary.is_empty()
+        && !summary.chars().any(hidden)
+        && summary_lines(summary) <= MAX_SUMMARY_LINES
+}
+
+/// 期限切れ・hook が問い合わせをやめた承認のカードを下げる。カードがある間は 1 秒ごとに見る
+/// （hook があきらめた・ターミナルで答えて hook が終わったとき、カードが残り続けないように）。
+fn prune_permissions() {
+    let removed = PERMS.with(|q| {
+        let mut q = q.borrow_mut();
+        let before = q.len();
+        q.retain(|(id, _)| crate::ipc_server::is_pending(id));
+        before != q.len()
+    });
+    if removed {
+        log("期限切れ・放置された承認のカードを下げた");
+        show_front_permission();
+    }
+}
+
+fn schedule_prune() {
+    if PRUNING.with(Cell::get) {
+        return;
+    }
+    PRUNING.with(|p| p.set(true));
+    let Some(handle) = app() else { return };
+    let _ = std::thread::Builder::new().spawn(move || {
+        loop {
+            std::thread::sleep(Duration::from_secs(1));
+            let (tx, rx) = std::sync::mpsc::channel();
+            let sent = handle.run_on_main_thread(move || {
+                prune_permissions();
+                let empty = PERMS.with(|q| q.borrow().is_empty());
+                if empty {
+                    PRUNING.with(|p| p.set(false));
+                }
+                let _ = tx.send(empty);
+            });
+            // カードが無くなった・アプリが終わる（メインスレッドに届かない）なら止める
+            if sent.is_err() || rx.recv().unwrap_or(true) {
+                break;
+            }
+        }
+    });
+}
+
+/// 待っている承認の先頭を吹き出しに出す（無ければ隠す）。
+fn show_front_permission() {
+    let front = PERMS.with(|q| {
+        let q = q.borrow();
+        q.front()
+            .map(|(id, ev)| (id.clone(), ev.clone(), q.len() - 1))
+    });
+    match front {
+        Some((id, ev, more)) => render_bubble(serde_json::json!({
+            "mode": "permission",
+            "id": id,
+            "tool": pet_core::hook::sanitize_line(ev.tool.as_deref().unwrap_or(""), 60),
+            "canAllow": can_allow(&ev),
+            "lines": summary_lines(ev.summary.as_deref().unwrap_or("")),
+            "summary": ev.summary.unwrap_or_default(),
+            "more": more,
+        })),
+        None => render_bubble(serde_json::Value::Null),
+    }
+}
+
+/// 受け口から（メインスレッドで）呼ばれる。承認のカードを出す。
+pub fn show_permission(id: String, ev: WireEvent) {
+    log(format!(
+        "permission requested id={id} tool={}",
+        ev.tool.as_deref().unwrap_or("")
+    ));
+    PERMS.with(|q| q.borrow_mut().push_back((id.clone(), ev)));
+    show_front_permission();
+    schedule_prune();
+    auto_decide_for_tests(&id);
+}
+
+/// 試験用（デバッグビルドだけ）: `PET_AUTO_DECIDE=allow|deny|ask` なら 1.5 秒後にボタンと同じ関数で答える。
+fn auto_decide_for_tests(id: &str) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let Ok(decision) = std::env::var("PET_AUTO_DECIDE") else {
+        return;
+    };
+    let Some(handle) = app() else { return };
+    let id = id.to_string();
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1500));
+        let _ = handle.run_on_main_thread(move || permission_decide(id, decision));
+    });
+}
+
+/// 吹き出しのボタン（`invoke("permission_decide", {id, decision})`）。
+pub fn permission_decide(id: String, decision: String) {
+    // ページ側でボタンを隠すだけでなく、ここでも同じ条件で止める（ページは信頼の境界にしない）
+    let allowed = PERMS.with(|q| q.borrow().iter().any(|(i, ev)| *i == id && can_allow(ev)));
+    let state = match decision.as_str() {
+        "allow" if allowed => PermissionState::Allow,
+        "allow" => {
+            log(format!(
+                "permission {id}: 全文が見えないので許可を受け付けない（ターミナルへ）"
+            ));
+            PermissionState::Ask
+        }
+        "deny" => PermissionState::Deny,
+        _ => PermissionState::Ask,
+    };
+    let accepted = crate::ipc_server::decide(&id, state);
+    // 押されたボタンと、実際に入れた答え（許可を受け付けなかったときは ask）を両方残す。E2E はこの行を見る
+    let effective = match state {
+        PermissionState::Allow => "allow",
+        PermissionState::Deny => "deny",
+        _ => "ask",
+    };
+    log(format!(
+        "permission {id} pressed={decision} state={effective} (accepted={accepted})"
+    ));
+    PERMS.with(|q| q.borrow_mut().retain(|(i, _)| *i != id));
+    show_front_permission();
+}
+
+/// そのセッションで承認の後の出来事が来た＝承認は別の経路（ターミナル）で済んだ。カードを下げる。
+pub fn drop_permissions_for(session: &str) {
+    let removed = PERMS.with(|q| {
+        let mut q = q.borrow_mut();
+        let before = q.len();
+        q.retain(|(id, ev)| ev.session != session && crate::ipc_server::is_pending(id));
+        before != q.len()
+    });
+    if removed {
+        show_front_permission();
+    }
+}
+
+/// 短い固定文言を 3 秒出す。承認のカード・バー・メニューが出ている間は出さない。
+pub fn show_status(text: &'static str) {
+    let busy = PERMS.with(|q| !q.borrow().is_empty()) || popups_visible();
+    if busy {
+        return;
+    }
+    let generation = STATUS_GEN.with(|g| {
+        g.set(g.get() + 1);
+        g.get()
+    });
+    render_bubble(serde_json::json!({ "mode": "status", "text": text }));
+    let Some(handle) = app() else { return };
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(STATUS_MS));
+        let _ = handle.run_on_main_thread(move || {
+            let current = STATUS_GEN.with(Cell::get) == generation;
+            let is_status = BUBBLE_STATE.with(|s| s.borrow()["mode"] == "status");
+            if current && is_status {
+                render_bubble(serde_json::Value::Null);
+            }
+        });
+    });
+}
+
+/// bubble.html が読み込み時に聞く（作った直後の eval は読み込み前で空振りするため）。
+pub fn bubble_state() -> serde_json::Value {
+    BUBBLE_STATE.with(|s| s.borrow().clone())
 }
 
 // ---- 外側クリックの検出（低レベルのマウスフック。島が出ている間だけ入れる） ----
@@ -480,5 +766,46 @@ fn uninstall_hook() {
     if let Some(h) = HOOK.with(Cell::take) {
         // SAFETY: install_hook で得たハンドル
         let _ = unsafe { UnhookWindowsHookEx(h) };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ev(summary: Option<&str>, exact: bool) -> WireEvent {
+        WireEvent {
+            kind: "permission".into(),
+            session: "s".into(),
+            tool: Some("Bash".into()),
+            summary: summary.map(Into::into),
+            detail: exact.then(|| EXACT.into()),
+        }
+    }
+
+    #[test]
+    fn allow_only_when_the_whole_command_is_visible() {
+        assert!(can_allow(&ev(Some("echo hi"), true)));
+        // hook の印が無い（改行を潰した・切り詰めた・要約の無いツール）なら出さない
+        assert!(!can_allow(&ev(Some("echo safe whoami"), false)));
+        assert!(!can_allow(&ev(Some(""), true)));
+        assert!(!can_allow(&ev(None, true)));
+        // 見えない書式文字
+        assert!(!can_allow(&ev(Some("echo \u{202E}txt.exe"), true)));
+        assert!(!can_allow(&ev(Some("rm\u{200B} -rf"), true)));
+        assert!(!can_allow(&ev(Some("a\u{2066}b\u{2069}"), true)));
+        // 折り返して 4 行に収まるか（半角 36 桁/行・全角は 2 桁）
+        assert!(can_allow(&ev(Some(&"a".repeat(120)), true)));
+        assert!(can_allow(&ev(Some(&"あ".repeat(72)), true)));
+        assert!(!can_allow(&ev(Some(&"あ".repeat(73)), true)));
+    }
+
+    #[test]
+    fn summary_lines_counts_wide_chars_double() {
+        assert_eq!(summary_lines(""), 1);
+        assert_eq!(summary_lines(&"a".repeat(36)), 1);
+        assert_eq!(summary_lines(&"a".repeat(37)), 2);
+        assert_eq!(summary_lines(&"あ".repeat(18)), 1);
+        assert_eq!(summary_lines(&"あ".repeat(19)), 2);
     }
 }

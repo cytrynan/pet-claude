@@ -117,35 +117,46 @@ Grabbed（ドラッグ中）
 
 `--pet <dir>` で `pet.json`＋スプライトシート（PNG/WebP）を読む。指定が無ければ内蔵の仮画像（`assets/pets/placeholder/`、`cargo run -p pet-core --example gen_assets` で再生成）。
 
-## 5. Claude Code 連携（Phase 2）
+## 5. Claude Code 連携（Phase 2・2026-10-21 実装）
+
+中心ロジックは `pet-core::hook`（stdin の JSON の解析・要約・サニタイズ・出力）と `pet-core::ipc`（発見ファイル・送る出来事・HTTP の最小限の解析）。要求の正本は `.steering/20261021-phase2-hooks/requirements.md`、テストは `crates/pet-core/tests/{hook,ipc}.rs`。
 
 ### 5.1 登録する hook
 
-| hook | 送る `AgentEvent` | 同期 |
-|---|---|---|
-| `UserPromptSubmit` | Prompt | 非同期（`async: true`, timeout 3） |
-| `PreToolUse`（`*`） | ToolStart（ツール名のみ） | 非同期 |
-| `PermissionRequest`（`*`） | Permission（ツール名＋要約） | **同期**（timeout 60）。返事が来るまで待つ |
-| `Notification` | NeedsInput（承認以外の入力待ち） | 非同期 |
-| `Stop` | Done | 非同期 |
-| `StopFailure` | Error | 非同期 |
+| hook | ペットの動き | 吹き出し | 同期 |
+|---|---|---|---|
+| `UserPromptSubmit` | Prompt（起き上がる） | 出ている承認のカードを下げる | 非同期（`async: true`, timeout 5） |
+| `PreToolUse`（`*`） | ToolStart（作業） | なし | 非同期 |
+| `PermissionRequest`（`*`） | NeedsInput（手を振る） | 承認のカード | **同期**（timeout 60）。答えが来るまで待つ |
+| `Notification` | `permission_prompt`・`elicitation_dialog` は NeedsInput | `elicitation_dialog` は「入力を待ってるよ」 | 非同期 |
+| `Stop` | Done（1 回だけ喜ぶ） | 「できたよ」・カードを下げる | 非同期 |
+| `StopFailure` | Error | 「失敗しちゃった」・カードを下げる | 非同期 |
 
-`~/.claude/settings.json` へは `--pet-claude-managed` マーカー付きで追記し、追記前にバックアップを作る。`CLAUDE.md` には書かない。
+- 登録: `pet-app.exe --install-hooks [--settings <path>]`、解除: `--uninstall-hooks`（既定は `~/.claude/settings.json`。実体 `crates/pet-app/src/install.rs`）。コマンドは exec 形式（`command` に同じフォルダの `pet-hook.exe` の絶対パス、`args: ["--pet-claude-managed"]`）。印の付いた項目を全部消してから足すので何度実行しても 1 組。印の無い項目と他のキーには触らない。書く前に `<名前>.pet-claude-backup-<時刻>` に複製し、一時ファイル＋rename で置き換える。JSON として読めないファイルは書き換えない
+- 送るのはツール名・短い要約（120 字。Bash はコマンド、ファイル系はパス）・通知の種類だけ。プロンプトや応答の本文は送らない（テストで固定）
+- 間引きは置かない。openpets は hook ごとに Node を起動し、出来事ごとに吹き出しを出すので間引きが要った。こちらは Rust の小さな exe（故障注入で起動から終了まで 1.5 秒未満、通常は数十 ms）で、吹き出しは応答の終わりなど 1 往復に 1 回の出来事にしか出さない
 
 ### 5.2 承認の往復
 
-1. hook が `POST /permission` でアプリに登録し、`GET /permission/<id>` を 500ms ごとに最大 60 秒ポーリング
-2. アプリは吹き出しに「許可」「拒否」を出し、押されたら返事を保存
-3. hook は返事を `hookSpecificOutput`（`hookEventName: "PermissionRequest"`、`decision.behavior: "allow"|"deny"`）で stdout に返す
-4. 60 秒以内に返事が無ければ `{}` を返して端末の通常プロンプトに戻す。アプリが居なければ即 `{}`
-
-`decision` の正確なスキーマは実装時に公式ドキュメントで再確認する。
+1. hook が `POST /permission` で登録して id を受け取り、`GET /permission/<id>` を 300ms ごとに最大 55 秒（`PET_PERMISSION_WAIT_SECS`）ポーリング
+2. アプリは吹き出しに承認のカード（「ターミナルで」「拒否」「許可」）を出す。複数あれば古い順に 1 枚ずつ（「ほかに N 件」）
+3. hook の出力: 許可 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`、拒否は `behavior: "deny"` と `message`（「ペット（pet-claude）の吹き出しで拒否されました」。Claude に届くことを E2E で確認）
+4. 「ターミナルで」・時間切れ・アプリが居ない・失敗は `{}`（いつもの流れに戻す。`-p` では拒否扱いになることを E2E で確認）。hook は**どんな失敗でも終了コード 0**
+5. 「許可」は、見えている要約が操作の全部のときだけ出す（全文の見えない操作を一押しで通させない。2026-10-21 セキュリティレビューと検証係の指摘）。条件は次の 3 つ。アプリ側の `ui::permission_decide` でも同じ条件で許可を受け付けず ask にする
+   - hook が「要約は元の文字列と同じ」の印（`detail: "exact"`。`pet_core::hook::summary_is_exact`）を付けた。改行やタブを空白に潰した要約（`echo safe⏎whoami` は 2 つのコマンド）・切り詰めた要約・要約の無いツール（MCP など）には付かない
+   - 見えない書式文字（双方向制御・ゼロ幅など）を含まない
+   - 要約を折り返して 4 行に収まる（半角 36 桁/行・全角は 2 桁の見積もり。カードは行数に合わせて高くする）。見積もりが外れてカードからはみ出したら、ページ側も「許可」を隠す
+6. 同じセッションで次の依頼・応答の終わりが来たら、残っているカードを下げる（ターミナルで答え済み）。並行のツール呼び出しがあるので `PreToolUse` では下げない。hook が 5 秒問い合わせない（あきらめた・ターミナルで答えて終わった）・120 秒を過ぎた承認も、1 秒ごとの見回りで下げる
+7. 試験用: デバッグビルドだけ `PET_AUTO_DECIDE=allow|deny|ask` で、ボタンと同じ関数を 1.5 秒後に呼ぶ（`scripts/verify/e2e-hooks.sh`）
 
 ### 5.3 IPC
 
-- アプリ起動時に `127.0.0.1` の空きポートで HTTP を待ち受け、`%LOCALAPPDATA%\pet-claude\runtime\ipc.json` に `{endpoint, token, pid}` を書く
-- hook は token を `Authorization` に付ける。接続 300ms・応答 500ms で諦めて exit 0
-- 間引きは `%LOCALAPPDATA%\pet-claude\runtime\throttle.json`（同じ種類は 10 秒）
+- アプリ起動時に `127.0.0.1:0` で待ち受け、`%LOCALAPPDATA%\pet-claude\runtime\ipc.json` に `{endpoint, token, pid}` を一時ファイル＋rename で書く。終了時に消す。`PET_CLAUDE_DATA_DIR` で置き場所を差し替えられる（試験用。アプリと hook で同じ規則）
+- token は `BCryptGenRandom` の 32 バイト。取れなければ受け口を開かない（時刻などで代用すると推測される）。hook は `Authorization: Bearer <token>` を付ける。token が違う・`Origin` ヘッダが付いている（ブラウザからの要求）なら 401
+- HTTP は自前の最小限の解析（要求は 128KB まで。`Transfer-Encoding`・重複ヘッダ・単独の CR/LF は 400）。接続ごとにスレッドを分け（同時 16 本まで）、要求全体を 2 秒で読み切れなければ切る（少しずつ送る接続 1 本で他の hook を止めさせない）
+- hook は接続 300ms・読み書き 500ms、応答全体 1 秒・16KB で諦める
+- 承認は 120 秒、または hook が 5 秒問い合わせなければ失効（GET は 404、答えは受け付けない）。hook の待ちは最大 55 秒・問い合わせは 300ms ごと
+- 故障注入: hook 側 `crates/pet-hook/tests/fault.rs`（9 本）、アプリ側 `scripts/verify/fault-app.py`（遅い接続・期限後に完成した要求・放置の失効）
 
 ## 6. 声（Phase 3〜4）
 

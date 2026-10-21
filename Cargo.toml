@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/pet-core", "crates/pet-app"]
+members = ["crates/pet-core", "crates/pet-app", "crates/pet-hook"]
 
 [workspace.package]
 version = "0.1.0"
