@@ -838,6 +838,11 @@ impl Pet {
         if foreground_is_fullscreen(self.hwnd) {
             return;
         }
+        // バー・チャット欄・メニューが出ている間は取り直さない。チャット欄の答えの島はペットの上に
+        // 伸びるので、取り直すとペットが答えの文を隠した（2026-10-22 実機確認で発見）
+        if ui::popups_visible() {
+            return;
+        }
         // SAFETY: 位置と大きさを変えず Z 順だけ変える
         let _ = unsafe {
             SetWindowPos(
