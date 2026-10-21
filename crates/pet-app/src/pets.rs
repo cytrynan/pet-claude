@@ -247,6 +247,12 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         ),
         Some(dir) => {
             let m = read_manifest(dir)?;
+            if !pet_core::sprite::is_inside_relative(&m.spritesheet_path) {
+                return Err(format!(
+                    "spritesheetPath はペットのフォルダの中の相対パスにする: {}",
+                    m.spritesheet_path
+                ));
+            }
             let img = image::open(dir.join(&m.spritesheet_path))
                 .map_err(|e| format!("{}: {e}", m.spritesheet_path))?
                 // 複製せずに取り出す（展開した 56MB をもう 1 つ作らない。2026-10-21 検証係の指摘）

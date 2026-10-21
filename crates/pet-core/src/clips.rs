@@ -143,6 +143,15 @@ impl ClipSet {
         }
         let mut clips: Vec<ClipDef> = Vec::with_capacity(raw.clips.len());
         for c in raw.clips {
+            // 名前は clips/<名前>/ のフォルダ名に使うので、区切りや .. を入れさせない（セキュリティレビューの指摘）
+            if c.name.is_empty()
+                || !c
+                    .name
+                    .bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+            {
+                return Err(format!("名前 {:?} は英小文字・数字・_ だけにする", c.name));
+            }
             if c.frames == 0 {
                 return Err(format!("{}: frames が 0", c.name));
             }
@@ -628,6 +637,16 @@ mod tests {
         assert!(p.may_move(), "tick までは直前の値");
         p.tick(100);
         assert!(!p.may_move(), "stop の最中は動かない");
+    }
+
+    #[test]
+    fn clip_names_cannot_leave_the_clips_folder() {
+        for bad in ["../x", "a/b", "a\\b", "", "Idle", "a.b"] {
+            let json = format!(
+                r#"{{"fps":8,"clips":[{{"name":{bad:?},"kind":"loop","from":["idle","left"],"to":["idle","left"],"frames":4}}]}}"#
+            );
+            assert!(ClipSet::from_json(&json).is_err(), "{bad}");
+        }
     }
 
     #[test]

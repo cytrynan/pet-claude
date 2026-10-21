@@ -261,6 +261,16 @@ pub struct PetManifest {
     pub clips: Option<String>,
 }
 
+/// pet.json に書かれたパス（`spritesheetPath`・`clips`）が、ペットのフォルダの中を指す相対パスか。
+/// `..`・絶対パス・ドライブ名・UNC を含むものは受け付けない（他人が作ったペットの素材を入れたとき、
+/// フォルダの外のファイルを読ませない。2026-10-21 自動のセキュリティレビューの指摘）。
+pub fn is_inside_relative(path: &str) -> bool {
+    let p = std::path::Path::new(path);
+    !path.is_empty()
+        && p.components()
+            .all(|c| matches!(c, std::path::Component::Normal(_)))
+}
+
 /// 受け付ける `cellScale` の上限（4 倍なら 768×832 のコマ。それ以上は読み込みが重すぎる）。
 pub const MAX_CELL_SCALE: u32 = 4;
 
@@ -489,6 +499,20 @@ mod tests {
         )
         .unwrap();
         assert_eq!(m.spritesheet_path, "spritesheet.webp");
+        assert!(is_inside_relative(&m.spritesheet_path));
+        assert!(is_inside_relative("sub/clips.json"));
+        for bad in [
+            "",
+            "../x.png",
+            "a/../../x.png",
+            "C:\\x.png",
+            "C:x.png",
+            "/etc/x",
+            "\\\\server\\share\\x.png",
+            ".",
+        ] {
+            assert!(!is_inside_relative(bad), "{bad}");
+        }
         // cellScale が無ければ Codex 互換の大きさ
         assert_eq!(m.cell_size(), (CELL_W, CELL_H));
     }

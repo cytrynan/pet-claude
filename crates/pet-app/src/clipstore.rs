@@ -28,6 +28,11 @@ pub struct ClipPack {
 impl ClipPack {
     /// `clips.json` を読み、全クリップのコマのファイルがそろっているか確かめる（欠けたまま流すと窓が空になる）。
     pub fn load(pet_dir: &Path, rel: &str) -> Result<ClipPack, String> {
+        if !pet_core::sprite::is_inside_relative(rel) {
+            return Err(format!(
+                "clips はペットのフォルダの中の相対パスにする: {rel}"
+            ));
+        }
         let text = std::fs::read_to_string(pet_dir.join(rel)).map_err(|e| format!("{rel}: {e}"))?;
         let set = ClipSet::from_json(&text)?;
         for c in &set.clips {
