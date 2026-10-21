@@ -19,6 +19,21 @@
   .note { font-size: 11px; color: var(--label-2); margin: 6px 16px 0; line-height: 1.5; }
   .value { color: var(--label-2); min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
   input[type="range"] { width: 160px; accent-color: var(--tint); }
+  /* ポップアップボタン（行の右端で値を選ぶ。HIG の pop-up button を写す: 塗りのカプセル・右に山形） */
+  .popup { position: relative; display: inline-flex; align-items: center; }
+  .popup select {
+    appearance: none; field-sizing: content; max-width: 220px;
+    height: 28px; padding: 0 28px 0 12px; border: 0; border-radius: 8px;
+    font: inherit; font-feature-settings: "palt"; color: var(--label);
+    background: var(--surface-hover); cursor: default;
+  }
+  .popup select:hover { background: var(--surface-press); }
+  .popup select:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+  .popup::after {
+    content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; margin-top: -5px;
+    border-right: 1.5px solid var(--label-2); border-bottom: 1.5px solid var(--label-2);
+    transform: rotate(45deg); pointer-events: none;
+  }
   /* スイッチ（HIG: 51×31・オンは緑・白いつまみ） */
   .switch { appearance: none; width: 51px; height: 31px; border-radius: 999px; flex: none;
     background: rgba(120, 120, 128, .32); position: relative; transition: background-color .2s var(--ease); }
@@ -35,6 +50,10 @@
 <main>
   <h2>表示</h2>
   <div class="group">
+    <div class="row">
+      <label for="pet">ペット</label>
+      <span class="popup"><select id="pet"></select></span>
+    </div>
     <div class="row">
       <label for="scale">ペットの大きさ</label>
       <input type="range" id="scale" min="25" max="150" step="5">
@@ -66,17 +85,29 @@
   const tts = document.getElementById("tts");
   const wake = document.getElementById("wake");
   const walk = document.getElementById("walk");
+  const pet = document.getElementById("pet");
   const show = () => { scaleValue.textContent = scale.value + "%"; };
   // スライダーを動かしている間は描き直すだけ（save: false）、離したら保存する
   const send = (persist) => invoke("settings_set", {
     scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, walk: walk.checked, save: persist,
   });
   const save = () => send(true);
+  // ペットの一覧は開くたびに作り直す（フォルダに足したペットも次に開いたとき出る）
+  const fillPets = (s) => {
+    pet.replaceChildren(...(s.pets || []).map((p) => {
+      const o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = p.name;
+      return o;
+    }));
+    pet.value = s.pet;
+  };
   window.reload = () => invoke("settings_get").then((s) => {
     scale.value = Math.round(s.scale * 100);
     tts.checked = s.tts;
     wake.checked = s.wake;
     walk.checked = s.walk;
+    fillPets(s);
     show();
   });
   window.reload();
@@ -85,6 +116,18 @@
   tts.addEventListener("change", save);
   wake.addEventListener("change", save);
   walk.addEventListener("change", save);
+  // 読み込みは別スレッドで 1〜2 秒かかる。読めないペットだったときに選択欄が戻るよう、少し後に聞き直す
+  // 聞き直すのはペットの選択欄だけ（ほかのスイッチやスライダーを古い値で巻き戻さない）。その間に
+  // 別のペットを選び直していたら触らない（新しいほうの聞き直しに任せる。2026-10-21 検証係の指摘）。
+  // select は選んだ後もフォーカスを持ち続けるので、フォーカスでは判定しない
+  pet.addEventListener("change", () => {
+    const picked = pet.value;
+    invoke("pet_set", { id: picked });
+    setTimeout(() => {
+      if (pet.value !== picked) return;
+      invoke("settings_get").then(fillPets);
+    }, 2500);
+  });
 </script>
 </body>
 </html>

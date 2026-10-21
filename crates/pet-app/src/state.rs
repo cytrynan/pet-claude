@@ -23,6 +23,8 @@ pub struct AppState {
     pub wake: bool,
     /// 放置すると散歩する（K 指示 2026-10-21: 既定はオフ。睡眠は対象外）
     pub walk: bool,
+    /// 表示するペットの id（`pets::discover` の id。None は内蔵の仮キャラ）
+    pub pet: Option<String>,
 }
 
 impl Default for AppState {
@@ -33,6 +35,7 @@ impl Default for AppState {
             tts: true,
             wake: false,
             walk: false,
+            pet: None,
         }
     }
 }
@@ -59,6 +62,7 @@ impl AppState {
             tts: v["tts"].as_bool().unwrap_or(d.tts),
             wake: v["wake"].as_bool().unwrap_or(d.wake),
             walk: v["walk"].as_bool().unwrap_or(d.walk),
+            pet: v["pet"].as_str().map(str::to_string),
         }
     }
 
@@ -72,6 +76,7 @@ impl AppState {
             "tts": self.tts,
             "wake": self.wake,
             "walk": self.walk,
+            "pet": self.pet,
         });
         let tmp = dir.join("state.json.tmp");
         let ok = fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())

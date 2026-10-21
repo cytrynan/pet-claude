@@ -468,7 +468,7 @@ pub fn open_settings() {
         let built =
             WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App("settings.html".into()))
                 .title("pet-claude の設定")
-                .inner_size(440.0, 330.0)
+                .inner_size(440.0, 380.0)
                 .resizable(false)
                 .maximizable(false)
                 .center()

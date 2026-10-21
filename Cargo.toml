@@ -15,3 +15,12 @@ all = { level = "warn", priority = -1 }
 lto = true
 codegen-units = 1
 strip = true
+
+# デバッグビルドでも依存クレート（画像の展開・縮小など）だけは最適化する。まめドラゴンの
+# 高精細シート（展開して 56MB）は、最適化なしだと起動時の読み込みに 10 秒以上かかった（2026-10-21）
+[profile.dev.package."*"]
+opt-level = 3
+
+# pet-core（シートの組み立て・縮小）はワークスペースの中なので "*" に入らない。同じ理由で最適化する
+[profile.dev.package.pet-core]
+opt-level = 3

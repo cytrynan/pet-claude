@@ -16,13 +16,12 @@ mod ipc_server;
 mod log;
 mod monitors;
 mod pet_window;
+mod pets;
 mod state;
 mod ui;
 
 use std::path::Path;
 
-use image::RgbaImage;
-use pet_core::sprite::PetManifest;
 use tauri::RunEvent;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
@@ -35,25 +34,53 @@ use windows::core::w;
 
 use crate::log::log;
 
-const PLACEHOLDER_SHEET: &[u8] = include_bytes!("../../../assets/pets/placeholder/spritesheet.png");
+/// 起動時に表示するペット。`--pet <dir>` が最優先、次に state.json で選んだもの、無ければ内蔵の仮キャラ。
+/// 選んだペットが消えていた・読めないときも仮キャラで起動する（起動できないよりよい）。
+fn startup_pet(
+    pet_dir: Option<&str>,
+    state: &state::AppState,
+) -> Result<(pets::PetEntry, pets::LoadedSheet), String> {
+    let need = pets::needed_cell(pet_window::display_factor(state.scale));
+    if let Some(dir) = pet_dir {
+        let entry = pets::entry_for_dir(Path::new(dir))?;
+        let loaded = pets::load(&entry, need)?;
+        return Ok((entry, loaded));
+    }
+    // 試す順: state.json で選んだペット → フォルダにあるペット（見つかった順）→ 仮キャラ。読めないものは
+    // 飛ばして次を試す（壊れたペットが 1 つ先にあるだけで仮キャラになっていた。2026-10-21 故障注入で発見）
+    let all = pets::discover();
+    let mut last_err = String::from("ペットが 1 つも無い");
+    for entry in pets::startup_order(&all, state.pet.as_deref()) {
+        match pets::load(entry, need) {
+            Ok(loaded) => return Ok((entry.clone(), loaded)),
+            Err(e) => {
+                log(format!("ペット {} を読めないので次を試す: {e}", entry.id));
+                last_err = e;
+            }
+        }
+    }
+    Err(last_err)
+}
 
-fn load_sheet(pet_dir: Option<&str>) -> Result<RgbaImage, String> {
-    let Some(dir) = pet_dir else {
-        return image::load_from_memory(PLACEHOLDER_SHEET)
-            .map(|i| i.to_rgba8())
-            .map_err(|e| e.to_string());
+/// 試験用（デバッグビルドで、置き場所を `PET_CLAUDE_DATA_DIR` で差し替えた時だけ）:
+/// `PET_TEST_SWITCH_PET=<id>[,<id>...]` なら 2 秒後に、設定画面と同じ関数でペットを切り替える。
+/// 本物のマウスで設定画面を操作せずに、切り替えの経路を確かめるため。
+fn switch_pet_for_tests(app: tauri::AppHandle) {
+    if !cfg!(debug_assertions) || std::env::var_os("PET_CLAUDE_DATA_DIR").is_none() {
+        return;
+    }
+    let Ok(id) = std::env::var("PET_TEST_SWITCH_PET") else {
+        return;
     };
-    let dir = Path::new(dir);
-    let manifest: PetManifest = std::fs::read_to_string(dir.join("pet.json"))
-        .map_err(|e| format!("pet.json: {e}"))
-        .and_then(|t| serde_json::from_str(&t).map_err(|e| format!("pet.json: {e}")))?;
-    let img = image::open(dir.join(&manifest.spritesheet_path))
-        .map_err(|e| format!("{}: {e}", manifest.spritesheet_path))?;
-    log(format!(
-        "pet '{}' ({}) loaded",
-        manifest.display_name, manifest.id
-    ));
-    Ok(img.to_rgba8())
+    // カンマで区切ると続けて選ぶ（読み込み中に選び直しても、最後に選んだものが表示されるかを見る）
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(std::time::Duration::from_secs(2));
+        let _ = app.run_on_main_thread(move || {
+            for one in id.split(',') {
+                pet_window::set_pet(one.to_string());
+            }
+        });
+    });
 }
 
 /// バー・メニューのボタン。`invoke("ui_action", { action })`
@@ -85,6 +112,12 @@ fn bubble_state() -> serde_json::Value {
 #[tauri::command]
 fn permission_decide(id: String, decision: String) {
     ui::permission_decide(id, decision);
+}
+
+/// 設定画面のペットの選択。`invoke("pet_set", { id })`
+#[tauri::command]
+fn pet_set(id: String) {
+    pet_window::set_pet(id);
 }
 
 #[tauri::command]
@@ -134,8 +167,10 @@ fn main() {
         return;
     }
 
-    let sheet = match load_sheet(arg_value(&args, "--pet").as_deref()) {
-        Ok(s) => s,
+    let open_settings = args.iter().any(|a| a == "--open-settings");
+    let app_state = state::AppState::load();
+    let (pet, sheet) = match startup_pet(arg_value(&args, "--pet").as_deref(), &app_state) {
+        Ok(p) => p,
         Err(e) => {
             log(format!("スプライトを読めない: {e}"));
             return;
@@ -151,7 +186,8 @@ fn main() {
             settings_get,
             settings_set,
             bubble_state,
-            permission_decide
+            permission_decide,
+            pet_set
         ])
         .setup(move |app| {
             let settings = MenuItem::with_id(app, "settings", "設定", true, None::<&str>)?;
@@ -177,8 +213,12 @@ fn main() {
             })
             .build(app)?;
             ui::init(app.handle());
-            pet_window::create(sheet, state::AppState::load())?;
+            pet_window::create(sheet, pet, app_state, app.handle().clone())?;
             ipc_server::start(app.handle().clone());
+            if open_settings {
+                ui::open_settings();
+            }
+            switch_pet_for_tests(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!());

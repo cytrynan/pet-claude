@@ -16,8 +16,9 @@ cargo build -p pet-app --all-targets          # ビルド（実機確認の前�
 ./target/debug/pet-app.exe --probe            # ディスプレイ構成（物理座標・DPI）を表示
 cargo run -p pet-app --example winctl -- find # 実機検証ツール（click/drag/shot/displaychange など）
 cargo run -p pet-core --example gen_assets    # 仮画像とアイコンを再生成
+cargo run --release -p pet-core --example build_pet -- <静止画のフォルダ> assets/pets/<id> <id> <表示名>  # 状態ごとの静止画からペットを作る（docs/architecture.md §4.4）
 bash scripts/gate.sh                          # 品質ゲート（fmt → clippy -D warnings → test）
-bash scripts/gate-commit.sh <msg-file>        # ゲートが通った時だけ add→commit（commit はこれだけを使う）
+bash scripts/gate-commit.sh <msg-file> [パス...]  # ゲートが通った時だけ add→commit（commit はこれだけを使う。パスを付けるとそれだけ。別セッションと同じ作業ツリーの時に使う）
 ```
 
 ログ: `%LOCALAPPDATA%\pet-claude\logs\pet.log`、状態: `%LOCALAPPDATA%\pet-claude\state.json`。

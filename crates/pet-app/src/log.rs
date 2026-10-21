@@ -14,6 +14,10 @@ pub fn data_dir() -> PathBuf {
 }
 
 pub fn log(msg: impl AsRef<str>) {
+    // 単体テストは本物の pet.log に書かない（2026-10-21、ペットの読み込みのテストが K のログを汚した）
+    if cfg!(test) {
+        return;
+    }
     let dir = data_dir().join("logs");
     let _ = fs::create_dir_all(&dir);
     let line = format!(

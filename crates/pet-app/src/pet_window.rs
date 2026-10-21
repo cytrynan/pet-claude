@@ -20,7 +20,7 @@ use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
 use pet_core::placement::{self, Monitor};
-use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, cell_origin, rows_in};
+use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, SheetLayout};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
@@ -44,6 +44,7 @@ use windows::core::w;
 
 use crate::log::log;
 use crate::monitors::{self, to_rect};
+use crate::pets::{self, LoadedSheet, PetEntry};
 use crate::state::{AppState, MAX_SCALE, MIN_SCALE};
 use crate::ui;
 
@@ -71,7 +72,19 @@ struct Drag {
 struct Pet {
     hwnd: HWND,
     sheet: RgbaImage,
-    rows: u32,
+    /// 行ごとの中身のあるコマ数（シートを測った値。空の行は代わりの行で再生する）
+    layout: SheetLayout,
+    /// シートの 1 コマの画素数（読み込み後に縮めた大きさ）と、元のシートの 1 コマ
+    cell: (u32, u32),
+    source_cell: (u32, u32),
+    /// いま表示しているペット
+    pet: PetEntry,
+    /// 次に表示したいペット（設定画面で選んだもの）。読み込みが終わると `pet` になる
+    want: PetEntry,
+    /// シートを別スレッドで読み込み中（同時に 1 本だけ。終わったら `kick_load` で要るか見直す）
+    loading: bool,
+    /// 別スレッドの読み込みから、結果をメインスレッドへ戻すため
+    app: tauri::AppHandle,
     state: AppState,
     /// いま描いている画面の DPI。
     dpi: u32,
@@ -121,9 +134,16 @@ fn message_cursor() -> Point {
 }
 
 /// コマを切り出し、事前乗算 → 縮小 → BGRA に並べ替える。
-fn render_cell(sheet: &RgbaImage, row: u32, frame: u32, w: u32, h: u32) -> Vec<u8> {
-    let (x, y) = cell_origin(row, frame);
-    let mut cell = image::imageops::crop_imm(sheet, x, y, CELL_W, CELL_H).to_image();
+fn render_cell(
+    sheet: &RgbaImage,
+    cell_size: (u32, u32),
+    row: u32,
+    frame: u32,
+    w: u32,
+    h: u32,
+) -> Vec<u8> {
+    let (x, y) = (frame * cell_size.0, row * cell_size.1);
+    let mut cell = image::imageops::crop_imm(sheet, x, y, cell_size.0, cell_size.1).to_image();
     // 透明な黒と補間して縁が黒ずむのを防ぐため、縮小の前に事前乗算する
     for p in cell.pixels_mut() {
         let a = u16::from(p[3]);
@@ -157,11 +177,15 @@ impl Pet {
             log(format!("pose -> {pose:?}"));
         }
         self.pose = pose;
+        let clip = pose.clip_in(&self.layout);
         self.playback = Playback {
-            clip: pose.clip_for(self.rows),
+            clip,
             started_ms: now,
         };
         self.frame = 0;
+        // 描いたコマの保存はいまの行だけにする（全ポーズ分ためると、大きく表示したとき数十 MB になる。
+        // 2026-10-21 検証係の指摘。行に戻ったら描き直す。1 コマの縮小は軽い）
+        self.cache.retain(|(row, _), _| *row == clip.row);
         true
     }
 
@@ -217,11 +241,11 @@ impl Pet {
     fn present(&mut self) {
         let (w, h) = self.size();
         let key = (self.playback.clip.row, self.frame);
-        let sheet = &self.sheet;
+        let (sheet, cell) = (&self.sheet, self.cell);
         let pixels = self
             .cache
             .entry(key)
-            .or_insert_with(|| render_cell(sheet, key.0, key.1, w as u32, h as u32));
+            .or_insert_with(|| render_cell(sheet, cell, key.0, key.1, w as u32, h as u32));
         if let Err(e) = blit(self.hwnd, &self.rect, pixels, w, h) {
             log(format!("UpdateLayeredWindow に失敗: {e}"));
         }
@@ -239,6 +263,83 @@ impl Pet {
         let (w, h) = self.size();
         self.rect = placement::rect_from_anchor(anchor, w, h);
         log(format!("dpi -> {dpi} size {w}x{h}"));
+        self.kick_load();
+    }
+
+    /// 読み込みが要るなら別スレッドで始める（同時に 1 本だけ）。要るのは
+    /// ①選んだペットがまだ表示されていない ②表示に要る解像度が、持っているシートより細かい
+    /// （大きさを上げた・より高い DPI の画面がつながった。元のシートより細かくは読まない）。
+    /// 大きさのスライダーを動かすたび・画面が変わるたびに呼んでよい。メインスレッドは止まらず、
+    /// 読み込み中に何度呼ばれても、終わったときに最新の選択と大きさで見直す（2026-10-21 検証係の指摘）
+    fn kick_load(&mut self) {
+        if self.loading {
+            return;
+        }
+        let need = pets::needed_cell(display_factor(self.state.scale));
+        let switching = self.want.id != self.pet.id;
+        let sharper = need.0 > self.cell.0 && self.cell.0 < self.source_cell.0;
+        if !switching && !sharper {
+            return;
+        }
+        self.loading = true;
+        let entry = self.want.clone();
+        let app = self.app.clone();
+        let spawned = std::thread::Builder::new().spawn(move || {
+            // 壊れたシートで画像の展開が panic しても「失敗」として戻す。戻さないと loading が立ったままで、
+            // 以後の切り替えも読み直しも止まる（2026-10-21 検証係の指摘）
+            let result =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| pets::load(&entry, need)))
+                    .unwrap_or_else(|_| Err("シートの読み込みが panic した".into()));
+            let _ =
+                app.run_on_main_thread(move || with_pet(move |pet| pet.finish_load(entry, result)));
+        });
+        if let Err(e) = spawned {
+            self.loading = false;
+            log(format!("シートを読むスレッドを作れない: {e}"));
+        }
+    }
+
+    /// 別スレッドの読み込みが終わった（メインスレッド）。まだ欲しいペットなら差し替える。
+    fn finish_load(&mut self, entry: PetEntry, result: Result<LoadedSheet, String>) {
+        self.loading = false;
+        match result {
+            Ok(loaded) if entry.id == self.want.id => {
+                let switched = entry.id != self.pet.id;
+                self.use_sheet(loaded);
+                self.pet = entry;
+                if switched {
+                    log(format!("pet -> {}", self.pet.id));
+                    self.state.pet = Some(self.pet.id.clone());
+                    self.state.save();
+                }
+                self.present();
+            }
+            // 読んでいる間に別のペットが選ばれた。下の kick_load で選び直したほうを読む
+            Ok(_) => {}
+            Err(e) => {
+                log(format!("ペット {} を読めない: {e}", entry.id));
+                if entry.id == self.pet.id {
+                    // 同じペットを細かく読み直せなかった。何度も試さないよう、いまの解像度で止める
+                    self.source_cell = self.cell;
+                } else if entry.id == self.want.id {
+                    // 選んだペットが読めない。選択を表示中のペットに戻す
+                    self.want = self.pet.clone();
+                }
+            }
+        }
+        self.kick_load();
+    }
+
+    /// 読み込んだシートに差し替える。再生中のポーズは時計を保ったまま新しいシートで続ける
+    /// （一度きりの反応を、差し替えのたびに見せ直さない）。
+    fn use_sheet(&mut self, loaded: LoadedSheet) {
+        self.sheet = loaded.image;
+        self.layout = loaded.layout;
+        self.cell = loaded.cell;
+        self.source_cell = loaded.source_cell;
+        self.cache.clear();
+        self.playback.clip = self.pose.clip_in(&self.layout);
+        self.frame = self.frame.min(self.playback.clip.frames.saturating_sub(1));
     }
 
     fn place(&mut self, rect: Rect) {
@@ -263,6 +364,8 @@ impl Pet {
             self.dpi = dpi;
             self.cache.clear();
         }
+        // 画面の構成が変わり、より高い DPI の画面がつながったかもしれない（2026-10-21 検証係の指摘）
+        self.kick_load();
         log(format!(
             "relayout({reason}) monitors={} -> {:?} at ({},{}) {}x{} dpi={dpi}",
             ms.len(),
@@ -589,7 +692,12 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
 }
 
 /// ペットの窓を作って表示する。メインスレッド（Tauri のイベントループと同じスレッド）で呼ぶ。
-pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
+pub fn create(
+    loaded: LoadedSheet,
+    pet: PetEntry,
+    state: AppState,
+    app: tauri::AppHandle,
+) -> windows::core::Result<()> {
     // SAFETY: 窓クラスの登録と窓の生成。文字列は 'static
     let hwnd = unsafe {
         let hinstance = GetModuleHandleW(None)?.into();
@@ -618,18 +726,24 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
             None,
         )?
     };
-    let rows = rows_in(sheet.height());
+    let layout = loaded.layout;
     let walk = state.walk;
     let epoch = Instant::now();
     let mut pet = Pet {
         hwnd,
-        sheet,
-        rows,
+        sheet: loaded.image,
+        layout,
+        cell: loaded.cell,
+        source_cell: loaded.source_cell,
+        want: pet.clone(),
+        pet,
+        loading: false,
+        app,
         state,
         dpi: 0,
         rect: Rect::from_xywh(0, 0, 1, 1),
         playback: Playback {
-            clip: Pose::Idle.clip_for(rows),
+            clip: Pose::Idle.clip_in(&layout),
             started_ms: 0,
         },
         frame: 0,
@@ -650,7 +764,7 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
         SetTimer(Some(hwnd), TIMER_TICK, TICK_MS, None);
         SetTimer(Some(hwnd), TIMER_TOPMOST, 1000, None);
     }
-    log(format!("pet window created rows={rows}"));
+    log(format!("pet window created rows={}", layout.rows()));
     PET.with(|cell| *cell.borrow_mut() = Some(pet));
     Ok(())
 }
@@ -710,7 +824,14 @@ pub fn settings() -> serde_json::Value {
     PET.with(|cell| {
         cell.try_borrow().ok().and_then(|g| {
             g.as_ref().map(|p| {
-                serde_json::json!({ "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk })
+                let pets: Vec<_> = pets::discover()
+                    .into_iter()
+                    .map(|e| serde_json::json!({ "id": e.id, "name": e.name }))
+                    .collect();
+                serde_json::json!({
+                    "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk,
+                    "pet": p.want.id, "pets": pets,
+                })
             })
         })
     })
@@ -741,11 +862,36 @@ pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
             }
             pet.place(rect);
             log(format!("scale -> {scale:.2} size {w}x{h}"));
+            pet.kick_load();
         }
         if save {
             pet.state.save();
         }
     });
+}
+
+/// 設定画面でペットを切り替える（K 指示 2026-10-21）。見つからないペットなら何もしない。
+/// 読み込み（1〜2 秒）は `kick_load` が別スレッドで行い、終わったら足元の位置と大きさはそのまま絵だけを
+/// 差し替えて state.json に残す。続けて選び直しても、最後に選んだものが表示される。
+pub fn set_pet(id: String) {
+    let Some(entry) = pets::discover().into_iter().find(|e| e.id == id) else {
+        log(format!("ペット {id} が見つからない"));
+        return;
+    };
+    with_pet(move |pet| {
+        pet.want = entry;
+        pet.kick_load();
+    });
+}
+
+/// 表示倍率の最大（大きさ × つながっている画面の最大 DPI / 96）。画面をまたいでも読み直さずに済むよう最大で見る。
+pub fn display_factor(scale: f32) -> f32 {
+    let max_dpi = monitors::enumerate()
+        .iter()
+        .map(|m| m.dpi)
+        .max()
+        .unwrap_or(96);
+    scale * max_dpi as f32 / 96.0
 }
 
 /// hook から届いた出来事を行動に渡す（受け口のスレッドから run_on_main_thread で呼ばれる）。
