@@ -64,6 +64,9 @@ const ANSWER_MAX_MS: u64 = 20_000;
 /// チャット欄の上に出す答えの欄の高さ（論理ピクセル。中はスクロール）と、入力欄との間。
 const CHAT_ANSWER_HEIGHT: f64 = 188.0;
 const CHAT_GAP: f64 = 8.0;
+/// チャット欄を出してから、前面を失っても閉じずに取り直す間（実機では出して 7ms で失った）。
+/// 人が外を押すにはこれより長くかかる（ダブルクリックの間隔 500ms 程度）ので、その操作は閉じる側に入る。
+const CHAT_FOCUS_GRACE: Duration = Duration::from_millis(600);
 /// 失敗の理由が吹き出しの検査に掛かった（パスなどを含む）ときの吹き出しの文。理由はチャット欄に出す。
 const FAILURE_HIDDEN: &str = "うまくいきませんでした。理由はチャット欄に";
 /// 吹き出しの下端を、ペットの窓の上端からこの分だけ下げる（素材の上の透明な余白を詰める。論理ピクセル）。
@@ -121,6 +124,8 @@ thread_local! {
     static CHAT_LAST: RefCell<Option<(String, bool)>> = const { RefCell::new(None) };
     /// チャット欄の入力欄の中心（物理座標）と DPI。答えが来て欄の高さが変わっても入力欄の位置を保つ
     static CHAT_ANCHOR: Cell<Option<(Point, u32)>> = const { Cell::new(None) };
+    /// チャット欄を開いた時刻。開いた直後の前面の喪失を 1 回だけ取り直すのに使う（使ったら消す）
+    static CHAT_OPENED_AT: Cell<Option<Instant>> = const { Cell::new(None) };
 }
 
 fn app() -> Option<AppHandle> {
@@ -192,10 +197,24 @@ fn island(label: &str) -> Option<WebviewWindow> {
         }
     };
     if label == CHAT {
-        // 入力欄からフォーカスが外れたら閉じる
+        // 入力欄からフォーカスが外れたら閉じる。ただし出した直後（CHAT_FOCUS_GRACE 以内）の 1 回は、
+        // 閉じずに前面を取り直す。窓を作った直後の 1 回目は 7ms で前面を失って閉じ、K がもう一度
+        // 押す必要があった（2026-10-21 K の実機確認）。取り直しは 1 回だけ（本当に外を押した時と取り合わない）
         w.on_window_event(|e| {
             if let WindowEvent::Focused(false) = e {
                 defer(|| {
+                    let fresh = CHAT_OPENED_AT
+                        .with(|t| t.take())
+                        .is_some_and(|at| at.elapsed() < CHAT_FOCUS_GRACE);
+                    if fresh
+                        && visible(CHAT)
+                        && let Some(w) = window(CHAT)
+                    {
+                        log("chat lost focus right after show -> refocus");
+                        let _ = w.set_focus();
+                        let _ = w.eval("window.focusInput && window.focusInput()");
+                        return;
+                    }
                     // 閉じた理由を残す（前面を取れずに開いた直後に閉じたのか、を見分けるため）
                     log("chat hidden: focus lost");
                     hide(CHAT);
@@ -371,6 +390,7 @@ fn open_chat() {
         let _ = bar.hide();
     }
     mark_shown(BAR, false);
+    CHAT_OPENED_AT.with(|t| t.set(Some(Instant::now())));
     place_and_show(CHAT, &chat, rect, true);
     let _ = chat.eval(format!(
         "window.renderChat && window.renderChat({})",
