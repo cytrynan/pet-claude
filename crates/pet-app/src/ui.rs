@@ -218,12 +218,30 @@ fn place_and_show(label: &'static str, w: &WebviewWindow, rect: Rect, focus: boo
     HIDDEN_SINCE.with(|h| h.set(None));
 }
 
-/// `pet` の真下・中央に `island` の窓を置く矩形（作業領域にクランプ）。
+/// `pet` の真下・中央に `island` の窓を置く矩形（作業領域にクランプ）。下に入りきらなければ真上に置く。
 fn below_pet(pet: &Rect, island: (f64, f64), dpi: u32) -> Rect {
     let (w, h) = window_size(island, dpi);
-    let s = scale(dpi);
-    let top = pet.bottom - ((BAR_OVERLAP + SHADOW_PAD) * s).round() as i32;
-    clamp_to_screen(Rect::from_xywh(pet.center().x - w / 2, top, w, h))
+    let overlap = ((BAR_OVERLAP + SHADOW_PAD) * scale(dpi)).round() as i32;
+    let work = monitors::at_point(pet.center()).map(|m| m.work);
+    let rect = match work {
+        Some(work) => under_or_over(pet, (w, h), overlap, &work),
+        None => Rect::from_xywh(pet.center().x - w / 2, pet.bottom - overlap, w, h),
+    };
+    clamp_to_screen(rect)
+}
+
+/// ペットの真下（下端から `overlap` だけ重ねる）に `size` の窓を置く。作業領域の下に入りきらないときは
+/// 真上（上端から `overlap` だけ重ねる）に置く。画面の下端にいるペットで、下に置いたバーを作業領域の内側へ
+/// 押し戻すとペットと重なり、ペットが 1 秒ごとに最前面を取り直すのでバーが隠れた（2026-10-21 撮影で発見）。
+fn under_or_over(pet: &Rect, size: (i32, i32), overlap: i32, work: &Rect) -> Rect {
+    let (w, h) = size;
+    let left = pet.center().x - w / 2;
+    let under = Rect::from_xywh(left, pet.bottom - overlap, w, h);
+    if under.bottom <= work.bottom {
+        under
+    } else {
+        Rect::from_xywh(left, pet.top + overlap - h, w, h)
+    }
 }
 
 fn clamp_to_screen(rect: Rect) -> Rect {
@@ -924,6 +942,23 @@ mod tests {
         assert!(can_allow(&ev(Some(&"a".repeat(120)), true)));
         assert!(can_allow(&ev(Some(&"あ".repeat(72)), true)));
         assert!(!can_allow(&ev(Some(&"あ".repeat(73)), true)));
+    }
+
+    #[test]
+    fn bar_goes_under_the_pet_or_over_it_at_the_bottom_edge() {
+        let work = Rect::new(0, 0, 1920, 1040);
+        // 下に入る: ペットの下端から 18px 重ねて真下・中央
+        let pet = Rect::from_xywh(800, 500, 200, 220);
+        let r = under_or_over(&pet, (120, 72), 18, &work);
+        assert_eq!((r.left, r.top), (840, 702));
+        // 画面の下端にいるペット: 下に入らないので真上（上端から 18px 重ねる）
+        let pet = Rect::from_xywh(800, 820, 200, 220);
+        let r = under_or_over(&pet, (120, 72), 18, &work);
+        assert_eq!((r.top, r.bottom), (820 + 18 - 72, 820 + 18));
+        assert!(r.bottom <= pet.top + 18, "ペットとの重なりは上端の余白だけ");
+        // ちょうど入るときは下
+        let pet = Rect::from_xywh(800, 1040 - 72 - 220 + 18, 200, 220);
+        assert_eq!(under_or_over(&pet, (120, 72), 18, &work).bottom, 1040);
     }
 
     #[test]
