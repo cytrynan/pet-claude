@@ -35,10 +35,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, SendInput,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowW, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW, GetForegroundWindow,
-    GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, PostMessageW,
-    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOZORDER,
-    SetCursorPos, SetForegroundWindow, SetWindowPos, WM_CLOSE, WM_DISPLAYCHANGE, WindowFromPoint,
+    FindWindowW, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW, GetCursorPos,
+    GetForegroundWindow, GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW,
+    IsWindowVisible, PostMessageW, SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN,
+    SM_YVIRTUALSCREEN, SWP_NOZORDER, SetCursorPos, SetForegroundWindow, SetWindowPos, WM_CLOSE,
+    WM_DISPLAYCHANGE, WindowFromPoint,
 };
 use windows::core::HSTRING;
 
@@ -252,6 +253,17 @@ fn main() {
             sleep(Duration::from_millis(80));
             mouse(MOUSEEVENTF_LEFTUP);
             println!("dragged");
+        }
+        Some("hover") => {
+            // ボタンを押さずにカーソルを動かす（SendInput なので低レベルのマウスフックにも届く）
+            send_at(n(&args, 1), n(&args, 2), &[]);
+            println!("hovered");
+        }
+        Some("cursor") => {
+            let mut p = POINT::default();
+            // SAFETY: 出力先はローカル変数
+            let _ = unsafe { GetCursorPos(&mut p) };
+            println!("cursor {} {}", p.x, p.y);
         }
         Some("down") => {
             // 移動と押し下げを 1 回で送る（間に本物のマウスが割り込まない）

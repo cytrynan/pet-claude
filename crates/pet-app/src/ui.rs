@@ -23,11 +23,11 @@ use tauri::{
     AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, WindowEvent,
 };
-use windows::Win32::Foundation::{LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallNextHookEx, HHOOK, MSLLHOOKSTRUCT, SetWindowsHookExW, UnhookWindowsHookEx, WH_MOUSE_LL,
-    WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_RBUTTONDOWN,
+    CallNextHookEx, GetCursorPos, HHOOK, MSLLHOOKSTRUCT, SetWindowsHookExW, UnhookWindowsHookEx,
+    WH_MOUSE_LL, WM_LBUTTONDOWN, WM_MBUTTONDOWN, WM_MOUSEMOVE, WM_RBUTTONDOWN,
 };
 
 use crate::log::log;
@@ -59,6 +59,8 @@ const SUMMARY_COLS: usize = 36;
 const SUMMARY_LINE_HEIGHT: f64 = 17.0;
 /// hook が「要約は元の文字列と同じ」と確かめたときに `detail` に付ける印（pet-hook と同じ値）。
 const EXACT: &str = "exact";
+/// ホバーで出したメニューから離れて閉じるまでの猶予（縁をかすめただけで閉じないように）。
+const HOVER_LEAVE_MS: u64 = 400;
 /// 固定文言を出しておく時間。
 const STATUS_MS: u64 = 3000;
 /// ペットの足元とバーの上端の重なり（論理ピクセル）。ペットの下端の透明な余白を詰める。
@@ -91,6 +93,10 @@ thread_local! {
     static STATUS_GEN: Cell<u64> = const { Cell::new(0) };
     /// 承認のカードの見回り（期限切れを下げる）が動いているか
     static PRUNING: Cell<bool> = const { Cell::new(false) };
+    /// いま出ているメニューはホバーで出したもの（離れたら閉じる）。右クリックで出したら false
+    static HOVER_MENU: Cell<bool> = const { Cell::new(false) };
+    /// ホバーのメニューから離れたかの確認を待っている
+    static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 fn app() -> Option<AppHandle> {
@@ -304,7 +310,57 @@ fn open_chat() {
 }
 
 /// 右クリックメニューを出す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
+/// 右クリックで出したメニューは、外側のクリックまで出しておく（ホバーで出したものもこれで固定される）。
 pub fn show_menu(at: Point, pet: Rect, dpi: u32) {
+    HOVER_MENU.with(|h| h.set(false));
+    open_menu(at, pet, dpi);
+}
+
+/// カーソルがペットに乗ったらメニューを出す（K 指示 2026-10-21）。ホバーで出したメニューは、
+/// カーソルがペットとメニューの外へ出て `HOVER_LEAVE_MS` たったら閉じる（マウスフックで見る）。
+/// バー・チャット・メニューが出ている間は出さない（クリックで開いた UI に重ねない）。
+pub fn show_menu_on_hover(at: Point, pet: Rect, dpi: u32) {
+    defer(move || {
+        if popups_visible() {
+            return;
+        }
+        HOVER_MENU.with(|h| h.set(true));
+        log("menu on hover");
+        open_menu(at, pet, dpi);
+    });
+}
+
+/// ホバーで出したメニューから離れたかを、少し待ってから確かめて閉じる。
+/// メニューの縁をかすめただけで閉じないよう、待ってからもう一度カーソルの位置を見る。
+fn schedule_hover_leave_check() {
+    if LEAVE_PENDING.with(Cell::get) {
+        return;
+    }
+    LEAVE_PENDING.with(|p| p.set(true));
+    let Some(handle) = app() else { return };
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(Duration::from_millis(HOVER_LEAVE_MS));
+        let _ = handle.run_on_main_thread(|| {
+            LEAVE_PENDING.with(|p| p.set(false));
+            if !HOVER_MENU.with(Cell::get) || !visible(MENU) {
+                return;
+            }
+            let mut p = POINT::default();
+            // SAFETY: 出力先はローカル変数
+            if unsafe { GetCursorPos(&mut p) }.is_err() {
+                return;
+            }
+            let at = Point { x: p.x, y: p.y };
+            if INSIDE.with(|i| i.borrow().iter().all(|r| !r.contains(at))) {
+                HOVER_MENU.with(|h| h.set(false));
+                log("hover menu: left -> close");
+                hide(MENU);
+            }
+        });
+    });
+}
+
+fn open_menu(at: Point, pet: Rect, dpi: u32) {
     defer(move || {
         let bar_shown = bar_visible();
         let Some(w) = island(MENU) else { return };
@@ -724,6 +780,18 @@ pub fn bubble_state() -> serde_json::Value {
 unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code >= 0 {
         let msg = wp.0 as u32;
+        if msg == WM_MOUSEMOVE && HOVER_MENU.with(Cell::get) {
+            // SAFETY: WH_MOUSE_LL の lParam は MSLLHOOKSTRUCT を指す
+            let info = unsafe { &*(lp.0 as *const MSLLHOOKSTRUCT) };
+            let p = Point {
+                x: info.pt.x,
+                y: info.pt.y,
+            };
+            if INSIDE.with(|i| i.borrow().iter().all(|r| !r.contains(p))) {
+                // フックの中では待たない。確かめて閉じるのは別スレッド経由でイベントループに回す
+                schedule_hover_leave_check();
+            }
+        }
         if msg == WM_LBUTTONDOWN || msg == WM_RBUTTONDOWN || msg == WM_MBUTTONDOWN {
             // SAFETY: WH_MOUSE_LL の lParam は MSLLHOOKSTRUCT を指す
             let info = unsafe { &*(lp.0 as *const MSLLHOOKSTRUCT) };

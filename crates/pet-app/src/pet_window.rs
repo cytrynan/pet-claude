@@ -32,13 +32,13 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
 use windows::Win32::UI::WindowsAndMessaging::{
     CS_HREDRAW, CS_VREDRAW, CreateWindowExW, DefWindowProcW, DestroyWindow, GetClassNameW,
-    GetForegroundWindow, GetMessagePos, GetWindowRect, HWND_TOPMOST, IDC_ARROW, KillTimer,
-    LoadCursorW, MA_NOACTIVATE, RegisterClassExW, SPI_SETWORKAREA, SW_SHOWNOACTIVATE,
+    GetCursorPos, GetForegroundWindow, GetMessagePos, GetWindowRect, HWND_TOPMOST, IDC_ARROW,
+    KillTimer, LoadCursorW, MA_NOACTIVATE, RegisterClassExW, SPI_SETWORKAREA, SW_SHOWNOACTIVATE,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOOWNERZORDER, SWP_NOSIZE, SetTimer, SetWindowPos, ShowWindow,
     ULW_ALPHA, UpdateLayeredWindow, WM_CAPTURECHANGED, WM_DISPLAYCHANGE, WM_DPICHANGED,
     WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP, WM_SETTINGCHANGE,
     WM_TIMER, WNDCLASSEXW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP,
+    WS_POPUP, WindowFromPoint,
 };
 use windows::core::w;
 
@@ -52,6 +52,10 @@ const TIMER_TICK: usize = 1;
 const TICK_MS: u32 = 33;
 const TIMER_TOPMOST: usize = 2;
 const TIMER_DISPLAY: usize = 3;
+/// カーソルがペットに乗ってからメニューを出すまでの待ち（K 指示 2026-10-21「乗った時点で出す」）。
+/// 0 にすると、ペットの上を通り過ぎただけでメニューが出入りしてちらつくので、通過と区別できる最小に近い値にした
+const TIMER_HOVER: usize = 4;
+const HOVER_DWELL_MS: u32 = 200;
 const DRAG_THRESHOLD_PX: i32 = 4;
 const DEFAULT_INSET: i32 = 24;
 /// この値未満のアルファは 0 に落とす（縁のかすかな影でクリックを拾わない）。
@@ -76,6 +80,8 @@ struct Pet {
     frame: u32,
     epoch: Instant,
     drag: Option<Drag>,
+    /// カーソルが乗ってメニューまでの待ちを始めたか（TIMER_HOVER が動いている）
+    hover_armed: bool,
     /// (行, コマ) → BGRA 事前乗算済みの画素。大きさが変わったら捨てる。
     cache: HashMap<(u32, u32), Vec<u8>>,
     behavior: Behavior,
@@ -270,6 +276,8 @@ impl Pet {
     }
 
     fn on_button_down(&mut self) {
+        // 押したらメニューまでの待ちはやめる（クリック・ドラッグが優先）
+        self.disarm_hover();
         let c = message_cursor();
         let (w, h) = (
             self.rect.width().max(1) as f32,
@@ -288,9 +296,47 @@ impl Pet {
         unsafe { SetCapture(self.hwnd) };
     }
 
+    /// ペットの不透明な部分にカーソルが乗った（WM_MOUSEMOVE は不透明な画素の上でだけ来る）。
+    /// 少し待ってから、まだ乗っていればメニューを出す。
+    fn arm_hover(&mut self) {
+        if self.hover_armed {
+            return;
+        }
+        self.hover_armed = true;
+        // SAFETY: 自分の窓へのタイマー設定
+        unsafe { SetTimer(Some(self.hwnd), TIMER_HOVER, HOVER_DWELL_MS, None) };
+    }
+
+    fn disarm_hover(&mut self) {
+        if self.hover_armed {
+            self.hover_armed = false;
+            // SAFETY: 自分の窓のタイマーを止める
+            let _ = unsafe { KillTimer(Some(self.hwnd), TIMER_HOVER) };
+        }
+    }
+
+    fn on_hover_timer(&mut self) {
+        self.disarm_hover();
+        if self.drag.is_some() {
+            return;
+        }
+        // 待っている間に離れていたら出さない（離れると WM_MOUSEMOVE が来ないので、ここで確かめる）
+        let mut p = POINT::default();
+        // SAFETY: 出力先はローカル変数
+        if unsafe { GetCursorPos(&mut p) }.is_err() {
+            return;
+        }
+        // SAFETY: 読み取りのみ
+        if unsafe { WindowFromPoint(p) } != self.hwnd {
+            return;
+        }
+        ui::show_menu_on_hover(Point { x: p.x, y: p.y }, self.rect, self.dpi);
+    }
+
     fn on_mouse_move(&mut self) {
         let c = message_cursor();
         let Some(drag) = self.drag.as_mut() else {
+            self.arm_hover();
             return;
         };
         if !drag.moved {
@@ -503,9 +549,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     pet.drag = None;
                 }
             }
-            WM_RBUTTONUP => ui::show_menu(message_cursor(), pet.rect, pet.dpi),
+            WM_RBUTTONUP => {
+                pet.disarm_hover();
+                ui::show_menu(message_cursor(), pet.rect, pet.dpi);
+            }
             WM_TIMER => match wp.0 {
                 TIMER_TICK => pet.tick(),
+                TIMER_HOVER => pet.on_hover_timer(),
                 TIMER_TOPMOST => pet.reassert_topmost(),
                 // ドラッグ中は置き直さない（掴んでいるペットが保存位置へ飛ぶ）。
                 // タイマーは止めずに残し、離した後の次の発火で置き直す
@@ -585,6 +635,7 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
         frame: 0,
         epoch,
         drag: None,
+        hover_armed: false,
         cache: HashMap::new(),
         behavior: Behavior::new(behavior_config(walk), seed(), 0),
         pose: Pose::Idle,

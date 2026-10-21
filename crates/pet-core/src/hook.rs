@@ -196,8 +196,20 @@ fn summary_source<'a>(tool: &str, tool_input: &'a Value) -> Option<&'a str> {
 /// （`echo safe⏎whoami` は要約では `echo safe whoami` に見えるが、実際は 2 つのコマンドになる。
 /// 2026-10-21 検証係の指摘）。要約の元が無い・空なら false。
 pub fn summary_is_exact(tool: &str, tool_input: &Value) -> bool {
-    summary_source(tool, tool_input)
-        .is_some_and(|v| !v.is_empty() && sanitize_line(v, SUMMARY_MAX_CHARS) == v)
+    summary_source(tool, tool_input).is_some_and(|v| {
+        !v.is_empty()
+            && !v.chars().any(is_hidden_format)
+            && sanitize_line(v, SUMMARY_MAX_CHARS) == v
+    })
+}
+
+/// 表示順を変える・見えない書式文字（双方向制御・ゼロ幅など）。表示と実体がずれるので、
+/// これを含む要約は「元と同じ」とみなさない（2026-10-21 セキュリティレビューの指摘。アプリ側の
+/// `ui::can_allow` も同じ集合で止める＝二重の守り）。
+fn is_hidden_format(c: char) -> bool {
+    matches!(c,
+        '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
+        | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
 }
 
 /// 表示用に 1 行へ整える。
@@ -306,5 +318,9 @@ mod tests {
             "Edit",
             &json!({ "file_path": "C:/a.txt" })
         ));
+        // 見えない書式文字（右から左・ゼロ幅・BOM）を含むものも false
+        assert!(!summary_is_exact("Bash", &bash("echo \u{202E}txt.exe")));
+        assert!(!summary_is_exact("Bash", &bash("rm\u{200B} -rf")));
+        assert!(!summary_is_exact("Bash", &bash("\u{FEFF}ls")));
     }
 }
