@@ -65,8 +65,16 @@
           ${s.canAllow ? '<button class="btn primary" data-d="allow">許可</button>' : ""}
         </div>
       </div>`;
+    // 出たばかりのカードは 600ms 押せない（前のカードへの二度押しが、読んでいないカードに入らないように。
+    // ui.rs の FRESH_CARD_GUARD と同じ時間。Rust 側でも同じ時間の押下を捨てる）
+    const fresh = window.__frontId !== s.id;
+    window.__frontId = s.id;
     for (const b of root.querySelectorAll("[data-d]")) {
       b.onclick = () => invoke("permission_decide", { id: s.id, decision: b.dataset.d });
+      if (fresh && b.dataset.d !== "ask") {
+        b.disabled = true;
+        setTimeout(() => { b.disabled = false; }, 600);
+      }
     }
     requestAnimationFrame(guardOverflow);
   };

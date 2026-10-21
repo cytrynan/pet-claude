@@ -22,6 +22,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # 単独の CR（LF の付かない CR）が無いこと。CRLF は commit 時に LF へ直るが、単独の CR は直らない
+      - name: Lone CR check
+        run: python scripts/check-lone-cr.py
+
       - name: Format check
         run: cargo fmt --all --check
 

@@ -59,6 +59,8 @@ const SUMMARY_COLS: usize = 36;
 const SUMMARY_LINE_HEIGHT: f64 = 17.0;
 /// hook が「要約は元の文字列と同じ」と確かめたときに `detail` に付ける印（pet-hook と同じ値）。
 const EXACT: &str = "exact";
+/// 出たばかりの承認のカードを押せない時間（ダブルクリックの間隔 500ms より長く）。
+const FRESH_CARD_GUARD: Duration = Duration::from_millis(600);
 /// ホバーで出したメニューから離れて閉じるまでの猶予（縁をかすめただけで閉じないように）。
 const HOVER_LEAVE_MS: u64 = 400;
 /// 固定文言を出しておく時間。
@@ -93,6 +95,8 @@ thread_local! {
     static STATUS_GEN: Cell<u64> = const { Cell::new(0) };
     /// 承認のカードの見回り（期限切れを下げる）が動いているか
     static PRUNING: Cell<bool> = const { Cell::new(false) };
+    /// 承認のカードの先頭と、それが先頭になった時刻（出たばかりのカードへの押下を捨てる）
+    static FRONT_SINCE: RefCell<Option<(String, Instant)>> = const { RefCell::new(None) };
     /// いま出ているメニューはホバーで出したもの（離れたら閉じる）。右クリックで出したら false
     static HOVER_MENU: Cell<bool> = const { Cell::new(false) };
     /// ホバーのメニューから離れたかの確認を待っている
@@ -276,6 +280,7 @@ pub fn toggle_bar(pet: Rect, dpi: u32) {
             hide_all();
             return;
         }
+        HOVER_MENU.with(|h| h.set(false));
         hide(MENU);
         let Some(w) = island(BAR) else { return };
         let rect = below_pet(&pet, BAR_ISLAND, dpi);
@@ -603,14 +608,10 @@ fn render_bubble(state: serde_json::Value) {
 /// コマンドを一押しで通させないため。2026-10-21 セキュリティレビューと検証係の指摘）。
 fn can_allow(ev: &WireEvent) -> bool {
     let summary = ev.summary.as_deref().unwrap_or("");
-    let hidden = |c: char| {
-        matches!(c,
-            '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-            | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
-    };
+    // 文字の判定は pet-core と同じ関数（集合を 1 か所に寄せる。許可リスト）
     ev.detail.as_deref() == Some(EXACT)
         && !summary.is_empty()
-        && !summary.chars().any(hidden)
+        && summary.chars().all(pet_core::hook::is_plain_char)
         && summary_lines(summary) <= MAX_SUMMARY_LINES
 }
 
@@ -633,9 +634,9 @@ fn schedule_prune() {
     if PRUNING.with(Cell::get) {
         return;
     }
-    PRUNING.with(|p| p.set(true));
     let Some(handle) = app() else { return };
-    let _ = std::thread::Builder::new().spawn(move || {
+    PRUNING.with(|p| p.set(true));
+    let spawned = std::thread::Builder::new().spawn(move || {
         loop {
             std::thread::sleep(Duration::from_secs(1));
             let (tx, rx) = std::sync::mpsc::channel();
@@ -653,6 +654,10 @@ fn schedule_prune() {
             }
         }
     });
+    if spawned.is_err() {
+        // 作れなかったら次のカードでやり直せるようにする
+        PRUNING.with(|p| p.set(false));
+    }
 }
 
 /// 待っている承認の先頭を吹き出しに出す（無ければ隠す）。
@@ -661,6 +666,14 @@ fn show_front_permission() {
         let q = q.borrow();
         q.front()
             .map(|(id, ev)| (id.clone(), ev.clone(), q.len() - 1))
+    });
+    // 先頭のカードが入れ替わった時刻を残す（二度押しの 2 回目が次のカードに入らないように）
+    let front_id = front.as_ref().map(|(id, _, _)| id.clone());
+    FRONT_SINCE.with(|f| {
+        let mut f = f.borrow_mut();
+        if f.as_ref().map(|(id, _)| id) != front_id.as_ref() {
+            *f = front_id.map(|id| (id, Instant::now()));
+        }
     });
     match front {
         Some((id, ev, more)) => render_bubble(serde_json::json!({
@@ -696,6 +709,12 @@ fn auto_decide_for_tests(id: &str) {
     let Ok(decision) = std::env::var("PET_AUTO_DECIDE") else {
         return;
     };
+    // 置き場所を試験用に差し替えた時だけ効かせる（普段使いのデバッグビルドで環境変数が残っていても、
+    // 承認が自動で通らないように。2026-10-21 検証係の指摘）
+    if std::env::var_os("PET_CLAUDE_DATA_DIR").is_none() {
+        log("PET_AUTO_DECIDE は PET_CLAUDE_DATA_DIR と一緒の時だけ効く（無視した）");
+        return;
+    }
     let Some(handle) = app() else { return };
     let id = id.to_string();
     let _ = std::thread::Builder::new().spawn(move || {
@@ -704,8 +723,22 @@ fn auto_decide_for_tests(id: &str) {
     });
 }
 
+/// 押されたカード `id` が、先頭になってから `FRESH_CARD_GUARD` たっていないか。
+fn pressed_too_soon(front: Option<&(String, Instant)>, id: &str, now: Instant) -> bool {
+    front.is_some_and(|(front, since)| front == id && now.duration_since(*since) < FRESH_CARD_GUARD)
+}
+
 /// 吹き出しのボタン（`invoke("permission_decide", {id, decision})`）。
 pub fn permission_decide(id: String, decision: String) {
+    // 出たばかりのカードへの「許可」「拒否」は捨てる。前のカードへの二度押しの 2 回目が、読んでいない
+    // 次のカードに入るのを防ぐ（2026-10-21 検証係の指摘。ページ側でもボタンを同じ時間押せなくする）
+    let fresh = FRONT_SINCE.with(|f| pressed_too_soon(f.borrow().as_ref(), &id, Instant::now()));
+    if fresh && decision != "ask" {
+        log(format!(
+            "permission {id}: 出たばかりのカードへの {decision} を捨てた"
+        ));
+        return;
+    }
     // ページ側でボタンを隠すだけでなく、ここでも同じ条件で止める（ページは信頼の境界にしない）
     let allowed = PERMS.with(|q| q.borrow().iter().any(|(i, ev)| *i == id && can_allow(ev)));
     let state = match decision.as_str() {
@@ -735,13 +768,23 @@ pub fn permission_decide(id: String, decision: String) {
 
 /// そのセッションで承認の後の出来事が来た＝承認は別の経路（ターミナル）で済んだ。カードを下げる。
 pub fn drop_permissions_for(session: &str) {
-    let removed = PERMS.with(|q| {
+    let removed: Vec<String> = PERMS.with(|q| {
         let mut q = q.borrow_mut();
-        let before = q.len();
-        q.retain(|(id, ev)| ev.session != session && crate::ipc_server::is_pending(id));
-        before != q.len()
+        let mut removed = Vec::new();
+        q.retain(|(id, ev)| {
+            let keep = ev.session != session && crate::ipc_server::is_pending(id);
+            if !keep {
+                removed.push(id.clone());
+            }
+            keep
+        });
+        removed
     });
-    if removed {
+    // 下げたカードの hook には「決めない」を返す（待ち続けさせない。2026-10-21 検証係の指摘）
+    for id in &removed {
+        crate::ipc_server::decide(id, PermissionState::Ask);
+    }
+    if !removed.is_empty() {
         show_front_permission();
     }
 }
@@ -866,6 +909,27 @@ mod tests {
         assert!(can_allow(&ev(Some(&"a".repeat(120)), true)));
         assert!(can_allow(&ev(Some(&"あ".repeat(72)), true)));
         assert!(!can_allow(&ev(Some(&"あ".repeat(73)), true)));
+    }
+
+    #[test]
+    fn presses_on_a_fresh_card_are_ignored() {
+        let t0 = Instant::now();
+        let front = ("b".to_string(), t0);
+        // 入れ替わってすぐの押下（前のカードへの二度押しの 2 回目）は捨てる
+        assert!(pressed_too_soon(
+            Some(&front),
+            "b",
+            t0 + Duration::from_millis(100)
+        ));
+        // 600ms 過ぎたら受け付ける
+        assert!(!pressed_too_soon(
+            Some(&front),
+            "b",
+            t0 + Duration::from_millis(600)
+        ));
+        // 先頭でない id・先頭が無いときは関係ない（古い DOM の押下は permission_decide 側で別に止まる）
+        assert!(!pressed_too_soon(Some(&front), "a", t0));
+        assert!(!pressed_too_soon(None, "b", t0));
     }
 
     #[test]

@@ -87,8 +87,78 @@ fn data_dir() -> PathBuf {
 }
 
 fn discovery() -> Option<Discovery> {
-    let text = std::fs::read_to_string(data_dir().join("runtime").join("ipc.json")).ok()?;
-    serde_json::from_str(&text).ok()
+    let path = data_dir().join("runtime").join("ipc.json");
+    let written = std::fs::metadata(&path).and_then(|m| m.modified()).ok()?;
+    let text = std::fs::read_to_string(&path).ok()?;
+    let disc: Discovery = serde_json::from_str(&text).ok()?;
+    // アプリが強制終了すると発見ファイルが残る。そのポートで別のプロセスが待ち受けると、承認の答えを
+    // 横取りされる（2026-10-21 検証係の指摘）。書いた pid が生きていて、実行ファイルがアプリのときだけ使う
+    app_is_alive(disc.pid, written).then_some(disc)
+}
+
+/// 発見ファイルを書いたのが、いま生きているアプリか。次の 2 つを両方満たすときだけ true:
+///
+/// - `pid` の実行ファイルのフルパスが、この hook と同じフォルダの `pet-app.exe`（登録コマンドが同じ
+///   フォルダの pet-hook.exe を登録する）。名前だけだと、別の場所に置いた同名の実行ファイルで通る
+/// - そのプロセスが発見ファイルより前に生まれている（アプリは起動してから発見ファイルを書く）。
+///   pid は再利用されるので、強制終了後に同じ pid を引き当てたプロセスをここで弾く
+///
+/// （2026-10-21 検証係の指摘 2 巡）。故障注入のテストは `PET_CLAUDE_APP_PATH` で期待するパスを
+/// 自分に差し替える。差し替えは `PET_CLAUDE_DATA_DIR`（試験用の置き場所）と一緒の時だけ効く。
+fn app_is_alive(pid: u32, written: std::time::SystemTime) -> bool {
+    use windows::Win32::Foundation::{CloseHandle, FILETIME};
+    use windows::Win32::System::Threading::{
+        GetProcessTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
+        QueryFullProcessImageNameW,
+    };
+    let override_path =
+        std::env::var_os("PET_CLAUDE_DATA_DIR").and(std::env::var("PET_CLAUDE_APP_PATH").ok());
+    let expected = match override_path {
+        Some(p) => p,
+        None => match std::env::current_exe() {
+            Ok(exe) => exe
+                .with_file_name("pet-app.exe")
+                .to_string_lossy()
+                .into_owned(),
+            Err(_) => return false,
+        },
+    };
+    // SAFETY: 読み取りだけの権限で開き、必ず閉じる。出力先はローカル変数
+    unsafe {
+        let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
+            return false;
+        };
+        let mut buf = [0u16; 1024];
+        let mut len = buf.len() as u32;
+        let named = QueryFullProcessImageNameW(
+            h,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+        .is_ok();
+        let (mut created, mut exited, mut kernel, mut user) = (
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+            FILETIME::default(),
+        );
+        let timed = GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user).is_ok();
+        let _ = CloseHandle(h);
+        if !named || !timed {
+            return false;
+        }
+        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        path.eq_ignore_ascii_case(&expected) && filetime_to_system(created) <= written
+    }
+}
+
+/// FILETIME（1601-01-01 からの 100ns）を SystemTime に。
+fn filetime_to_system(ft: windows::Win32::Foundation::FILETIME) -> std::time::SystemTime {
+    const UNIX_EPOCH_IN_FILETIME: u64 = 116_444_736_000_000_000;
+    let t = (u64::from(ft.dwHighDateTime) << 32) | u64::from(ft.dwLowDateTime);
+    let since_unix = t.saturating_sub(UNIX_EPOCH_IN_FILETIME);
+    std::time::UNIX_EPOCH + Duration::from_nanos(since_unix.saturating_mul(100))
 }
 
 /// 1 往復の HTTP。(状態コード, 本文) を返す。接続できない・時間切れ・壊れた応答は None。
@@ -131,7 +201,9 @@ fn wait_for_decision(disc: &Discovery, body: &str) -> Option<Decision> {
     let wait = std::env::var("PET_PERMISSION_WAIT_SECS")
         .ok()
         .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_WAIT_SECS);
+        .unwrap_or(DEFAULT_WAIT_SECS)
+        // 巨大な値で Instant の足し算が溢れないように（hook の timeout は 60 秒なので、それ以上は意味が無い）
+        .min(DEFAULT_WAIT_SECS * 2);
     let deadline = Instant::now() + Duration::from_secs(wait);
     while Instant::now() < deadline {
         std::thread::sleep(POLL_INTERVAL);

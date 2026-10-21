@@ -122,6 +122,18 @@ status2, body2, _ = request("GET", f"/permission/{pid}")
 results.append(("問い合わせ中は pending", status1 == 200 and "pending" in body1, f"{status1} {body1}"))
 results.append(("6 秒放置した承認は失効（404）", status2 == 404, f"{status2} {body2}"))
 
+# 3. 承認の後に同じセッションの「応答の終わり」が来たら、カードを下げ、hook には「決めない」を返す
+perm3 = json.dumps({"kind": "permission", "session": "drop", "tool": "試験中（押さないでください）",
+                    "summary": "pet-claude fault test 3", "detail": "exact"})
+_, body3, _ = request("POST", "/permission", perm3)
+pid3 = json.loads(body3)["id"]
+time.sleep(0.3)
+request("GET", f"/permission/{pid3}")
+request("POST", "/event", json.dumps({"kind": "stop", "session": "drop"}))
+time.sleep(0.5)
+status3, body3b, _ = request("GET", f"/permission/{pid3}")
+results.append(("下げたカードの hook には ask が返る", status3 == 200 and '"ask"' in body3b, f"{status3} {body3b}"))
+
 app.kill()
 app.wait()
 log = (data / "logs" / "pet.log").read_text(encoding="utf-8")

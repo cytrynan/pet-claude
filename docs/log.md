@@ -10,6 +10,8 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — 発見ファイルの確かめ方（実行ファイルのフルパスと生成時刻）、承認のカードの折り返しと 600ms の押下防止 (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md) — §5 を全範囲の検証の回収に合わせた（許可を出すツールと項目の限定・文字の許可リスト・出たばかりのカードへの押下を捨てる・下げたカードに ask・発見ファイルの pid の確認・PET_AUTO_DECIDE の条件） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — カーソルがペットに乗ったらメニューを出す（200ms 待つ・離れて 400ms で閉じる） (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §5 を検証係の指摘の回収に合わせた（許可を出す 3 条件・放置した承認の失効と見回り・接続ごとのスレッドと要求全体の期限・乱数が取れなければ受け口を開かない） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md)・[ロードマップ](roadmap.md)・[DESIGN.md](../DESIGN.md) — Phase 2 を実装どおりに（hook の登録内容・承認の往復・許可を出さない条件・IPC・間引きを置かない理由）、吹き出しの部品と「半透明の面は値より薄く写る」 (kuroko/claude-opus-5-5 ← human:K)

@@ -19,16 +19,34 @@ fn temp_dir(name: &str) -> PathBuf {
     d
 }
 
+/// 発見ファイルを書く。pid はこのテストのプロセス（hook は pid が生きていてアプリのときだけ繋ぐので、
+/// `run_hook` が「アプリの実行ファイルのパス」をこのテストのパスに差し替える）。
 fn write_discovery(dir: &Path, endpoint: &str, token: &str) {
-    let text = format!(r#"{{"endpoint":"{endpoint}","token":"{token}","pid":1}}"#);
+    write_discovery_pid(dir, endpoint, token, std::process::id());
+}
+
+fn write_discovery_pid(dir: &Path, endpoint: &str, token: &str, pid: u32) {
+    let text = format!(r#"{{"endpoint":"{endpoint}","token":"{token}","pid":{pid}}}"#);
     std::fs::write(dir.join("runtime").join("ipc.json"), text).unwrap();
+}
+
+fn this_exe_path() -> String {
+    std::env::current_exe()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned()
 }
 
 /// (終了コード, 標準出力, かかった時間)
 fn run_hook(dir: &Path, input: &[u8]) -> (i32, String, Duration) {
+    run_hook_as(dir, input, &this_exe_path())
+}
+
+fn run_hook_as(dir: &Path, input: &[u8], app_path: &str) -> (i32, String, Duration) {
     let start = Instant::now();
     let mut child = Command::new(env!("CARGO_BIN_EXE_pet-hook"))
         .env("PET_CLAUDE_DATA_DIR", dir)
+        .env("PET_CLAUDE_APP_PATH", app_path)
         .env("PET_PERMISSION_WAIT_SECS", "2")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -123,6 +141,57 @@ fn server_accepts_but_never_answers() {
     // 読み取りの時間切れ 500ms＋起動
     assert!(took < QUICK, "{took:?}");
     drop(server);
+}
+
+#[test]
+fn stale_discovery_hijacked_port_is_not_trusted() {
+    // アプリが強制終了して発見ファイルが残り、そのポートで別のプロセスが待ち受けて「許可」を返す
+    // （2026-10-21 検証係の指摘）。pid がアプリでなければ hook は繋がずに {} を返す
+    let dir = temp_dir("hijack");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    write_discovery_pid(
+        &dir,
+        &listener.local_addr().unwrap().to_string(),
+        "t",
+        std::process::id(),
+    );
+    let (code, out, _) = run_hook_as(&dir, PERMISSION.as_bytes(), "C:/elsewhere/pet-app.exe");
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "{}");
+    // 一度も接続されていない
+    assert!(listener.accept().is_err());
+    // 死んだ pid も同じ
+    write_discovery_pid(
+        &dir,
+        &listener.local_addr().unwrap().to_string(),
+        "t",
+        0xFFFF_FFF0,
+    );
+    let (_, out, _) = run_hook(&dir, PERMISSION.as_bytes());
+    assert_eq!(out.trim(), "{}");
+    assert!(listener.accept().is_err());
+}
+
+#[test]
+fn reused_pid_is_not_trusted() {
+    // 強制終了したアプリの pid を、後から生まれた別プロセスが引き当てた場合（2026-10-21 検証係の指摘）。
+    // 発見ファイルの更新時刻をこのプロセスの起動より前に戻すと、「ファイルより後に生まれたプロセス」になる
+    let dir = temp_dir("reuse");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+    let file = std::fs::File::options()
+        .write(true)
+        .open(dir.join("runtime").join("ipc.json"))
+        .unwrap();
+    file.set_modified(std::time::SystemTime::now() - Duration::from_secs(24 * 3600))
+        .unwrap();
+    drop(file);
+    let (code, out, _) = run_hook(&dir, PERMISSION.as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "{}");
+    assert!(listener.accept().is_err());
 }
 
 #[test]

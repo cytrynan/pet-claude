@@ -248,3 +248,12 @@ pub fn is_authorized(req: &Request, token: &str) -> bool;
 - `cargo test -p pet-core` が通る（既存の 74 本も含む）
 - `cargo clippy --workspace --all-targets -- -D warnings` が通る
 - 上の 1〜9 の各節に少なくとも 1 本ずつテスト。境界（ちょうど `MAX_INPUT_BYTES`・ちょうど `max_chars`・`Content-Length` が足りない）と、壊しにいくケース（必須項目の欠落の順序・プロンプト本文が漏れない・`Origin` 付き・`Bearer` の大小・制御文字と改行・絵文字を含む切り詰め）を入れる
+
+## 追補（2026-10-21・実装後。評価係の指摘で要件側へ戻した）
+
+この要件はテスト先行の原本として固定したまま、実装後に分かったことをここに足す（テストは変えていない）。
+
+- **用途: 要約は吹き出しの「許可」の根拠になる**。この用途が要件に書かれていなかったため、要約の作り方（3 節: 制御文字を空白に・空白の並びを 1 つに・切り詰め）が、表示と実体のずれ（`echo safe⏎whoami` が `echo safe whoami` に見える・後半が切れる・見えない書式文字）を生むことに、A4 レビューもテストも気づけなかった。要件どおりの実装だった（穴は要件側）
+- 追加した関数 `hook::summary_is_exact(tool: &str, tool_input: &Value) -> bool`: 要約が操作の全部になるツール（Bash・PowerShell・Read・WebSearch）で、`tool_input` の項目が決めた組（command・description・timeout／file_path・offset・limit／query）に収まり、要約の元が空でなく、すべて `hook::is_plain_char`（見た目どおりに読める文字の許可リスト）で、`sanitize_line(v, SUMMARY_MAX_CHARS) == v` のときだけ true（当初の拒否リストは全範囲の検証で漏れが見つかり許可リストに替えた）。pet-hook はこれが true のときだけ承認の `WireEvent.detail` に `"exact"` を入れる（6 節の表の「承認の detail は None」に対する追加）。単体テストは `src/hook.rs` 内
+- questions.md Q1 の裁定: 3 節の「連続する空白」は長さ 1 の並びも含む（単独の U+3000・U+00A0 も半角空白 1 つにする）
+- 次に同じ形の要件（入力を整形して表示し、人が一押しで承認する）を書くときは、**用途（何の判断の根拠になるか）と、入力が敵対的に作られうること**を最初に書く

@@ -191,25 +191,58 @@ fn summary_source<'a>(tool: &str, tool_input: &'a Value) -> Option<&'a str> {
     tool_input.get(key).and_then(Value::as_str)
 }
 
-/// 要約が元の文字列とまったく同じか（改行・タブ・空白の並び・前後の空白・切り詰めのどれでも
-/// 変わっていないか）。吹き出しから一押しで許可してよいのは、見えている要約が操作の全部のときだけ
-/// （`echo safe⏎whoami` は要約では `echo safe whoami` に見えるが、実際は 2 つのコマンドになる。
-/// 2026-10-21 検証係の指摘）。要約の元が無い・空なら false。
+/// 吹き出しの要約が、その操作の全部をそのまま見せているか。吹き出しから一押しで許可してよいのは
+/// これが true のときだけ（2026-10-21 セキュリティレビューと検証係の指摘を 3 つ合わせた条件）:
+///
+/// 1. 要約が操作の全部になるツールで、`tool_input` に見えない項目が無い（`SHOWN_WHOLE`）。
+///    Agent の prompt・Write の本文・Bash の `dangerouslyDisableSandbox` などは要約に出ないので false
+/// 2. 要約の元が加工されていない（改行・タブ・空白の並び・前後の空白・切り詰めのどれも無い。
+///    `echo safe⏎whoami` は要約では `echo safe whoami` に見えるが、実際は 2 つのコマンドになる）
+/// 3. 見た目どおりに読める文字だけ（`is_plain_char`。見えない文字・空白に見える文字・結合文字は false）
 pub fn summary_is_exact(tool: &str, tool_input: &Value) -> bool {
+    let Some(allowed_keys) = SHOWN_WHOLE
+        .iter()
+        .find(|(name, _)| *name == tool)
+        .map(|(_, keys)| *keys)
+    else {
+        return false;
+    };
+    let Some(obj) = tool_input.as_object() else {
+        return false;
+    };
+    if obj.keys().any(|k| !allowed_keys.contains(&k.as_str())) {
+        return false;
+    }
     summary_source(tool, tool_input).is_some_and(|v| {
-        !v.is_empty()
-            && !v.chars().any(is_hidden_format)
-            && sanitize_line(v, SUMMARY_MAX_CHARS) == v
+        !v.is_empty() && v.chars().all(is_plain_char) && sanitize_line(v, SUMMARY_MAX_CHARS) == v
     })
 }
 
-/// 表示順を変える・見えない書式文字（双方向制御・ゼロ幅など）。表示と実体がずれるので、
-/// これを含む要約は「元と同じ」とみなさない（2026-10-21 セキュリティレビューの指摘。アプリ側の
-/// `ui::can_allow` も同じ集合で止める＝二重の守り）。
-fn is_hidden_format(c: char) -> bool {
+/// 要約が操作の全部になるツールと、`tool_input` に含まれてよい項目（要約の項目＋実行の中身を変えない項目）。
+/// ここに無いツール・項目が 1 つでもあれば「ターミナルで」答えてもらう。
+const SHOWN_WHOLE: [(&str, &[&str]); 4] = [
+    // description は人向けの説明、timeout は待ち時間。どちらも実行するコマンドを変えない
+    ("Bash", &["command", "description", "timeout"]),
+    ("PowerShell", &["command", "description", "timeout"]),
+    // offset・limit は読む範囲（読むだけなので許す）
+    ("Read", &["file_path", "offset", "limit"]),
+    ("WebSearch", &["query"]),
+];
+
+/// 見た目どおりに読める文字か（許可リスト）。拒否リストでは漏れが出たので（U+3164 の Hangul filler・
+/// 異体字セレクタ・Tag 文字などが通った）、ASCII の印字可能文字・Latin-1 の記号と文字・日本語の
+/// かなと漢字・全角英数と記号・CJK の句読点だけを通す。空白は半角空白だけ。アプリ側の `ui::can_allow` も
+/// この関数を使う（集合を 1 か所に寄せる）。
+pub fn is_plain_char(c: char) -> bool {
     matches!(c,
-        '\u{00AD}' | '\u{061C}' | '\u{180E}' | '\u{200B}'..='\u{200F}' | '\u{202A}'..='\u{202E}'
-        | '\u{2060}'..='\u{206F}' | '\u{FEFF}' | '\u{FFF9}'..='\u{FFFB}')
+        ' '..='~'
+        | '\u{00A1}'..='\u{00AC}' | '\u{00AE}'..='\u{00FF}'
+        // CJK の句読点は使うものだけ（、。〃〄々〆〇・括弧類）。302A–302F の結合マーク・303F の
+        // 半角幅の空欄などが混ざる範囲指定はしない（2026-10-21 検証係の指摘）
+        | '\u{3001}'..='\u{3007}' | '\u{3008}'..='\u{3011}' | '\u{3014}'..='\u{301F}'
+        | '\u{3041}'..='\u{3096}' | '\u{309B}'..='\u{30FF}'
+        | '\u{4E00}'..='\u{9FFF}'
+        | '\u{FF01}'..='\u{FF5E}')
 }
 
 /// 表示用に 1 行へ整える。
@@ -314,13 +347,82 @@ mod tests {
         assert!(!summary_is_exact("Bash", &bash("")));
         assert!(!summary_is_exact("mcp__x__y", &json!({ "command": "ls" })));
         assert!(!summary_is_exact("Bash", &Value::Null));
-        assert!(summary_is_exact(
-            "Edit",
-            &json!({ "file_path": "C:/a.txt" })
-        ));
         // 見えない書式文字（右から左・ゼロ幅・BOM）を含むものも false
         assert!(!summary_is_exact("Bash", &bash("echo \u{202E}txt.exe")));
         assert!(!summary_is_exact("Bash", &bash("rm\u{200B} -rf")));
         assert!(!summary_is_exact("Bash", &bash("\u{FEFF}ls")));
+    }
+
+    #[test]
+    fn summary_must_be_the_whole_operation() {
+        // 要約に出ない項目があるツール・項目は false（本文・副エージェントへの指示・サンドボックス解除）
+        assert!(!summary_is_exact(
+            "Edit",
+            &json!({ "file_path": "C:/a.txt" })
+        ));
+        assert!(!summary_is_exact(
+            "Write",
+            &json!({ "file_path": "package.json", "content": "x" })
+        ));
+        assert!(!summary_is_exact(
+            "Agent",
+            &json!({ "description": "Run tests", "prompt": "do anything" })
+        ));
+        assert!(!summary_is_exact(
+            "Bash",
+            &json!({ "command": "ls", "dangerouslyDisableSandbox": true })
+        ));
+        assert!(!summary_is_exact(
+            "Bash",
+            &json!({ "command": "ls", "run_in_background": true })
+        ));
+        // 実行の中身を変えない項目だけなら true
+        assert!(summary_is_exact(
+            "Bash",
+            &json!({ "command": "git status", "description": "状態を見る", "timeout": 1000 })
+        ));
+        assert!(summary_is_exact(
+            "Read",
+            &json!({ "file_path": "C:/a.txt", "limit": 10 })
+        ));
+        assert!(summary_is_exact(
+            "WebSearch",
+            &json!({ "query": "rust 2024" })
+        ));
+    }
+
+    #[test]
+    fn only_plainly_visible_chars_are_exact() {
+        let bash = |c: &str| json!({ "command": c });
+        assert!(summary_is_exact(
+            "Bash",
+            &bash("echo こんにちは、世界！ ＡＢＣ")
+        ));
+        assert!(summary_is_exact("Bash", &bash("echo 「人々」〇〆。")));
+        // 空白に見える・見えない・結合する文字（拒否リストでは漏れていたもの）
+        for c in [
+            '\u{3164}',
+            '\u{FFA0}',
+            '\u{2800}',
+            '\u{E0041}',
+            '\u{FE0F}',
+            '\u{034F}',
+            '\u{0338}',
+            '\u{3000}',
+            '\u{00A0}',
+            '\u{00AD}',
+            '\u{1F600}',
+            // CJK の句読点の範囲に混ざっていた結合マーク・空欄・変異指示子
+            '\u{302A}',
+            '\u{302F}',
+            '\u{303E}',
+            '\u{303F}',
+        ] {
+            assert!(
+                !summary_is_exact("Bash", &bash(&format!("git checkout main{c}"))),
+                "U+{:04X}",
+                c as u32
+            );
+        }
     }
 }
