@@ -234,7 +234,7 @@ Grabbed（ドラッグ中）
 - **「確かめる」**: `claude auth status` もチャットと同じ起こし方（Job・出力の上限）で、15 秒で時間切れ
 - **ログ**: 字数・秒数・終了コード・is_error・接続の種類だけ。本文・答え・鍵は書かない（N4）
 - **作業フォルダ**: `%LOCALAPPDATA%\pet-claude\chat\work`（空。リポジトリや K の作業フォルダの設定を拾わない）。ペットの話し方は同じフォルダの上の `system-prompt.txt` に毎回書き出す（中身はコードの定数）
-- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 76 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い。18 項目（panic の故障注入を含む）。取り消し・まとめて来た手順は、アプリを止める前に子が残っていないかを見る）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
+- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 97 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い。18 項目（panic の故障注入を含む）。取り消し・まとめて来た手順は、アプリを止める前に子が残っていないかを見る）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
 
 ## 7. 設定・ログ・保存先
 

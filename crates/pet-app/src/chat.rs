@@ -120,6 +120,8 @@ pub fn submit(app: AppHandle, text: String, auth: AuthMode) -> String {
             release(generation);
             log(format!("chat のスレッドを作れない: {e}"));
             crate::pet_window::chat_finished(BEHAVIOR_SESSION, false);
+            // 予約を外したことを開いているチャット欄に伝える（伝えないと待ち中のまま送れない。3 巡目の指摘）
+            crate::ui::refresh_chat();
             "送れませんでした".into()
         }
     }
