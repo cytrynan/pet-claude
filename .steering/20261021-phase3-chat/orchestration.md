@@ -33,7 +33,9 @@ pet-app 側（実行・資格情報・設定画面・吹き出し・チャット
 9. 23:17 commit c91dffe: 1 巡目の回収
 10. 23:20 Codex 2 巡目 4 件 → 23:29 commit 88c6a1d（panic の回収は故障注入で確かめた）
 11. 23:29 Codex 3 巡目 1 件（既存）→ 23:32 commit 3d35b3d
-12. フロー差分記録係（Sonnet）→ 評価係（Codex gpt-6-astra high）。**K の実機のクリック確認の前に起動した中間の評価**（評価係の指摘 3）。最終の評価は K の確認と、その回収の後にもう一度置く
+12. フロー差分記録係（Sonnet）→ 評価係（Codex gpt-6-astra high）。**K の実機のクリック確認の前に起動した中間の評価**（評価係の指摘 3）。記録係も同じく早すぎた（最終の評価係の指摘 3）
+13. 23:49〜23:50（K の pet.log）: K の実機確認、「全部OK」。最初にチャット欄を開くと 7ms で閉じる件を発見
+14. 最終の評価係（Codex）→ 記録係に最終の差分を追記させた
 
 ## 止まった点（具体と抽象）
 
@@ -62,3 +64,29 @@ pet-app 側（実行・資格情報・設定画面・吹き出し・チャット
 | 4. 時系列が commit の時刻と食い違い（Q1 の裁定 22:45・実装係 23:00 と書いたが、それを含む 4922e79 は 22:42）、実際に開いたファイルの一覧も渡していない | 採用（**司令塔の誤り。見積もりの時刻を実測のように書いた**） | 時系列を commit・pet.log の時刻だけで書き直し、取れない時刻は「不明」にした |
 
 任意: 実機の試験は他のセッションと使用時間を合わせる（別セッションによる停止で偽の FAIL が 2 回）。
+
+## 司令塔が実際に開いたファイル（このセッションのツール履歴から。中間の評価係の指摘 4 の残り）
+
+読み込み（Read・cat・sed・grep で中身を見たもの。grep で数行だけ見たものも含む）:
+- 計画: GitHub issue #6 の本文（gh issue view）、`.steering/20261021-phase2-hooks/{requirements.md,orchestration.md,flow-diff.md}`（形の前例）
+- 規則: `CLAUDE.md`、`.claude/skills/orchestration/SKILL.md` のテスト先行体制の節、`.claude/skills/codex-verify/SKILL.md`、`.claude/agents/{flow-diff-recorder.md,orchestrator-reviewer.md}`、`~/.claude/skills/apple-design/SKILL.md`、`DESIGN.md`、`.github/pull_request_template.md`
+- docs: `docs/product-requirements.md`（U1・F18・F19・N3 の行）、`docs/architecture.md`（§6・§7・§8 と見出し）、`docs/log.md`（先頭）
+- 既存のコード: `crates/pet-app/src/{main.rs,state.rs,log.rs,ui.rs（島・吹き出し・チャット欄・設定・承認の部分）,pet_window.rs（settings・with_pet・on_wire_event）}`、`crates/pet-core/src/{lib.rs,hook.rs（sanitize_line）,behavior.rs（on_agent・セッションの期限）}`、`crates/pet-core/tests/hook.rs`（冒頭）、`ui/{chat.html,bubble.html,settings.html,ui.css,ui.js}`、`scripts/{gate-commit.sh,verify/fault-app.py,verify/shot-bubble.sh,verify/measure-memory.ps1}`、`Cargo.toml`（profile）、`crates/*/Cargo.toml`
+- windows クレート 0.62.2 の該当 API（Credentials・JobObjects・ToolHelp・Threading の宣言）
+- テスト作成係の成果: `questions.md`（全文）、`crates/pet-core/tests/chat.rs`（child_args・child_env のテストを抜き読み）。実装係の `src/chat.rs` は読んでいない（テストと検証係で受け入れた）
+- 検証係・評価係の結果: 各巡の `result.md`、`codex-cmd.txt`
+- 実行時の記録: K の `%LOCALAPPDATA%\pet-claude\logs\pet.log`、試験用データフォルダの pet.log、`~/.claude/projects/` の試験のチャットの会話記録（A3・A5 の答えを読むため）、`state.json` の positions
+
+取れない・書かなかったもの: 各ファイルを読んだ正確な時刻（ツール履歴に時刻が無い）。
+
+## 評価係（最終・2026-10-21・Codex gpt-6-astra high）
+
+総合 4.2/5（分解 4・割り振り 4・編成数 5・差し戻し 5・受入検証 3）。中間の指摘 1〜3 の回収は妥当、4 は部分回収と判定。新しい指摘 3 件はすべて採った。
+
+| 指摘 | 判定 | 回収 |
+|---|---|---|
+| 1. 「続きを見る」の経路を通っていないのに、実機のクリック全体を PASS にした | 採用（**司令塔の誤り**。通らなかったと書きながら PASS に含めた） | tasklist の実績を経路ごとの行に分け、「続きを見る」は未測に |
+| 2. 中間の指摘 4 の「実際に開いたファイルの一覧」を回収していない | 採用 | 上の「司令塔が実際に開いたファイル」 |
+| 3. フロー差分記録係も K の確認の前に起こした | 採用 | 記録係に最終の差分を追記させた |
+
+次回直すこと: ①最終の判定の前に、受け入れ項目を操作の経路と証拠（ログ・K の申告・未測）に 1 行ずつ対応付ける ②後置の係（記録係・評価係）を起こす前に「残りの工程なし・最終の差分を反映済み・開いたファイルの一覧を添付」を確かめる
