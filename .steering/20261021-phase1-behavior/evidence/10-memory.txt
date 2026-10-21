@@ -29,3 +29,5 @@ args='' processes=6 workingset=398.7MB private=26.0MB
   Registry x1
   smss.exe x1
   Memory Compression x1
+
+# ↑ 最後のブロック（System Idle Process など）は無効。アプリが落ちた後に PID 0 を根にしてシステム全体を測った（measure-memory.ps1 の不具合。2026-10-21 に修正）。正しい値は sweep-df20ddb/memory.txt

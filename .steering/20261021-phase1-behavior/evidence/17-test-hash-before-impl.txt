@@ -1,0 +1,5 @@
+# 実装係を立てる前に司令塔が記録したテスト原本の sha256（スクラッチパッドの元ファイルの更新時刻つき）
+# 元ファイル: /c/Users/meer0/AppData/Local/Temp/claude/C--Users-meer0/a352a98d-07df-46d9-bdb4-34e56b26d781/scratchpad/behavior-tests.sha256
+# 更新時刻: 2026-10-21 09:00:53
+46d01b283eb6495d29b01f4dd9301b47fbe55605637beeb53b5402b951f79321 *crates/pet-core/tests/behavior.rs
+# 実装係の起動はこの後（ログ: 実装係の報告は 09:0x）。現在の値: 46d01b283eb6495d29b01f4dd9301b47fbe55605637beeb53b5402b951f79321

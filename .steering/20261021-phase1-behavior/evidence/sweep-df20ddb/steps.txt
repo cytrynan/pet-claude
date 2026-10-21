@@ -1,0 +1,20 @@
+10:11:44.881 [df20ddb] pet rect=(2295,1185)-(2506,1414) scale=1.9981 body=(2400,1288) bar-center-y=1449
+10:11:45.394 [df20ddb] 試験用のメモ帳を (3145,1066) に置いた。外側クリックは (3444,1305)
+10:11:46.391 [df20ddb] M0 起動直後のメモリ（UI の窓なし）: args='' processes=2 workingset=43.1MB private=19.7MB
+10:11:47.042 [df20ddb] M1 右クリック前の前面: fg class=Notepad title=*無題 - メモ帳
+10:11:48.782 [df20ddb] M1 右クリック後の前面: fg class=Notepad title=*無題 - メモ帳
+10:11:49.362 [df20ddb] M1 メニューを撮影（初回作成・バーなしで「バーを隠す」が淡色か）
+10:11:50.381 [df20ddb] M1 外側（メモ帳）をクリック
+10:11:54.174 [df20ddb] B1 クリック後の前面: fg class=Chrome_WidgetWin_1 title=新しいタブ - Google Chrome
+10:11:55.188 [df20ddb] B2 バー表示中のメモリ: args='' processes=9 workingset=400.2MB private=146.7MB
+10:11:56.687 [df20ddb] C1 チャットを押した後の前面: fg class=Windows.UI.Core.CoreWindow title=新しい通知
+10:11:59.963 [df20ddb] C2 送信→Esc
+10:12:01.382 [df20ddb] D1 バーを出した
+10:12:03.678 [df20ddb] D1 ドラッグして離した（つままれの撮影・バーが閉じたかはログ）
+10:12:04.991 [df20ddb] D2 元の位置へ戻した: rect=(2295,1185)-(2506,1414)
+10:12:09.149 [df20ddb] S1 設定を開いた後の前面: fg class=Tauri Window title=pet-claude の設定
+10:12:09.275 [df20ddb] S1 開いた時点の state.json: "scale": 0.55（スライダーは触らない＝保存は離したときだけの確認は手動）
+10:12:11.033 [df20ddb] S1 設定の窓を閉じる: closed
+10:12:11.197 [df20ddb] E0 すべて閉じた。65 秒待つ
+10:13:17.296 [df20ddb] E1 65 秒後のメモリ: args='' processes=2 workingset=60.2MB private=23.9MB
+10:13:17.463 [df20ddb] done

@@ -1,0 +1,24 @@
+2026-10-21 10:11:42.490 start 0.1.0
+2026-10-21 10:11:42.524 relayout(startup) monitors=2 -> Home at (2295,1185) 211x229 dpi=192
+2026-10-21 10:11:42.555 pet window created rows=11
+2026-10-21 10:11:47.455 menu window created
+2026-10-21 10:11:47.464 menu shown
+2026-10-21 10:11:49.423 outside click at (2879,1305) -> close
+2026-10-21 10:11:49.426 popups hidden (all)
+2026-10-21 10:11:50.974 button up drag=true
+2026-10-21 10:11:50.975 click at (2400,1288)
+2026-10-21 10:11:51.054 bar window created
+2026-10-21 10:11:51.061 bar shown
+2026-10-21 10:12:00.043 button up drag=true
+2026-10-21 10:12:00.044 click at (2400,1288)
+2026-10-21 10:12:00.045 popups hidden (all)
+2026-10-21 10:12:03.035 button up drag=true
+2026-10-21 10:12:03.036 click at (2400,1288)
+2026-10-21 10:12:03.044 bar shown
+2026-10-21 10:12:04.230 button up drag=true
+2026-10-21 10:12:04.231 click at (2400,1288)
+2026-10-21 10:12:04.231 popups hidden (all)
+2026-10-21 10:12:05.066 menu shown
+2026-10-21 10:12:06.447 ui action: menu:settings
+2026-10-21 10:12:06.549 settings window created
+2026-10-21 10:13:10.962 idle: destroyed 2 UI windows

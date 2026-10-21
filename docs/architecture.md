@@ -10,7 +10,7 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-21T08:05:00+09:00 }
 
 | 候補 | 判定 | 理由 |
 |---|---|---|
-| **Rust：ペット本体＝Win32 layered window、UI＝Tauri 2** | **採用** | `UpdateLayeredWindow` に画素ごとのアルファを渡すと、アルファ 0 の画素へのクリックを OS が背後へ通す。追加の判定も監視も要らない。`WS_EX_NOACTIVATE` でフォーカスを確実に奪わない。常駐は専有 21MB（ワーキングセット 50MB）・CPU 0.6%（Phase 1 実測、デバッグビルド、UI を出していない間）。吹き出し・バー・チャット・設定は Tauri の WebView で作る。WebView2 は 1 枚でもあると子プロセスが常駐する（専有 +95MB 前後）ので、UI の窓は使うときだけ作り、隠して 60 秒で破棄する（§3-b）。hook も Rust の小さな exe にでき、起動が速い |
+| **Rust：ペット本体＝Win32 layered window、UI＝Tauri 2** | **採用** | `UpdateLayeredWindow` に画素ごとのアルファを渡すと、アルファ 0 の画素へのクリックを OS が背後へ通す。追加の判定も監視も要らない。`WS_EX_NOACTIVATE` でフォーカスを確実に奪わない。常駐は専有 20〜24MB（ワーキングセット 43〜60MB）・CPU 0.6%（Phase 1 実測、デバッグビルド、UI を出していない間。専有＝子孫プロセス込みの `PrivateMemorySize64`）。吹き出し・バー・チャット・設定は Tauri の WebView で作る。WebView2 は 1 枚でもあると子プロセスが常駐する（UI 表示中は専有 115〜147MB・ワーキングセット 330〜400MB）ので、UI の窓は使うときだけ作り、隠して 60 秒で破棄する（§3-b）。hook も Rust の小さな exe にでき、起動が速い |
 | Python 3.12 + PySide6 | 不採用（当初案） | 窓は作れるが、凝った UI（Apple 風の吹き出し・ガラス）が Qt では重い。hook を Python で起動すると遅い |
 | C# / WPF | 次点 | layered window と DPI は良い。UI は XAML で作れる。ただし Acrylic を透過窓に重ねにくく、Web 系 UI のほうが作りやすい |
 | Electron（OpenPets 方式） | 不採用 | Windows ではクリックの forward が止まり、750ms ごとの監視で再武装が要る。常駐が重い |
@@ -59,7 +59,7 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 
 見た目の正本は `DESIGN.md`。窓はすべて Tauri の WebView。**使うときに作り、全部が隠れて 60 秒たったら破棄する**（4 枚を常に持つと WebView2 の子プロセス 9 個で専有 335MB だった。2026-10-21 実測）。出すときは位置→大きさの順に設定する（画面をまたぐと DPI の調整が先に入るため）。
 
-- WebView2 の起動引数: `--renderer-process-limit=1 --disable-gpu`（描画プロセスを 1 つにまとめ、GPU プロセスを止める。表示中の専有 114MB。見た目は撮影で同じ）
+- WebView2 の起動引数: `--renderer-process-limit=1 --disable-gpu`（描画プロセスを 1 つにまとめ、GPU プロセスを止める。4 枚を常に持つ構成で専有 335→160MB。見た目は撮影で同じ）
 - 窓を作る・出す処理はすべて `ui::defer` でイベントループのキューに積む。WebView2 の窓の生成は完了を入れ子のメッセージループで待つので、ペットのウィンドウプロシージャや WebView2 のコールバックの中で作ると、借用中の状態や再入とぶつかる（設定の窓が真っ白になった 1 回は、コマンドの中で作った版だった）
 - 表示中かどうかは自分で記録する（毎フレームの問い合わせを減らすため。`is_visible()` が直後に古い値を返すかは確かめていない）
 - 最後の窓が閉じても終了しない（`RunEvent::ExitRequested` の終了コード無しを `prevent_exit`）。メニュー・トレイの「終了」は `app.exit(0)` で通る

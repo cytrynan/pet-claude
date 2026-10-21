@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Phase 1 の受入を、いまの HEAD のビルドで一通り測り直す。⚠️ 本物のマウスを動かす（数十秒）。
+# Phase 1 の受入を、いまの HEAD のビルドで一通り測り直す。⚠️ 本物のマウスとキーボードを動かす（数十秒）。
+# ⚠️ 持ち主が PC を使っていない時だけ走らせる。2026-10-21 の初回は、試験用の窓を画面外に置いて外側クリックが
+#    持ち主の Chrome に当たり、前面が通知だったのに文字を送った（直した: 下の SAFE_* と前面の確認）。
 # 使い方: bash scripts/verify/sweep-phase1.sh
 # 出力: .steering/20261021-phase1-behavior/evidence/sweep-<commit>/（steps.txt・pet-log.txt・*.png・memory.txt）
 set -uo pipefail
@@ -30,11 +32,25 @@ px() { awk -v v="$1" -v s="$S" 'BEGIN{printf "%d", v*s}'; }
 CX=$(( (PL+PR)/2 )); BY=$(( PT + (PB-PT)*45/100 ))
 BAR_Y=$(( PB + $(px 18) ))
 step "pet rect=($PL,$PT)-($PR,$PB) scale=$S body=($CX,$BY) bar-center-y=$BAR_Y"
-# 外側クリックは試験用のメモ帳の上だけを押す（K の作業中の窓を押さない）。メニューと重ならない右側に置く
-NX=$(( PR + $(px 320) )); NY=$(( PT - $(px 60) ))
-$W place Notepad $NX $NY $(px 300) $(px 200) >/dev/null
-OX=$(( NX + $(px 150) )); OY=$(( NY + $(px 120) ))
-step "試験用のメモ帳を ($NX,$NY) に置いた。外側クリックは ($OX,$OY)"
+# 外側クリックは試験用のメモ帳の上だけを押す（持ち主の作業中の窓を押さない）。
+# メモ帳は、ペットのいる画面の作業領域の中で、ペットから離れた側の上端に置く。置けなければ止める
+WORK=$(./target/debug/pet-app.exe --probe 2>/dev/null | tr '|' '\n' \
+  | sed -nE 's/.*work=\(([-0-9]+),([-0-9]+)\)-\(([-0-9]+),([-0-9]+)\).*/\1 \2 \3 \4/p' \
+  | awk -v x="$CX" -v y="$BY" '$1<=x && x<$3 && $2<=y && y<$4 {print; exit}')
+read -r WL WT WR WB <<< "$WORK"
+[ -n "${WB:-}" ] || { step "ペットの居る画面の作業領域が分からない。止める"; exit 1; }
+NW=$(px 300); NH=$(px 200)
+if [ $(( PL - WL )) -gt $(( NW + $(px 260) )) ]; then NX=$(( WL + $(px 40) )); else NX=$(( WR - NW - $(px 40) )); fi
+NY=$(( WT + $(px 40) ))
+if [ "$NX" -lt "$WL" ] || [ $(( NX + NW )) -gt "$WR" ] || [ $(( NY + NH )) -gt "$WB" ]; then
+  step "試験用の窓を作業領域に置けない。止める"; exit 1
+fi
+$W place Notepad $NX $NY $NW $NH >/dev/null
+sleep 0.3
+OX=$(( NX + NW/2 )); OY=$(( NY + NH*6/10 ))
+# 押す点が本当にメモ帳かを確かめてから使う
+$W point $OX $OY | grep -q 'root=Notepad' || { step "($OX,$OY) がメモ帳でない。止める"; exit 1; }
+step "試験用のメモ帳を ($NX,$NY) に置いた（作業領域 $WL,$WT-$WR,$WB）。外側クリックは ($OX,$OY)"
 
 step "M0 起動直後のメモリ（UI の窓なし）: $(mem)"
 
@@ -62,10 +78,17 @@ step "B2 バー表示中のメモリ: $(mem)"
 $W click $(( CX - $(px 24) )) $BAR_Y >/dev/null; sleep 1.2
 step "C1 チャットを押した後の前面: $($W fg)"
 $W shot $(( CX - $(px 200) )) $(( PT - $(px 30) )) $(px 400) $(px 220) "$OUT/c1-chat.png" >/dev/null
-powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('sweep{ENTER}')"
+# 文字を送るのは、前面が pet-claude のチャットのときだけ（違う窓に打たない）
+if $W fg | grep -q 'class=Tauri Window title=pet-claude$'; then
+  powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('sweep{ENTER}')"
+else
+  step "C1 前面がチャットでないので文字を送らない"
+fi
 sleep 0.6
 $W shot $(( CX - $(px 200) )) $(( PT - $(px 30) )) $(px 400) $(px 220) "$OUT/c2-chat-submitted.png" >/dev/null
-powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{ESC}')"
+if $W fg | grep -q 'class=Tauri Window title=pet-claude$'; then
+  powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('{ESC}')"
+fi
 sleep 0.8
 step "C2 送信→Esc"
 
@@ -73,7 +96,7 @@ step "C2 送信→Esc"
 $W click $CX $BY >/dev/null; sleep 1.2
 step "D1 バーを出した"
 $W down $CX $BY >/dev/null
-for d in 10 30 50 70; do $W move $(( CX - $(px d) )) $BY >/dev/null; sleep 0.08; done
+for d in 10 30 50 70; do $W move $(( CX - $(px "$d") )) $BY >/dev/null; sleep 0.08; done
 sleep 0.3
 read -r GL GT GR GB < <($W find | sed -E 's/rect=\(([-0-9]+),([-0-9]+)\)-\(([-0-9]+),([-0-9]+)\).*/\1 \2 \3 \4/')
 $W shot $(( GL - $(px 20) )) $(( GT - $(px 20) )) $(( GR - GL + $(px 40) )) $(( GB - GT + $(px 100) )) "$OUT/d1-grabbed.png" >/dev/null

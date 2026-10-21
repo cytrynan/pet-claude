@@ -19,7 +19,7 @@ stale_after: 2027-01-21
 
 ## Phase 1: 行動と素材規約（2026-10-21 実施）
 
-記録 `.steering/20261021-phase1-behavior/`。行動ロジックはテスト先行（テスト 44 本）。UI は DESIGN.md（Apple 風）。実機で行動・バー・チャット入力・メニュー・設定を確認。UI の WebView2 は使うときだけ作る（普段の専有 21MB）。
+記録 `.steering/20261021-phase1-behavior/`。行動ロジックはテスト先行（テスト 44 本）。UI は DESIGN.md（Apple 風）。実機で行動・バー・チャット入力・メニュー・設定を確認。UI の WebView2 は使うときだけ作る（普段の専有 20〜24MB・UI 表示中 115〜147MB）。
 
 
 - `behavior/` の状態機械（待機・散歩・睡眠・つままれ＋Agent 状態の優先順位）を `cargo test` 先行で
