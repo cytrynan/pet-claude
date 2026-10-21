@@ -167,8 +167,10 @@
     if (!ok) checkResult.textContent = "保存できませんでした";
   });
   keyDelete.addEventListener("click", async () => {
-    await invoke("chat_key_delete");
-    showAuth(auth.value, false);
+    // 消せなかったら「保存済み」のまま理由を出す（消えたように見せない）
+    const ok = await invoke("chat_key_delete");
+    showAuth(auth.value, !ok);
+    if (!ok) checkResult.textContent = "削除できませんでした";
   });
   check.addEventListener("click", async () => {
     check.disabled = true;

@@ -164,11 +164,18 @@ fn chat_key_save(key: String) -> bool {
     }
 }
 
+/// 設定画面: API キーを消す。消せたら（もともと無かったも含む）true
 #[tauri::command]
-fn chat_key_delete() {
+fn chat_key_delete() -> bool {
     match cred::delete_key() {
-        Ok(()) => log("chat: API key deleted"),
-        Err(e) => log(format!("chat: API key not deleted: {e}")),
+        Ok(()) => {
+            log("chat: API key deleted");
+            true
+        }
+        Err(e) => {
+            log(format!("chat: API key not deleted: {e}"));
+            false
+        }
     }
 }
 

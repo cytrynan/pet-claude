@@ -465,7 +465,8 @@ pub fn show_chat_failure(reason: &str) {
 
 fn show_chat_result(panel: String, bubble: String, error: bool, hidden_failure: bool) {
     // 吹き出しに全部は出ていない（切り詰めた・チャット欄に回した）なら「続きを見る」
-    let more = hidden_failure || (!error && panel != bubble);
+    // 失敗の理由も、140 字で切れたら全文はチャット欄（2026-10-21 検証係 2 巡目の指摘）
+    let more = hidden_failure || panel != bubble;
     CHAT_LAST.with(|c| *c.borrow_mut() = Some((panel, error)));
     if visible(CHAT) {
         // 開いているチャット欄に出す（吹き出しは重ねない）

@@ -90,12 +90,14 @@
     const value = text.value.trim();
     if (!value || busy) return;
     const reply = await invoke("chat_submit", { text: value });
-    // 断られた（まだ考え中・送れない）時は打った文を残す
+    // 受け付けられたら打った文を消す。断られた（まだ考え中・長すぎる）時は残す。
+    // 待ち中かどうかは Rust 側の renderChat だけで決める（この応答は答えの描き直しより遅く届くことがあり、
+    // ここで busy を立てると待ちのまま固まった。2026-10-21 検証係 2 巡目の指摘）
     if (reply === "考え中…") {
       text.value = "";
-      busy = true;
+    } else if (reply) {
+      text.placeholder = reply;
     }
-    text.placeholder = reply || idle;
     update();
   });
   document.getElementById("new").addEventListener("click", () => {

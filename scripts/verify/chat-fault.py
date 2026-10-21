@@ -170,6 +170,18 @@ log, wd, alive_ = run_case("auth", "auth", mode="slow", wait_for=("test chat: au
 check("確かめるの時間切れ", "auth -> 時間切れで確かめられませんでした" in log and len(fake_pids(wd)) >= 2
       and not alive_before_kill, f"pids={fake_pids(wd)} 止める前に生きていた={alive_before_kill}")
 
+# 子が動いている最中にチャットのスレッドが panic しても、子と孫が止まり、予約が外れて次を送れる
+# （2026-10-21 検証係 2 巡目の指摘。JobGuard と catch_unwind の故障注入）
+log, wd, alive_ = run_case("panic", "send:一|wait:3500|send:二|wait:500", mode="slow",
+                            wait_for=("test chat: never", 1), max_secs=8,
+                            parent_extra={"PET_TEST_CHAT_PANIC": "1500"})
+pids = fake_pids(wd)
+first = pids[:2]
+check("panic でも子が残らず予約が外れる", "chat: worker panicked" in log
+      and log.count("submit -> 考え中…") == 2 and len(pids) >= 2
+      and not [p for p in first if p in alive_before_kill],
+      f"pids={pids} 止める前に生きていた={alive_before_kill}")
+
 # A1・A3・A5 の引数と環境: 続けて送ると --resume、新しいチャットで外れる。親の API キーは渡らない
 log, wd, alive_ = run_case("resume", "send:一通目|wait:1500|send:二通目|wait:1500|new|send:三通目",
                             wait_for=("chat answer in", 3))

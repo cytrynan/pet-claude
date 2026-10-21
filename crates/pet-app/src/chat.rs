@@ -97,7 +97,15 @@ pub fn submit(app: AppHandle, text: String, auth: AuthMode) -> String {
         .name("chat".into())
         .spawn(move || {
             let started = Instant::now();
-            let outcome = run(generation, &text, auth, resume.as_deref());
+            // panic しても finish に失敗を渡す（渡さないと予約が外れず、以後ずっと「考え中」になる。
+            // Job は JobGuard が巻き戻りで閉じるので子も止まる。2026-10-21 検証係 2 巡目の指摘）
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run(generation, &text, auth, resume.as_deref())
+            }))
+            .unwrap_or_else(|_| {
+                log("chat: worker panicked");
+                failed("うまく動きませんでした")
+            });
             if app
                 .run_on_main_thread(move || finish(generation, outcome, started))
                 .is_err()
@@ -233,21 +241,45 @@ struct ChildRun<'a> {
     wanted: &'a dyn Fn() -> bool,
 }
 
+/// 送信ごとの Job Object。落とすと（どの経路で抜けても、panic で巻き戻っても）止める側に知らせてから
+/// ハンドルを閉じる。閉じると中の子と孫も止まる（KILL_ON_JOB_CLOSE）。
+/// 手で閉じる呼び出しを経路ごとに書くと、書き漏らした経路で予約とハンドルが残る（2026-10-21 検証係の指摘）。
+struct JobGuard<'a> {
+    handle: HANDLE,
+    unregister: &'a dyn Fn(),
+}
+
+impl Drop for JobGuard<'_> {
+    fn drop(&mut self) {
+        (self.unregister)();
+        // SAFETY: この値が作ったハンドルを、止める側が触らなくなってから 1 回だけ閉じる
+        let _ = unsafe { CloseHandle(self.handle) };
+    }
+}
+
+impl JobGuard<'_> {
+    /// 中の子と孫を全部止める。
+    fn terminate(&self) {
+        // SAFETY: この値が持つ有効なハンドル
+        let _ = unsafe { TerminateJobObject(self.handle, 1) };
+    }
+}
+
 /// 子プロセスを 1 つ起こし、終わるまで待って終了コードと出力を返す。
 ///
 /// 子は**止めた状態で**起こし（`CREATE_SUSPENDED`）、Job Object に入れてから動かす。動いてから入れると、
 /// 入れるまでの間に起こした孫が Job の外に逃げる（2026-10-21 検証係の指摘）。入れられなければ動かさずに止める。
 /// 止めるときは Job ごと（孫まで）止める。標準入力は別スレッドで書く（子が読まずにパイプが詰まっても、
-/// 時間切れの見張りが止まらないように。同じ指摘）。
+/// 時間切れの見張りが止まらないように。同じ指摘）。補助のスレッドを作れなければ子を止めて失敗にする
+/// （`thread::spawn` は失敗すると panic する。2 巡目の指摘）。
 fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
-    let job = new_kill_on_close_job().map_err(|e| {
-        log(format!("chat: Job Object を作れない: {e}"));
-        Stop::Failed("Claude Code を起こせませんでした")
-    })?;
-    // SAFETY: このスレッドが作ったハンドルを、止める側が触らなくなってから 1 回だけ閉じる
-    let close = |job: HANDLE| {
-        (r.unregister)();
-        let _ = unsafe { CloseHandle(job) };
+    const START_FAILED: Stop = Stop::Failed("Claude Code を起こせませんでした");
+    let job = JobGuard {
+        handle: new_kill_on_close_job().map_err(|e| {
+            log(format!("chat: Job Object を作れない: {e}"));
+            START_FAILED
+        })?,
+        unregister: r.unregister,
     };
     let mut cmd = Command::new(&r.exe);
     cmd.args(&r.args)
@@ -262,58 +294,66 @@ fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .creation_flags((CREATE_NO_WINDOW | CREATE_SUSPENDED).0);
-    let mut child = match cmd.spawn() {
-        Ok(c) => c,
-        Err(e) => {
-            close(job);
-            log(format!("chat: 起動できない: {e}"));
-            return Err(Stop::Failed("Claude Code を起こせませんでした"));
-        }
-    };
+    let mut child = cmd.spawn().map_err(|e| {
+        log(format!("chat: 起動できない: {e}"));
+        START_FAILED
+    })?;
     // 止めた状態のまま、Job に入れて止める側に知らせる。どれかに失敗したら動かさずに止める
     // SAFETY: child のハンドルは child が生きている間有効
     let assigned =
-        unsafe { AssignProcessToJobObject(job, HANDLE(child.as_raw_handle() as *mut _)) };
+        unsafe { AssignProcessToJobObject(job.handle, HANDLE(child.as_raw_handle() as *mut _)) };
     if let Err(e) = assigned {
         log(format!(
             "chat: Job Object に入れられない（起こさずに止める）: {e}"
         ));
         let _ = child.kill();
         let _ = child.wait();
-        close(job);
-        return Err(Stop::Failed("Claude Code を起こせませんでした"));
+        return Err(START_FAILED);
     }
-    if !(r.register)(job.0 as isize) {
-        // SAFETY: 自分の Job。中は止めた状態の子だけ
-        let _ = unsafe { TerminateJobObject(job, 1) };
+    // ここから先は子が Job の中にいるので、どの経路で抜けても job が落ちる時に止まる
+    let stop_child = |child: &mut std::process::Child| {
+        job.terminate();
         let _ = child.wait();
-        close(job);
+    };
+    if !(r.register)(job.handle.0 as isize) {
+        stop_child(&mut child);
         return Err(Stop::Cancelled);
     }
     if let Err(e) = resume_process(child.id()) {
         log(format!("chat: 子を動かせない: {e}"));
-        // SAFETY: 自分の Job
-        let _ = unsafe { TerminateJobObject(job, 1) };
-        let _ = child.wait();
-        close(job);
-        return Err(Stop::Failed("Claude Code を起こせませんでした"));
+        stop_child(&mut child);
+        return Err(START_FAILED);
     }
 
     // 本文は標準入力で渡す（コマンドラインに載せない＝引用符の罠とプロセス一覧からの露出を避ける）
     if let (Some(mut stdin), Some(input)) = (child.stdin.take(), r.input) {
-        std::thread::spawn(move || {
+        let writer = std::thread::Builder::new().spawn(move || {
             // 子が終わる・止められるとパイプが切れて失敗で抜ける
             let _ = stdin.write_all(&input);
         });
+        if let Err(e) = writer {
+            log(format!("chat: 書き込みのスレッドを作れない: {e}"));
+            stop_child(&mut child);
+            return Err(START_FAILED);
+        }
     }
-    let out = child.stdout.take().map(read_capped);
-    let err = child.stderr.take().map(read_capped);
+    let (out, err) = match (
+        child.stdout.take().map(read_capped).transpose(),
+        child.stderr.take().map(read_capped).transpose(),
+    ) {
+        (Ok(out), Ok(err)) => (out, err),
+        _ => {
+            log("chat: 読み取りのスレッドを作れない");
+            stop_child(&mut child);
+            return Err(START_FAILED);
+        }
+    };
 
     let deadline = Instant::now() + r.timeout;
     let stop = loop {
         match child.try_wait() {
             Ok(Some(s)) => {
-                close(job);
+                drop(job);
                 let stdout = out.and_then(|h| h.join().ok()).unwrap_or_default();
                 let stderr = err.and_then(|h| h.join().ok()).unwrap_or_default();
                 return Ok(ChildOutput {
@@ -333,10 +373,7 @@ fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
         }
         std::thread::sleep(POLL);
     };
-    // SAFETY: 自分の Job。孫まで止める
-    let _ = unsafe { TerminateJobObject(job, 1) };
-    let _ = child.wait();
-    close(job);
+    stop_child(&mut child);
     Err(stop)
 }
 
@@ -412,6 +449,7 @@ fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> Cha
             *r = Some((generation, 0));
         }
     };
+    let started = Instant::now();
     let result = run_child(ChildRun {
         exe,
         args: core_chat::child_args(&prompt_file.to_string_lossy(), resume),
@@ -421,7 +459,18 @@ fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> Cha
         timeout: timeout(),
         register: &register,
         unregister: &unregister,
-        wanted: &ours,
+        wanted: &|| {
+            // 試験用: 子が動いている最中（起こしてから PET_TEST_CHAT_PANIC ミリ秒後）にこのスレッドを
+            // panic させ、巻き戻りで子が止まり、予約が外れることを確かめる（catch_unwind と JobGuard の故障注入）
+            let panic_after = test_overrides()
+                .then(|| std::env::var("PET_TEST_CHAT_PANIC").ok())
+                .flatten()
+                .and_then(|ms| ms.parse::<u64>().ok());
+            if panic_after.is_some_and(|ms| started.elapsed() >= Duration::from_millis(ms)) {
+                panic!("PET_TEST_CHAT_PANIC");
+            }
+            ours()
+        },
     });
     match result {
         Ok(ChildOutput {
@@ -479,8 +528,9 @@ fn new_kill_on_close_job() -> windows::core::Result<HANDLE> {
 }
 
 /// 出力を上限まで読む別スレッド（パイプが詰まって子が止まらないように、待つのと並行して読む）。
-fn read_capped(r: impl Read + Send + 'static) -> std::thread::JoinHandle<Vec<u8>> {
-    std::thread::spawn(move || {
+/// スレッドを作れなければ Err（panic させない）。
+fn read_capped(r: impl Read + Send + 'static) -> std::io::Result<std::thread::JoinHandle<Vec<u8>>> {
+    std::thread::Builder::new().spawn(move || {
         let mut buf = Vec::new();
         let mut r = r;
         let _ = r.by_ref().take(MAX_OUTPUT_BYTES).read_to_end(&mut buf);
