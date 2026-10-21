@@ -193,7 +193,11 @@ fn island(label: &str) -> Option<WebviewWindow> {
         // 入力欄からフォーカスが外れたら閉じる
         w.on_window_event(|e| {
             if let WindowEvent::Focused(false) = e {
-                defer(|| hide(CHAT));
+                defer(|| {
+                    // 閉じた理由を残す（前面を取れずに開いた直後に閉じたのか、を見分けるため）
+                    log("chat hidden: focus lost");
+                    hide(CHAT);
+                });
             }
         });
     }
