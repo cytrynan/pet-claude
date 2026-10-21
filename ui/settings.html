@@ -62,9 +62,11 @@
   const tts = document.getElementById("tts");
   const wake = document.getElementById("wake");
   const show = () => { scaleValue.textContent = scale.value + "%"; };
-  const save = () => invoke("settings_set", {
-    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked,
+  // スライダーを動かしている間は描き直すだけ（save: false）、離したら保存する
+  const send = (persist) => invoke("settings_set", {
+    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, save: persist,
   });
+  const save = () => send(true);
   window.reload = () => invoke("settings_get").then((s) => {
     scale.value = Math.round(s.scale * 100);
     tts.checked = s.tts;
@@ -72,7 +74,8 @@
     show();
   });
   window.reload();
-  scale.addEventListener("input", () => { show(); save(); });
+  scale.addEventListener("input", () => { show(); send(false); });
+  scale.addEventListener("change", save);
   tts.addEventListener("change", save);
   wake.addEventListener("change", save);
 </script>

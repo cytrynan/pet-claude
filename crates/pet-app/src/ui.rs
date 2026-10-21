@@ -6,8 +6,9 @@
 //! - **窓は使うときに作り、全部が隠れて `IDLE_CLOSE` たったら破棄する**。WebView2 は 1 枚でもあると
 //!   ブラウザ本体などのプロセスが常駐し、4 枚を常に持つと専有メモリが 335MB になった（2026-10-21 実測）。
 //!   普段はペット本体だけにする
-//! - 窓を作る・出す処理は必ず `defer` でイベントループに回す。Windows の Tauri では、同期コマンド
-//!   （WebView2 のコールバック）の中で WebView 窓を作ると初期化が止まり、中身が真っ白になる（実測）
+//! - 窓を作る・出す処理は必ず `defer`（別スレッド経由でイベントループのキューに積む）で後回しにする。
+//!   同期コマンド（WebView2 のコールバック）やペットのウィンドウプロシージャの中で WebView 窓を作ると、
+//!   WebView2 の生成を待つ入れ子のメッセージループが走り、借用中の状態や再入とぶつかる
 //! - すべてメインスレッドで動く。ペット側が `popups_visible()` を毎フレーム読んで
 //!   「開いている間は散歩も睡眠もしない」を決める
 
@@ -72,11 +73,17 @@ fn browser_args() -> String {
     std::env::var("PET_WV_ARGS").unwrap_or_else(|_| DEFAULT_BROWSER_ARGS.to_string())
 }
 
-/// イベントループに回して後で実行する。ウィンドウプロシージャの借用中・WebView2 のコールバック中に
-/// 呼ばれる処理は必ずこれを通す。
+/// イベントループに回して後で実行する。ウィンドウプロシージャの借用中・WebView2 のコールバック中・
+/// マウスフックの中で呼ばれる処理は必ずこれを通す。
+///
+/// `AppHandle::run_on_main_thread` は**メインスレッドから呼ぶとその場で同期実行する**
+/// （tauri-runtime-wry 2.12.2 `send_user_message`: 呼び出し元がメインスレッドならキューに積まない）。
+/// 後回しにするには別スレッドから呼んでイベントループのキューに積む（2026-10-21 検証係の指摘で判明）。
 pub fn defer(f: impl FnOnce() + Send + 'static) {
-    if let Some(app) = app() {
-        let _ = app.run_on_main_thread(f);
+    if let Some(handle) = app() {
+        std::thread::spawn(move || {
+            let _ = handle.run_on_main_thread(f);
+        });
     }
 }
 
@@ -277,9 +284,14 @@ pub fn show_menu(at: Point, pet: Rect, dpi: u32) {
             "window.setBarShown && window.setBarShown({bar_shown})"
         ));
         place_and_show(MENU, &w, rect, false);
+        // 出ているバー・チャットも内側に入れる（入れないと、チャットの中のクリックで全部閉じる）
         let mut inside = vec![pet, island_rect(rect, dpi)];
-        if bar_shown && let Some(r) = window(BAR).and_then(|b| window_rect(&b)) {
-            inside.push(island_rect(r, dpi));
+        for label in [BAR, CHAT] {
+            if visible(label)
+                && let Some(r) = window(label).and_then(|w| window_rect(&w))
+            {
+                inside.push(island_rect(r, dpi));
+            }
         }
         set_inside(inside);
         log("menu shown");
@@ -320,7 +332,7 @@ fn schedule_close() {
     let since = Instant::now();
     HIDDEN_SINCE.with(|h| h.set(Some(since)));
     // AppHandle はメインスレッドの thread_local にあるので、待つスレッドへは複製を持たせる
-    // （別スレッドで defer を呼ぶと thread_local が空で何もしない＝2026-10-21 に一度踏んだ）
+    // （別スレッドから defer を呼ぶと thread_local が空で何もしない＝2026-10-21 に一度踏んだ）
     let Some(handle) = app() else { return };
     std::thread::spawn(move || {
         std::thread::sleep(IDLE_CLOSE);

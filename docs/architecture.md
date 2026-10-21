@@ -60,8 +60,8 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 見た目の正本は `DESIGN.md`。窓はすべて Tauri の WebView。**使うときに作り、全部が隠れて 60 秒たったら破棄する**（4 枚を常に持つと WebView2 の子プロセス 9 個で専有 335MB だった。2026-10-21 実測）。出すときは位置→大きさの順に設定する（画面をまたぐと DPI の調整が先に入るため）。
 
 - WebView2 の起動引数: `--renderer-process-limit=1 --disable-gpu`（描画プロセスを 1 つにまとめ、GPU プロセスを止める。表示中の専有 114MB。見た目は撮影で同じ）
-- 窓を作る・出す処理はすべて `ui::defer` でイベントループに回す。同期コマンド（WebView2 のコールバック）の中で WebView 窓を作ると初期化が止まり、中身が真っ白になる
-- 表示中かどうかは自分で記録する（Tauri の `hide()` は後から効くので、直後の `is_visible()` はまだ true）
+- 窓を作る・出す処理はすべて `ui::defer` でイベントループのキューに積む。WebView2 の窓の生成は完了を入れ子のメッセージループで待つので、ペットのウィンドウプロシージャや WebView2 のコールバックの中で作ると、借用中の状態や再入とぶつかる（設定の窓が真っ白になった 1 回は、コマンドの中で作った版だった）
+- 表示中かどうかは自分で記録する（毎フレームの問い合わせを減らすため。`is_visible()` が直後に古い値を返すかは確かめていない）
 - 最後の窓が閉じても終了しない（`RunEvent::ExitRequested` の終了コード無しを `prevent_exit`）。メニュー・トレイの「終了」は `app.exit(0)` で通る
 
 | 窓 | 出し方 | フォーカス | 閉じ方 |
@@ -74,7 +74,8 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 - フォーカスを取らない窓は Esc もフォーカスの喪失も来ないので、**開いている間だけ低レベルのマウスフック（`WH_MOUSE_LL`）を入れ**、島とペットの外でボタンが押されたら閉じる。閉じる処理はフックの中でせず、イベントループに回す
 - 窓は島より四方 12px 大きく取り、その中に影を描く（透過窓の外に影は出せない）
 - ペットは毎 tick `ui::popups_visible()` を読み、出ている間は `Behavior::set_held(true)`（散歩も睡眠もしない）
-- UI からの操作は Tauri のコマンド（`ui_action`・`chat_submit`・`settings_get`・`settings_set`）。コマンドはメインスレッドで動く。ペットの状態に触る処理は、ウィンドウプロシージャの借用中なら `ui::defer` でイベントループに回す
+- UI からの操作は Tauri のコマンド（`ui_action`・`chat_submit`・`settings_get`・`settings_set`）。コマンドはメインスレッドで動く
+- **後回しは `ui::defer`（別スレッドから `run_on_main_thread`）**。`run_on_main_thread` はメインスレッドから呼ぶと**その場で同期実行される**（tauri-runtime-wry 2.12.2 の `send_user_message`）ので、メインスレッドから直接呼んでも後回しにならない。窓の生成・外側クリックの処理・借用中のペットへの操作はすべて `ui::defer` を通す（2026-10-21 検証係の指摘で判明）
 
 ## 4. 行動（Phase 1・`pet-core::behavior`）
 
@@ -83,9 +84,8 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 ```rust
 pub enum AgentEvent {
     Prompt { session: String },
-    ToolStart { session: String, tool: String },
+    ToolStart { session: String },
     NeedsInput { session: String },
-    Permission { session: String, id: String, summary: String },
     Done { session: String },
     Error { session: String },
 }

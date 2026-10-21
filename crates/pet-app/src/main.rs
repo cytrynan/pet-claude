@@ -71,8 +71,8 @@ fn settings_get() -> serde_json::Value {
 }
 
 #[tauri::command]
-fn settings_set(scale: f32, tts: bool, wake: bool) {
-    pet_window::set_settings(scale, tts, wake);
+fn settings_set(scale: f32, tts: bool, wake: bool, save: bool) {
+    pet_window::set_settings(scale, tts, wake, save);
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {

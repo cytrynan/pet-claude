@@ -340,6 +340,9 @@ impl Pet {
             ));
             self.behavior.on_user(UserEvent::Click, now_ms(self.epoch));
             ui::toggle_bar(self.rect, self.dpi);
+            if std::env::var_os("PET_TRACE").is_some() {
+                log("toggle_bar returned (bar is shown after this line if defer is async)");
+            }
         }
     }
 
@@ -648,8 +651,9 @@ pub fn settings() -> serde_json::Value {
     .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false }))
 }
 
-/// 設定画面からの変更。大きさは足元を基準に描き直す。
-pub fn set_settings(scale: f32, tts: bool, wake: bool) {
+/// 設定画面からの変更。大きさは足元を基準に描き直す。`save` が true のときだけ state.json に書く
+/// （スライダーを動かしている間は描き直すだけにして、離したときに 1 回保存する）。
+pub fn set_settings(scale: f32, tts: bool, wake: bool, save: bool) {
     with_pet(move |pet| {
         pet.state.tts = tts;
         pet.state.wake = wake;
@@ -666,7 +670,9 @@ pub fn set_settings(scale: f32, tts: bool, wake: bool) {
             pet.place(rect);
             log(format!("scale -> {scale:.2} size {w}x{h}"));
         }
-        pet.state.save();
+        if save {
+            pet.state.save();
+        }
     });
 }
 

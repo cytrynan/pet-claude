@@ -30,12 +30,14 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_LEFTDOWN, MOUSEEVENTF_LEFTUP,
-    MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP, MOUSEINPUT, SendInput,
+    INPUT, INPUT_0, INPUT_MOUSE, MOUSE_EVENT_FLAGS, MOUSEEVENTF_ABSOLUTE, MOUSEEVENTF_LEFTDOWN,
+    MOUSEEVENTF_LEFTUP, MOUSEEVENTF_MOVE, MOUSEEVENTF_RIGHTDOWN, MOUSEEVENTF_RIGHTUP,
+    MOUSEEVENTF_VIRTUALDESK, MOUSEINPUT, SendInput,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW, GetForegroundWindow,
-    GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, PostMessageW, SWP_NOZORDER,
+    GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, PostMessageW,
+    SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOZORDER,
     SetCursorPos, SetForegroundWindow, SetWindowPos, WM_DISPLAYCHANGE, WindowFromPoint,
 };
 use windows::core::HSTRING;
@@ -80,6 +82,37 @@ fn mouse(flags: MOUSE_EVENT_FLAGS) {
     };
     // SAFETY: 1 件の入力を送る
     unsafe { SendInput(&[input], size_of::<INPUT>() as i32) };
+}
+
+/// 移動・押す・離すを 1 回の SendInput で送る（間に本物のマウスの入力が割り込まない）。
+/// 座標は仮想デスクトップ全体を 0..65535 に正規化した絶対座標。
+fn click_at(x: i32, y: i32, down: MOUSE_EVENT_FLAGS, up: MOUSE_EVENT_FLAGS) {
+    // SAFETY: 読み取りのみ
+    let (vx, vy, vw, vh) = unsafe {
+        (
+            GetSystemMetrics(SM_XVIRTUALSCREEN),
+            GetSystemMetrics(SM_YVIRTUALSCREEN),
+            GetSystemMetrics(SM_CXVIRTUALSCREEN),
+            GetSystemMetrics(SM_CYVIRTUALSCREEN),
+        )
+    };
+    let nx = (i64::from(x - vx) * 65535 / i64::from((vw - 1).max(1))) as i32;
+    let ny = (i64::from(y - vy) * 65535 / i64::from((vh - 1).max(1))) as i32;
+    let abs = MOUSEEVENTF_ABSOLUTE | MOUSEEVENTF_VIRTUALDESK;
+    let ev = |flags: MOUSE_EVENT_FLAGS| INPUT {
+        r#type: INPUT_MOUSE,
+        Anonymous: INPUT_0 {
+            mi: MOUSEINPUT {
+                dx: nx,
+                dy: ny,
+                dwFlags: flags | abs,
+                ..Default::default()
+            },
+        },
+    };
+    let inputs = [ev(MOUSEEVENTF_MOVE), ev(down), ev(up)];
+    // SAFETY: 3 件の入力をまとめて送る
+    unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
 }
 
 fn move_to(x: i32, y: i32) {
@@ -179,19 +212,21 @@ fn main() {
             println!("point class={} root={}", class_of(h), class_of(root));
         }
         Some("click") => {
-            move_to(n(&args, 1), n(&args, 2));
-            sleep(Duration::from_millis(80));
-            mouse(MOUSEEVENTF_LEFTDOWN);
-            sleep(Duration::from_millis(60));
-            mouse(MOUSEEVENTF_LEFTUP);
+            click_at(
+                n(&args, 1),
+                n(&args, 2),
+                MOUSEEVENTF_LEFTDOWN,
+                MOUSEEVENTF_LEFTUP,
+            );
             println!("clicked");
         }
         Some("rclick") => {
-            move_to(n(&args, 1), n(&args, 2));
-            sleep(Duration::from_millis(80));
-            mouse(MOUSEEVENTF_RIGHTDOWN);
-            sleep(Duration::from_millis(60));
-            mouse(MOUSEEVENTF_RIGHTUP);
+            click_at(
+                n(&args, 1),
+                n(&args, 2),
+                MOUSEEVENTF_RIGHTDOWN,
+                MOUSEEVENTF_RIGHTUP,
+            );
             println!("right-clicked");
         }
         Some("drag") => {
