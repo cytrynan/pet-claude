@@ -1,15 +1,16 @@
 //! `pet_core::chat` の受け入れテスト（テスト先行）。
 //!
-//! 原本: `.steering/20261021-phase3-chat/core-requirements.md` の識別子契約と 1〜9 節。公開 API だけを使う。
+//! 原本: `.steering/20261021-phase3-chat/core-requirements.md` の識別子契約と 1〜9 節・追補・追補 2。公開 API だけを使う。
 //! 要求書で決まっていない点（questions.md の Q1〜）に依存する入力は避けている。
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use pet_core::chat::{
-    AuthMode, BUBBLE_MAX_CHARS, CREDENTIAL_TARGET, ChatError, ChatOutcome, MODEL, PANEL_MAX_CHARS,
-    TIMEOUT_SECS, auth_status_label, bubble_text, child_args, child_env, find_claude,
-    is_session_id, panel_text, parse_output,
+    AuthMode, BUBBLE_HIDDEN, BUBBLE_MAX_CHARS, CREDENTIAL_TARGET, ChatError, ChatOutcome,
+    FAILURE_MAX_CHARS, MAX_INPUT_CHARS, MODEL, PANEL_MAX_CHARS, TIMEOUT_SECS, auth_status_label,
+    bubble_text, child_args, child_env, find_claude, input_text, is_session_id, mask_secrets,
+    panel_text, parse_output,
 };
 use serde_json::{Value, json};
 
@@ -83,6 +84,16 @@ fn constants_have_contract_values() {
     assert_eq!(BUBBLE_MAX_CHARS, 140);
     assert_eq!(PANEL_MAX_CHARS, 4000);
     assert_eq!(CREDENTIAL_TARGET, "pet-claude/anthropic-api-key");
+}
+
+// 要件 追補 2 識別子契約: 足した定数の値（BUBBLE_HIDDEN は §6 の文と同じ）
+#[test]
+fn addendum2_constants_have_contract_values() {
+    assert_eq!(MAX_INPUT_CHARS, 2000);
+    assert_eq!(FAILURE_MAX_CHARS, 200);
+    assert_eq!(BUBBLE_HIDDEN, "（答えはチャット欄に出しました）");
+    assert_eq!(BUBBLE_HIDDEN, MOVED_TO_PANEL);
+    assert_eq!(bubble_text("`x`"), BUBBLE_HIDDEN);
 }
 
 // ---------------------------------------------------------------------------
@@ -501,17 +512,18 @@ fn parse_output_exit_1_is_error_json() {
     );
 }
 
-// 要件 §5: is_error の reason は bubble_text を通す（改行が消え、140 字以内）
+// 要件 §5 追補 2 D: is_error の reason は bubble_text でなく 1 行の失敗の文（改行が消え、200 字で切る）
 #[test]
-fn parse_output_is_error_reason_goes_through_bubble_text() {
+fn parse_output_is_error_reason_is_one_line_of_200() {
     let long = format!("Invalid API key\n{}", cycle("エラー。", 300));
     let stdout = out_bytes(&json!({"type": "result", "is_error": true, "result": long}));
     match parse_output(Some(1), &stdout, b"") {
         ChatOutcome::Failed { reason, session_id } => {
             assert_eq!(session_id, None);
-            assert_eq!(reason, bubble_text(&long));
-            assert!(reason.starts_with("Invalid API key エラー。"));
-            assert_bubble_invariant(&reason);
+            let want = format!("Invalid API key {}…", cycle("エラー。", 183));
+            assert_eq!(reason, want);
+            assert_eq!(reason.chars().count(), FAILURE_MAX_CHARS);
+            assert!(!reason.contains('\n'));
         }
         other => panic!("Failed のはず: {other:?}"),
     }
@@ -590,17 +602,21 @@ fn parse_output_not_json_uses_first_nonblank_stderr_line() {
     );
 }
 
-// 要件 §5: 標準エラーの行も bubble_text を通す（パスを含めば吹き出しに出さない）
+// 要件 §5 追補 2 D: 標準エラーの理由はパスを残す（bubble_text で置き換えない。吹き出しで隠すのはアプリ側）
 #[test]
-fn parse_output_stderr_line_goes_through_bubble_text() {
+fn parse_output_stderr_reason_keeps_path() {
     let stderr = br"Error: cannot open C:\Users\K\secret.txt";
     assert_eq!(
         parse_output(Some(1), b"", stderr),
         ChatOutcome::Failed {
-            reason: st(MOVED_TO_PANEL),
+            reason: st(r"Error: cannot open C:\Users\K\secret.txt"),
             session_id: None
         }
     );
+    // 吹き出しに出すときに bubble_text を通せば隠れる
+    if let ChatOutcome::Failed { reason, .. } = parse_output(Some(1), b"", stderr) {
+        assert_eq!(bubble_text(&reason), BUBBLE_HIDDEN);
+    }
 }
 
 // 要件 §5: 不正な UTF-8 の標準エラーは置き換えて読む
@@ -974,12 +990,13 @@ fn panel_text_keeps_urls_and_code() {
 // 要件 §7: 4000 字はそのまま、4001 字は 3999 字＋…（ちょうど 4000 字）
 #[test]
 fn panel_text_4000_4001_boundary() {
-    let s4000 = "x".repeat(4000);
+    // 追補 2 C: ASCII 英数字の長い並びは伏せられるので、境界は「x y 」の繰り返しで見る
+    let s4000 = cycle("x y ", 3999) + "z";
     assert_eq!(panel_text(&s4000), s4000);
 
-    let s4001 = "x".repeat(4001);
+    let s4001 = cycle("x y ", 4001);
     let got = panel_text(&s4001);
-    assert_eq!(got, format!("{}…", "x".repeat(3999)));
+    assert_eq!(got, format!("{}…", cycle("x y ", 3999)));
     assert_eq!(got.chars().count(), PANEL_MAX_CHARS);
 
     let jp = "あ".repeat(4001);
@@ -991,7 +1008,7 @@ fn panel_text_4000_4001_boundary() {
 // 要件 §7: 前後の空白は数える前に落とす（空白込みで 4000 字を超えても中身が 4000 字なら切らない）
 #[test]
 fn panel_text_trims_before_counting() {
-    let body = "x".repeat(4000);
+    let body = "あ".repeat(4000);
     let padded = format!("\n\n   {body}  \r\n");
     assert_eq!(panel_text(&padded), body);
 }
@@ -1265,4 +1282,288 @@ fn auth_status_unreadable() {
     );
     let got = auth_status_label(br#"{"email":"someone@example.com","orgName":"Example Org"}"#);
     assert_eq!(got, "確かめられませんでした");
+}
+
+// ---------------------------------------------------------------------------
+// 追補 2 B. mask_secrets
+// ---------------------------------------------------------------------------
+
+const DOTS: &str = "••••";
+
+// 要件 追補 2 B: sk- で始まる語は sk- から英数字・_・- が続く限りを •••• に。後ろの文字は残す
+#[test]
+fn mask_secrets_sk_word_range() {
+    assert_eq!(mask_secrets("鍵は sk-ant-abc123 です"), "鍵は •••• です");
+    assert_eq!(mask_secrets("sk-abc、次へ"), "••••、次へ");
+    assert_eq!(mask_secrets("sk-abc。"), "••••。");
+    assert_eq!(mask_secrets("sk-abc日本語"), "••••日本語");
+    assert_eq!(mask_secrets("(sk-a_b-c) x"), "(••••) x");
+    assert_eq!(mask_secrets("sk-ant.api"), "••••.api");
+    assert_eq!(mask_secrets("key=sk-1/2"), "key=••••/2");
+}
+
+// 要件 追補 2 B: sk- は大文字小文字を無視
+#[test]
+fn mask_secrets_sk_case_insensitive() {
+    assert_eq!(mask_secrets("SK-ABC def"), "•••• def");
+    assert_eq!(mask_secrets("Sk-x"), DOTS);
+    assert_eq!(mask_secrets("鍵 sK-Ant-9"), "鍵 ••••");
+}
+
+// 要件 追補 2 B: sk- の直前が ASCII 英数字なら伏せない（ask-・RISK-・1sk-）
+#[test]
+fn mask_secrets_sk_inside_word_kept() {
+    for s in ["ask-abc", "task-list", "RISK-FREE", "a1sk-b", "mask-off で"] {
+        assert_eq!(mask_secrets(s), s, "{s:?}");
+    }
+    // 直前が日本語（ASCII 英数字でない）なら伏せる
+    assert_eq!(mask_secrets("日本語sk-abc"), "日本語••••");
+}
+
+// 要件 追補 2 B: 32 字以上の並びは並び全体を 1 つの ••••。31 字は残す
+#[test]
+fn mask_secrets_long_run_boundary() {
+    let t31 = cycle("a_b-", 31);
+    let t32 = cycle("a_b-", 32);
+    let t80 = cycle("0123456789abcdefXYZ", 80);
+    assert_eq!(
+        mask_secrets(&format!("id: {t31} end")),
+        format!("id: {t31} end")
+    );
+    assert_eq!(mask_secrets(&format!("id: {t32} end")), "id: •••• end");
+    assert_eq!(mask_secrets(&t80), DOTS);
+    assert_eq!(mask_secrets(&format!("x{t80}。")), "••••。");
+}
+
+// 要件 追補 2 B: 複数の秘密はそれぞれ伏せる
+#[test]
+fn mask_secrets_multiple() {
+    assert_eq!(mask_secrets("a sk-1 b SK-2 c"), "a •••• b •••• c");
+    let hex = cycle("0123456789abcdef", 40);
+    assert_eq!(
+        mask_secrets(&format!("鍵 sk-ant-xyz と {hex} と {hex}")),
+        "鍵 •••• と •••• と ••••"
+    );
+    // sk- の語が 32 字以上の並びでもあるときは 1 つの ••••
+    let long_key = format!("sk-ant-{}", cycle("a1B2c3", 40));
+    assert_eq!(mask_secrets(&format!("鍵 {long_key} です")), "鍵 •••• です");
+}
+
+// 要件 追補 2 B: 改行は並びを切る（改行をまたいで 32 字と数えない）・改行はそのまま
+#[test]
+fn mask_secrets_does_not_cross_newlines() {
+    let a = cycle("abcd", 20);
+    let b = cycle("efgh", 20);
+    let s = format!("{a}\n{b}");
+    assert_eq!(mask_secrets(&s), s);
+    assert_eq!(mask_secrets("sk-abc\ndef"), "••••\ndef");
+    assert_eq!(mask_secrets("x\r\nsk-1\r\ny"), "x\r\n••••\r\ny");
+}
+
+// 要件 追補 2 B: 秘密が無ければ入力と同じ（URL・パス・日本語・改行・長い日本語・空文字）
+#[test]
+fn mask_secrets_identity_without_secrets() {
+    let jp = "今日はとても良い天気なので散歩に行きましょうそれから買い物もしてから帰りましょうね";
+    for s in [
+        "",
+        "こんにちは！\n今日もがんばろう 🐉",
+        "see https://example.com/path?q=1 and C:\\Users\\K\\a.txt",
+        "`cargo test` を ~/repo で",
+        "比率 1:2、A/B テスト 50%",
+        jp,
+        "  前後の空白\t\r\n",
+    ] {
+        assert_eq!(mask_secrets(s), s, "{s:?}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 追補 2 C. panel_text は最初に伏せる
+// ---------------------------------------------------------------------------
+
+// 要件 追補 2 C: チャット欄にも秘密は出さない（URL・パス・改行は残る）
+#[test]
+fn panel_text_masks_secrets() {
+    assert_eq!(
+        panel_text("鍵は sk-ant-abc123 です\r\nhttps://example.com を見て"),
+        "鍵は •••• です\nhttps://example.com を見て"
+    );
+    let hex = cycle("0123456789abcdef", 40);
+    assert_eq!(panel_text(&format!("  {hex}\n")), DOTS);
+}
+
+// 要件 追補 2 C: 伏せてから 4000 字で切る（切ってから伏せると鍵の先頭が残る）
+#[test]
+fn panel_text_masks_before_truncating() {
+    let key = format!("sk-ant-{}", cycle("a1B2c3", 33));
+    // 3990 字＋空白＋40 字の鍵 = 4031 字。先に伏せれば 3995 字で切らない
+    let s = format!("{} {key}", "あ".repeat(3990));
+    assert_eq!(panel_text(&s), format!("{} ••••", "あ".repeat(3990)));
+    // 並び（sk- なし）でも同じ
+    let hex = cycle("0123456789abcdef", 40);
+    let s = format!("{} {hex}", "あ".repeat(3990));
+    assert_eq!(panel_text(&s), format!("{} ••••", "あ".repeat(3990)));
+}
+
+// ---------------------------------------------------------------------------
+// 追補 2 D. parse_output の失敗の理由
+// ---------------------------------------------------------------------------
+
+// 要件 追補 2 D: is_error の理由は秘密を伏せ、パスは残す
+#[test]
+fn parse_output_failure_reason_masks_secret_keeps_path() {
+    let stdout = out_bytes(&json!({
+        "type": "result",
+        "is_error": true,
+        "result": "Invalid API key sk-ant-abc123XYZ in C:\\Users\\K\\.env",
+        "session_id": SID
+    }));
+    assert_eq!(
+        parse_output(Some(1), &stdout, b""),
+        ChatOutcome::Failed {
+            reason: st("Invalid API key •••• in C:\\Users\\K\\.env"),
+            session_id: Some(st(SID))
+        }
+    );
+}
+
+// 要件 追補 2 D: 標準エラーの理由も秘密を伏せる（URL は残る）
+#[test]
+fn parse_output_stderr_reason_masks_secret() {
+    let hex = cycle("0123456789abcdef", 40);
+    let stderr = format!("\n\nerror: token {hex} rejected by https://api.example.com\nnext\n");
+    assert_eq!(
+        parse_output(Some(1), b"not json", stderr.as_bytes()),
+        ChatOutcome::Failed {
+            reason: st("error: token •••• rejected by https://api.example.com"),
+            session_id: None
+        }
+    );
+}
+
+// 要件 追補 2 D: 失敗の文は 200 字ちょうどならそのまま、201 字は 199 字＋…
+#[test]
+fn parse_output_failure_reason_200_201_boundary() {
+    for (n, want) in [
+        (200, cycle("あい。", 200)),
+        (201, format!("{}…", cycle("あい。", 199))),
+    ] {
+        let text = cycle("あい。", n);
+        let stdout = out_bytes(&json!({"type": "result", "is_error": true, "result": text}));
+        assert_eq!(
+            parse_output(Some(1), &stdout, b""),
+            ChatOutcome::Failed {
+                reason: want.clone(),
+                session_id: None
+            },
+            "is_error {n} 字"
+        );
+        assert_eq!(
+            parse_output(Some(1), b"", text.as_bytes()),
+            ChatOutcome::Failed {
+                reason: want,
+                session_id: None
+            },
+            "stderr {n} 字"
+        );
+    }
+}
+
+// 要件 追補 2 D: 伏せてから 200 字で切る（境界をまたぐ鍵の先頭を残さない）
+#[test]
+fn parse_output_failure_reason_masks_before_truncating() {
+    let key = format!("sk-ant-{}", cycle("a1B2c3", 33));
+    // 195 字＋空白＋40 字の鍵。先に伏せれば 200 字ちょうどで切らない
+    let text = format!("{} {key}", cycle("あい。", 195));
+    let want = format!("{} ••••", cycle("あい。", 195));
+    let stdout = out_bytes(&json!({"type": "result", "is_error": true, "result": text}));
+    assert_eq!(
+        parse_output(Some(1), &stdout, b""),
+        ChatOutcome::Failed {
+            reason: want.clone(),
+            session_id: None
+        }
+    );
+    assert_eq!(
+        parse_output(None, b"", text.as_bytes()),
+        ChatOutcome::Failed {
+            reason: want,
+            session_id: None
+        }
+    );
+}
+
+// 要件 追補 2 D: 失敗の理由は 140 字で切らない・bubble_text の置き換え文にならない
+#[test]
+fn parse_output_failure_reason_not_bubble_text() {
+    let text = format!("{} `code` www.example.com", cycle("あい。", 150));
+    let stdout = out_bytes(&json!({"type": "result", "is_error": true, "result": text}));
+    match parse_output(Some(1), &stdout, b"") {
+        ChatOutcome::Failed { reason, .. } => {
+            assert_eq!(reason, text);
+            assert_ne!(reason, BUBBLE_HIDDEN);
+        }
+        other => panic!("Failed のはず: {other:?}"),
+    }
+}
+
+// 要件 追補 2 D: 成功の答え（Answer.text）は従来どおり生の文字列（伏せない）
+#[test]
+fn parse_output_answer_text_not_masked() {
+    let stdout = out_bytes(&json!({"type": "result", "result": "鍵は sk-ant-abc です"}));
+    assert_eq!(
+        parse_output(Some(0), &stdout, b""),
+        ChatOutcome::Answer {
+            text: st("鍵は sk-ant-abc です"),
+            session_id: None
+        }
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 追補 2 E. input_text
+// ---------------------------------------------------------------------------
+
+// 要件 追補 2 E: 前後の空白を落とし、内部の改行は残す
+#[test]
+fn input_text_trims_edges_keeps_inner() {
+    assert_eq!(input_text("  こんにちは \n"), Some(st("こんにちは")));
+    assert_eq!(
+        input_text("\r\n一行目\n\n二行目\t"),
+        Some(st("一行目\n\n二行目"))
+    );
+    assert_eq!(input_text("a  b"), Some(st("a  b")));
+}
+
+// 要件 追補 2 E: 空・空白だけは None
+#[test]
+fn input_text_empty_is_none() {
+    for s in ["", " ", "\n\r\n\t ", "   \n   "] {
+        assert_eq!(input_text(s), None, "{s:?}");
+    }
+}
+
+// 要件 追補 2 E: 2000 字はそのまま、2001 字は切り詰めずに None（字数は chars().count()）
+#[test]
+fn input_text_2000_2001_boundary() {
+    let s2000 = "あ".repeat(2000);
+    assert_eq!(input_text(&s2000), Some(s2000.clone()));
+    assert_eq!(input_text(&"あ".repeat(2001)), None);
+    assert_eq!(input_text(&"x".repeat(2001)), None);
+    // 6000 バイトだが 2000 字なので通る
+    assert_eq!(s2000.len(), 6000);
+}
+
+// 要件 追補 2 E: 前後の空白は数える前に落とす（questions.md Q12）
+#[test]
+fn input_text_trims_before_counting() {
+    let body = "あ".repeat(2000);
+    assert_eq!(input_text(&format!("  \n{body}\n  ")), Some(body));
+}
+
+// 要件 追補 2 E: 秘密や URL を含んでも本文はそのまま（伏せるのは表示の時）
+#[test]
+fn input_text_does_not_mask() {
+    let s = "この鍵 sk-ant-abc は https://example.com で使う";
+    assert_eq!(input_text(s), Some(st(s)));
 }

@@ -88,7 +88,7 @@ fn switch_pet_for_tests(app: tauri::AppHandle) {
 
 /// 試験用（`switch_pet_for_tests` と同じ条件）: `PET_TEST_CHAT` の手順を 2 秒後から順に行う。
 /// 手順は `|` で区切り、`send:<文>`（チャット欄の送信と同じ関数）・`new`（新しいチャット）・`wait:<ミリ秒>`・
-/// `ui:<操作>`（バー・吹き出しのボタンと同じ `ui::action`）。
+/// `ui:<操作>`（バー・吹き出しのボタンと同じ `ui::action`）・`auth`（設定画面の「確かめる」と同じ関数）。
 /// 本物のマウスとキーボードを使わずに、チャットの経路（時間切れ・止める・続き）を確かめるため。
 fn chat_for_tests(app: tauri::AppHandle) {
     if !cfg!(debug_assertions) || std::env::var_os("PET_CLAUDE_DATA_DIR").is_none() {
@@ -111,6 +111,10 @@ fn chat_for_tests(app: tauri::AppHandle) {
                 });
             } else if step == "new" {
                 let _ = app.run_on_main_thread(ui::new_chat);
+            } else if step == "auth" {
+                // 設定画面の「確かめる」と同じ関数（このスレッドで待つ）
+                let label = chat::auth_status(pet_core::chat::AuthMode::Subscription);
+                log(format!("test chat: auth -> {label}"));
             } else if let Some(action) = step.strip_prefix("ui:") {
                 // ボタンと同じ関数（例 `ui:chat:more`＝吹き出しの「続きを見る」）。撮影でマウスを使わないため
                 // defer はメインスレッドの thread_local を読むので、メインスレッドから呼ぶ

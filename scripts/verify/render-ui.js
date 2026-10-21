@@ -19,6 +19,7 @@ const cases = [
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン" }], chatAuth: "api_key", hasApiKey: true } } },
   { name: "chat-answer", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer, error: false, busy: false } } },
   { name: "chat-busy", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
+  { name: "chat-first-wait", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
   { name: "chat-error", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
   { name: "bubble-answer", page: "bubble.html", size: [324, 44 + 7 * 20 + 34 + 24],
     state: { bubble_state: { mode: "answer", text: bubbleText, more: true, error: false, lines: 7 } } },

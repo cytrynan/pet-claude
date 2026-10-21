@@ -27,11 +27,20 @@ pub const PANEL_MAX_CHARS: usize = 4000;
 /// API キーを入れておく資格情報ストアの名前。
 pub const CREDENTIAL_TARGET: &str = "pet-claude/anthropic-api-key";
 
+/// 送る本文の最大文字数（前後の空白を落とした後に数える）。
+pub const MAX_INPUT_CHARS: usize = 2000;
+
+/// 失敗の理由（1 行）の最大文字数。吹き出しより長く取り、パスなどもチャット欄では見えるようにする。
+pub const FAILURE_MAX_CHARS: usize = 200;
+
 /// 吹き出しの文が空だったときに出す文。
 const EMPTY_TEXT: &str = "（答えが空でした）";
 
 /// 吹き出しに出せない文の代わりに出す文（中身はチャット欄で見られる）。
-const MOVED_TO_PANEL: &str = "（答えはチャット欄に出しました）";
+pub const BUBBLE_HIDDEN: &str = "（答えはチャット欄に出しました）";
+
+/// 秘密らしい文字列を伏せるときの置き換え。
+const MASK: &str = "••••";
 
 /// 秘密らしい並びと見なす、英数字・`_`・`-` の連続の最小の長さ。
 /// API キーやセッション id（36 字）は 32 字を超えるが、普通の単語はこれに届かない。
@@ -185,6 +194,18 @@ pub fn child_env(
 
 /// `claude -p --output-format json` の結果を読む。
 ///
+/// 失敗の理由に使う 1 行。秘密らしい文字列を伏せ、1 行にして 200 字に収める。空なら `default`。
+///
+/// 吹き出しと違って URL やパスは隠さない（吹き出しに出す時はアプリ側が `bubble_text` を通す）。
+fn failure_text(s: &str, default: &str) -> String {
+    let line = sanitize_line(&mask_secrets(s), FAILURE_MAX_CHARS);
+    if line.is_empty() {
+        default.to_string()
+    } else {
+        line
+    }
+}
+
 /// 標準出力が `type: "result"` の JSON オブジェクトなら、終了コードに関わらずそれに従う
 /// （上限・鍵違いは終了コード 1 で `is_error: true` の JSON を出すため）。読めなければ
 /// 標準エラーの最初の行を理由にする。
@@ -202,10 +223,7 @@ pub fn parse_output(exit_code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Cha
         let is_error = obj.get("is_error").and_then(Value::as_bool) == Some(true);
         return if is_error {
             ChatOutcome::Failed {
-                reason: result.map_or_else(
-                    || "Claude Code がエラーを返しました".to_string(),
-                    bubble_text,
-                ),
+                reason: failure_text(result.unwrap_or(""), "Claude Code がエラーを返しました"),
                 session_id,
             }
         } else if let Some(text) = result {
@@ -222,14 +240,12 @@ pub fn parse_output(exit_code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> Cha
     }
 
     let stderr = String::from_utf8_lossy(stderr);
+    let code = exit_code.map_or_else(|| "なし".to_string(), |c| c.to_string());
+    let default = format!("Claude Code が答えませんでした（終了コード {code}）");
     let reason = stderr
         .lines()
         .find(|l| !l.trim().is_empty())
-        .map(bubble_text)
-        .unwrap_or_else(|| {
-            let code = exit_code.map_or_else(|| "なし".to_string(), |c| c.to_string());
-            format!("Claude Code が答えませんでした（終了コード {code}）")
-        });
+        .map_or_else(|| default.clone(), |l| failure_text(l, &default));
     ChatOutcome::Failed {
         reason,
         session_id: None,
@@ -259,7 +275,7 @@ pub fn bubble_text(s: &str) -> String {
         return EMPTY_TEXT.to_string();
     }
     if is_unsafe_for_bubble(&line) {
-        return MOVED_TO_PANEL.to_string();
+        return BUBBLE_HIDDEN.to_string();
     }
     sanitize_line(&line, BUBBLE_MAX_CHARS)
 }
@@ -274,7 +290,7 @@ fn is_unsafe_for_bubble(line: &str) -> bool {
     if line.contains('`') {
         return true;
     }
-    has_path(line) || has_sk_word(&lower) || has_long_token(line)
+    has_path(line) || !secret_spans(line).is_empty()
 }
 
 /// パスらしい並び（ドライブ・UNC・ホームや典型的なディレクトリ）を含むか。
@@ -293,38 +309,83 @@ fn has_path(line: &str) -> bool {
         .any(|w| w[0].is_ascii_alphabetic() && w[1] == ':' && (w[2] == '\\' || w[2] == '/'))
 }
 
-/// 直前が英数字でない `sk-`（小文字化済みの文で探す）があるか。`task-` のような語の途中は対象外。
-fn has_sk_word(lower: &str) -> bool {
-    lower.match_indices("sk-").any(|(i, _)| {
-        lower[..i]
-            .chars()
-            .next_back()
-            .is_none_or(|c| !c.is_ascii_alphanumeric())
-    })
-}
-
-/// 英数字・`_`・`-` だけが `SECRET_RUN_MIN` 字以上続く並びがあるか。
-/// 日本語などは英数字ではないので、区切りの無い長い日本語の文は引っかからない。
-fn has_long_token(line: &str) -> bool {
-    let mut run = 0usize;
-    for c in line.chars() {
-        if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-            run += 1;
-            if run >= SECRET_RUN_MIN {
-                return true;
+/// 秘密らしい部分のバイト範囲（小さい順・重ならない）。`bubble_text` の判定と `mask_secrets` の
+/// 置き換えが同じ結果になるよう、判定をここ 1 か所に寄せる。
+///
+/// 英数字・`_`・`-` の連続（ASCII のみ。日本語は含まない）を 1 つの単位として見て、
+/// - `SECRET_RUN_MIN` 字以上なら全体
+/// - そうでなければ、直前が ASCII 英数字でない `sk-`（大文字小文字を無視）から単位の終わりまで
+///   （`task-` のような語の途中は対象外。直前が `_`・`-` なら対象）
+fn secret_spans(s: &str) -> Vec<(usize, usize)> {
+    let is_token = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '-';
+    let mut spans = Vec::new();
+    let mut chars = s.char_indices().peekable();
+    while let Some((start, c)) = chars.next() {
+        if !is_token(c) {
+            continue;
+        }
+        let mut end = start + c.len_utf8();
+        let mut count = 1usize;
+        while let Some(&(i, n)) = chars.peek() {
+            if !is_token(n) {
+                break;
             }
-        } else {
-            run = 0;
+            end = i + n.len_utf8();
+            count += 1;
+            chars.next();
+        }
+        // 単位は ASCII だけなのでバイト位置と文字位置が一致する
+        let run = &s[start..end];
+        if count >= SECRET_RUN_MIN {
+            spans.push((start, end));
+            continue;
+        }
+        let lower = run.to_ascii_lowercase();
+        let hit = lower.match_indices("sk-").map(|(i, _)| i).find(|&i| {
+            i == 0
+                || run[..i]
+                    .chars()
+                    .next_back()
+                    .is_some_and(|p| !p.is_ascii_alphanumeric())
+        });
+        if let Some(i) = hit {
+            spans.push((start + i, end));
         }
     }
-    false
+    spans
+}
+
+/// 秘密らしい文字列（`sk-` で始まる語、32 字以上の英数字の並び）を `••••` に置き換える。
+///
+/// それ以外の文字はそのまま。秘密が無ければ入力と同じ文字列を返す。
+pub fn mask_secrets(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut last = 0;
+    for (start, end) in secret_spans(s) {
+        out.push_str(&s[last..start]);
+        out.push_str(MASK);
+        last = end;
+    }
+    out.push_str(&s[last..]);
+    out
+}
+
+/// 子プロセスに送る本文。前後の空白を落とし、空か `MAX_INPUT_CHARS` 字超なら `None`。
+///
+/// 長すぎる本文は切り詰めず断る（途中で切れた文を送ると意味が変わるため）。
+pub fn input_text(s: &str) -> Option<String> {
+    let t = s.trim();
+    (!t.is_empty() && t.chars().count() <= MAX_INPUT_CHARS).then(|| t.to_string())
 }
 
 /// チャット欄に出す全文。改行は残し、4000 字を超えたら切り詰める。
 ///
-/// 吹き出しと違って URL・パス・コードは消さない（吹き出しから誘導される先なので）。
+/// 吹き出しと違って URL・パス・コードは消さない（吹き出しから誘導される先なので）。秘密らしい
+/// 文字列だけは伏せる。
 pub fn panel_text(s: &str) -> String {
-    let unified = s.replace("\r\n", "\n").replace('\r', "\n");
+    // 最初に秘密を伏せる（チャット欄にも秘密らしい文字列は出さない）
+    let masked = mask_secrets(s);
+    let unified = masked.replace("\r\n", "\n").replace('\r', "\n");
     let cleaned: String = unified
         .chars()
         .map(|c| if c != '\n' && c.is_control() { ' ' } else { c })

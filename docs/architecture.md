@@ -229,11 +229,12 @@ Grabbed（ドラッグ中）
   - `--model sonnet`: CLI 既定（Fable）は上限に達すると全く答えない。haiku でも秒数は変わらない（起動が約 3 秒を占める）。答えまで 3.4〜9.8 秒（実測）
 - **実行ファイル**: `pet_core::chat::find_claude`。PATH の `claude.exe` → npm 版は `claude.cmd` の隣の `node_modules\@anthropic-ai\claude-code\bin\claude.exe`（`.cmd` は cmd.exe の引用符解釈を受けるので直接起こさない）→ `%USERPROFILE%\.local\bin\claude.exe`
 - **認証**: 設定の「接続」で切り替える（既定サブスク）。子の環境は `pet_core::chat::child_env` で組み、`ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`・`ANTHROPIC_PROFILE`・`CLAUDECODE`・`CLAUDE_CODE_ENTRYPOINT` を必ず消す（大文字小文字を無視。`claude -p` は環境の API キーを必ず使うため、消さないと気づかずに API 課金になる）。API キーのときだけ、資格情報マネージャー（GENERIC・`pet-claude/anthropic-api-key`。`crates/pet-app/src/cred.rs`）から読んだ鍵を 1 つ足す。鍵は画面に読み返さない・ログに書かない
-- **アプリ側**（`crates/pet-app/src/chat.rs`）: 送信は待たずに戻り、別スレッドで子を起こす（`CREATE_NO_WINDOW`）。同時に 1 本だけ（受け付けの時点で予約する＝メインスレッドが詰まって手順がまとめて走っても 2 本起きない）。子は送信ごとの Job Object（閉じると中身ごと止まる）に入れ、120 秒で時間切れ。「新しいチャット」・終了で止め、世代番号で古い答えを捨てる。pet-app が落ちても OS がハンドルを閉じて子も止まる。待つ間ペットは作業中の動き（行動ロジックには `pet-chat` のセッションとして渡す）
-- **表示**: 答えは `pet_core::chat::bubble_text`（N3。検査は切り詰める前の 1 行で行い、URL・パス・コード・秘密らしい文字列があれば「（答えはチャット欄に出しました）」）を吹き出しに、`panel_text`（改行を残して 4000 字まで）をチャット欄に。吹き出しに全部出ていなければ「続きを見る」でチャット欄を開く。失敗の理由も `bubble_text` を通す
+- **アプリ側**（`crates/pet-app/src/chat.rs`）: 送信は待たずに戻り、別スレッドで子を起こす（`CREATE_NO_WINDOW`）。本文は `input_text` で 2000 字まで（超えたら断る）。同時に 1 本だけ（受け付けの時点で予約し、答えを受けて `session_id` を覚えてから外す＝メインスレッドが詰まって手順がまとめて走っても 2 本起きず、続きも切れない）。子は**止めた状態で**（`CREATE_SUSPENDED`）起こして送信ごとの Job Object（閉じると中身ごと止まる）に入れてから動かす（入れる前に孫が逃げないように。入れられなければ動かさない）。本文は別スレッドで標準入力に書く（子が読まずにパイプが詰まっても時間切れが効く）。120 秒で時間切れ。「新しいチャット」・終了で止め、世代番号で古い答えを捨てる。pet-app が落ちても OS がハンドルを閉じて子も止まる。待つ間ペットは作業中の動き（行動ロジックには `pet-chat` のセッションとして渡す）
+- **表示**: 答えは `pet_core::chat::bubble_text`（N3。検査は切り詰める前の 1 行で行い、URL・パス・コード・秘密らしい文字列があれば「（答えはチャット欄に出しました）」）を吹き出しに、`panel_text`（秘密らしい文字列を `••••` に伏せ、改行を残して 4000 字まで）をチャット欄に。吹き出しに全部出ていなければ「続きを見る」でチャット欄を開く。失敗の理由は `parse_output` が秘密を伏せた 1 行（200 字まで）で、チャット欄にはそのまま（パスは見える）、吹き出しは `bubble_text` に掛かれば「うまくいきませんでした。理由はチャット欄に」＋「続きを見る」
+- **「確かめる」**: `claude auth status` もチャットと同じ起こし方（Job・出力の上限）で、15 秒で時間切れ
 - **ログ**: 字数・秒数・終了コード・is_error・接続の種類だけ。本文・答え・鍵は書かない（N4）
 - **作業フォルダ**: `%LOCALAPPDATA%\pet-claude\chat\work`（空。リポジトリや K の作業フォルダの設定を拾わない）。ペットの話し方は同じフォルダの上の `system-prompt.txt` に毎回書き出す（中身はコードの定数）
-- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 76 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い。14 項目）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
+- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 76 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い。17 項目。取り消し・まとめて来た手順は、アプリを止める前に子が残っていないかを見る）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
 
 ## 7. 設定・ログ・保存先
 

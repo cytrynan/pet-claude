@@ -64,6 +64,8 @@ const ANSWER_MAX_MS: u64 = 20_000;
 /// チャット欄の上に出す答えの欄の高さ（論理ピクセル。中はスクロール）と、入力欄との間。
 const CHAT_ANSWER_HEIGHT: f64 = 188.0;
 const CHAT_GAP: f64 = 8.0;
+/// 失敗の理由が吹き出しの検査に掛かった（パスなどを含む）ときの吹き出しの文。理由はチャット欄に出す。
+const FAILURE_HIDDEN: &str = "うまくいきませんでした。理由はチャット欄に";
 /// 吹き出しの下端を、ペットの窓の上端からこの分だけ下げる（素材の上の透明な余白を詰める。論理ピクセル）。
 const BUBBLE_DROP: f64 = 20.0;
 /// 承認の要約: 折り返して全文を出す。行数の上限・1 行の桁数（多めに数える）・1 行の高さ（論理ピクセル）。
@@ -390,7 +392,8 @@ fn set_chat_inside(rect: Rect, dpi: u32) {
 
 /// チャット欄の島の大きさ。答えがあれば入力欄の上に答えの欄を足す。
 fn chat_island() -> (f64, f64) {
-    let has_answer = CHAT_LAST.with(|c| c.borrow().is_some());
+    // 待ち中も答えの欄を出す（「新しいチャット」で取り消せるように。2026-10-21 検証係の指摘）
+    let has_answer = CHAT_LAST.with(|c| c.borrow().is_some()) || crate::chat::busy();
     if has_answer {
         (CHAT_ISLAND.0, CHAT_ISLAND.1 + CHAT_GAP + CHAT_ANSWER_HEIGHT)
     } else {
@@ -421,7 +424,7 @@ pub fn chat_state() -> serde_json::Value {
 }
 
 /// 答えが変わったら、開いているチャット欄を描き直し、高さを合わせる。
-fn refresh_chat() {
+pub fn refresh_chat() {
     if !visible(CHAT) {
         return;
     }
@@ -442,18 +445,27 @@ pub fn show_chat_answer(text: &str) {
         pet_core::chat::panel_text(text),
         pet_core::chat::bubble_text(text),
         false,
+        false,
     );
 }
 
 /// チャットの失敗。理由はもう一度 `bubble_text` に通す（N3。呼び出し元を信用しない）。
+/// 理由は `parse_output` が秘密を伏せた 1 行。チャット欄にはそのまま（パスは見える）、吹き出しには
+/// `bubble_text` を通して出す。吹き出しで隠れたら、そう書いて「続きを見る」を付ける（理由がどこにも
+/// 残らなかった。2026-10-21 検証係の指摘）。
 pub fn show_chat_failure(reason: &str) {
-    let line = pet_core::chat::bubble_text(reason);
-    show_chat_result(line.clone(), line, true);
+    let panel = pet_core::chat::panel_text(reason);
+    let bubble = pet_core::chat::bubble_text(reason);
+    if bubble == pet_core::chat::BUBBLE_HIDDEN {
+        show_chat_result(panel, FAILURE_HIDDEN.to_string(), true, true);
+    } else {
+        show_chat_result(panel, bubble, true, false);
+    }
 }
 
-fn show_chat_result(panel: String, bubble: String, error: bool) {
+fn show_chat_result(panel: String, bubble: String, error: bool, hidden_failure: bool) {
     // 吹き出しに全部は出ていない（切り詰めた・チャット欄に回した）なら「続きを見る」
-    let more = !error && panel != bubble;
+    let more = hidden_failure || (!error && panel != bubble);
     CHAT_LAST.with(|c| *c.borrow_mut() = Some((panel, error)));
     if visible(CHAT) {
         // 開いているチャット欄に出す（吹き出しは重ねない）

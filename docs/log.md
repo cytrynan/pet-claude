@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §6.1 を検証係の指摘の回収に合わせた（止めた状態で起こして Job に入れる・標準入力は別スレッド・本文 2000 字・予約は答えを受けてから外す・チャット欄でも秘密を伏せる・失敗の理由・確かめるの時間切れ）、最初の返事を待つ間の答えの島 (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §6.1 チャット（claude -p の子プロセス・--safe-mode・--model sonnet・認証の切り替えと子の環境・Job Object・1 本だけ・表示の検査）、§7 に chat_auth と資格情報マネージャー、答えの吹き出し・チャット欄の答え・設定のチャットの欄 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [プロダクト要求定義書](product-requirements.md) — U1 を決定に（新しいセッション・`claude -p` の子プロセス・ツールなし・認証はサブスク／API キー切替で既定サブスク）、F18・F19 に反映 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 pet.json のパスはフォルダの中の相対パスだけ・クリップ名の文字の制限（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)

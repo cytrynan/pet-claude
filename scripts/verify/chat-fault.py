@@ -19,7 +19,8 @@ app_exe, fake_exe, work = sys.argv[1], sys.argv[2], Path(sys.argv[3])
 only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
 SESSION = "11111111-2222-3333-4444-555555555555"
 results = []
-skipping = False  # 直前の run_case がケース名の指定で飛ばされたか（飛ばしたケースの check は数えない）
+skipping = False
+alive_before_kill = []  # 直前の run_case で、アプリを止める前に生きていた偽の claude の pid  # 直前の run_case がケース名の指定で飛ばされたか（飛ばしたケースの check は数えない）
 
 
 def alive(pid):
@@ -68,6 +69,8 @@ def run_case(name, steps, *, mode="ok", exe=None, timeout_secs=None, state=None,
             break
         time.sleep(0.2)
     app_alive = app.poll() is None
+    global alive_before_kill
+    alive_before_kill = [p for p in fake_pids(data / "chat" / "work") if alive(p)]
     if app_alive:
         app.kill()
         app.wait(timeout=10)
@@ -119,13 +122,11 @@ check("A6 時間切れ", alive_ and "timed out after 3" in log, f"app 生存={al
 check("A7 時間切れで子と孫が残らない", len(pids) >= 2 and not left, f"pids={pids} 残り={left}")
 
 # A7 待ち中に新しいチャット
-log, wd, alive_ = run_case("cancel", "send:やあ|wait:1500|new", mode="slow",
-                            wait_for=("chat: new conversation", 1))
-time.sleep(1.5)
+log, wd, alive_ = run_case("cancel", "send:やあ|wait:1500|new|wait:1500", mode="slow",
+                            wait_for=("test chat: never", 1), max_secs=7)
 pids = fake_pids(wd)
-left = [p for p in pids if alive(p)]
-check("A7 新しいチャットで止まる", "cancelled generation" in log and len(pids) >= 2 and not left,
-      f"pids={pids} 残り={left}")
+check("A7 新しいチャットで止まる（アプリを止める前に）", "cancelled generation" in log and len(pids) >= 2
+      and not alive_before_kill, f"pids={pids} 止める前に生きていた={alive_before_kill}")
 
 # A7 待ち中に pet-app が落ちる（強制終了）
 log, wd, alive_ = run_case("crash", "send:やあ", mode="slow", kill_app_after="chat send")
@@ -142,14 +143,32 @@ check("1 本だけ", "test chat: submit -> まだ考え中です" in log and len
 
 # 1 本だけ（手順がまとめて走る時）: 送る・送る・新しいチャット・送る を待たずに並べる。
 # メインスレッドが詰まると実機でもこう並ぶ（2026-10-21 故障注入で、2 本同時に起き、止めるも空振りした）
-log, wd, alive_ = run_case("burst", "send:一|send:二|new|send:三", mode="slow",
-                            wait_for=("test chat: submit", 3), timeout_secs=30)
+log, wd, alive_ = run_case("burst", "send:一|send:二|new|send:三|wait:2500", mode="slow",
+                            wait_for=("test chat: never", 1), max_secs=8, timeout_secs=30)
 time.sleep(1.5)
 pids = fake_pids(wd)
 left = [p for p in pids if alive(p)]
 check("1 本だけ（まとめて来ても）", log.count("submit -> まだ考え中です") == 1
       and "cancelled generation 1" in log and log.count("submit -> 考え中") == 2
-      and len(pids) <= 4 and not left, f"pids={pids} 残り={left}")
+      # 止める前に生きているのは、3 通目の子と孫（最後に起きた 2 つ）だけ
+      and len(pids) <= 4 and sorted(alive_before_kill) == sorted(pids[-2:]) and not left,
+      f"pids={pids} 止める前に生きていた={alive_before_kill} 残り={left}")
+
+# 標準入力を読まない子に大きな本文（2000 字＝6000 バイト。パイプの既定 4KB を超える）を送っても、
+# 時間切れの見張りが止まらない（2026-10-21 検証係の指摘）
+log, wd, alive_ = run_case("stdin", "send:" + "あ" * 2000, mode="slow", timeout_secs=3,
+                            wait_for=("chat failed", 1), max_secs=20)
+check("A6 標準入力が詰まっても時間切れ", alive_ and "timed out after 3" in log
+      and not alive_before_kill, f"止める前に生きていた={alive_before_kill}")
+
+# 長すぎる本文は起こさずに断る
+log, wd, alive_ = run_case("toolong", "send:" + "あ" * 2001, wait_for=("test chat: submit", 1))
+check("長すぎる本文は断る", "submit -> 長すぎます" in log and not fake_pids(wd), f"pids={fake_pids(wd)}")
+
+# 「確かめる」: 止まらない CLI でも時間切れで返り、子が残らない（2026-10-21 検証係の指摘）
+log, wd, alive_ = run_case("auth", "auth", mode="slow", wait_for=("test chat: auth", 1), max_secs=30)
+check("確かめるの時間切れ", "auth -> 時間切れで確かめられませんでした" in log and len(fake_pids(wd)) >= 2
+      and not alive_before_kill, f"pids={fake_pids(wd)} 止める前に生きていた={alive_before_kill}")
 
 # A1・A3・A5 の引数と環境: 続けて送ると --resume、新しいチャットで外れる。親の API キーは渡らない
 log, wd, alive_ = run_case("resume", "send:一通目|wait:1500|send:二通目|wait:1500|new|send:三通目",

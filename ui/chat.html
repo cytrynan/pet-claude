@@ -41,7 +41,7 @@
   .answer .new:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
   .answer .text { flex: 1; overflow-y: auto; padding: 0 14px 12px; line-height: 20px;
     white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
-  .answer.error .text { color: var(--label-2); }
+  .answer.error .text, .answer.busy .text { color: var(--label-2); }
 </style>
 </head>
 <body>
@@ -76,9 +76,11 @@
   window.renderChat = (s) => {
     busy = !!(s && s.busy);
     const has = s && typeof s.answer === "string";
-    answer.hidden = !has;
+    // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）
+    answer.hidden = !has && !busy;
     answer.classList.toggle("error", !!(s && s.error));
-    answerText.textContent = has ? s.answer : "";
+    answerText.textContent = busy ? "考え中…" : (has ? s.answer : "");
+    answer.classList.toggle("busy", busy);
     answerText.scrollTop = 0;
     text.placeholder = busy ? "考え中…" : (has && !s.error ? followUp : idle);
     update();
