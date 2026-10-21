@@ -22,6 +22,8 @@ pub enum Pose {
     Review,
     Sleep,
     Grabbed,
+    /// クリックされた（なでられ）。シートでは Jumping の行で描く（専用の行は無い。2026-10-21 K 指示）
+    Petted,
 }
 
 /// ポーズの再生仕様。
@@ -43,7 +45,7 @@ impl Pose {
             Self::RunRight => (1, 8, 1060, None),
             Self::RunLeft => (2, 8, 1060, None),
             Self::Waving => (3, 4, 700, Some(2)),
-            Self::Jumping => (4, 5, 840, Some(2)),
+            Self::Jumping | Self::Petted => (4, 5, 840, Some(2)),
             Self::Failed => (5, 8, 1220, Some(2)),
             Self::Waiting => (6, 6, 1010, None),
             Self::Running => (7, 6, 820, None),
@@ -253,6 +255,10 @@ pub struct PetManifest {
     /// （2026-10-21 K 指示「息をしているように揺らしているのをもう少し滑らかに」）
     #[serde(default)]
     pub breathe: Option<f32>,
+    /// 動画クリップの定義（`clips.json` へのパス。無ければシートだけで動く）。姿勢の間を動画でつなぐ
+    /// pet-claude 独自の追加素材で、Codex 互換のシートはそのまま残す（2026-10-21 K 指示）
+    #[serde(default)]
+    pub clips: Option<String>,
 }
 
 /// 受け付ける `cellScale` の上限（4 倍なら 768×832 のコマ。それ以上は読み込みが重すぎる）。

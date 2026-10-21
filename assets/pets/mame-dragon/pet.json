@@ -1,6 +1,7 @@
 {
   "breathe": 0.025,
   "cellScale": 2,
+  "clips": "clips.json",
   "displayName": "まめドラゴン",
   "id": "mame-dragon",
   "spritesheetPath": "spritesheet.webp"

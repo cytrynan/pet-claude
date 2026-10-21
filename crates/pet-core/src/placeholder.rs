@@ -32,7 +32,7 @@ fn body_color(pose: Pose) -> [u8; 3] {
     match pose {
         Pose::Idle | Pose::Sleep => [88, 120, 245],
         Pose::RunRight | Pose::RunLeft => [64, 168, 232],
-        Pose::Waving | Pose::Jumping => [120, 200, 120],
+        Pose::Waving | Pose::Jumping | Pose::Petted => [120, 200, 120],
         Pose::Failed => [232, 96, 96],
         Pose::Waiting => [245, 180, 64],
         Pose::Running | Pose::Review => [150, 110, 235],

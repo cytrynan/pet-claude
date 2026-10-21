@@ -5,10 +5,12 @@
 //! どの OS でも `cargo test` で検証できる。
 
 pub mod behavior;
+pub mod clips;
 pub mod compose;
 pub mod geometry;
 pub mod hook;
 pub mod ipc;
+pub mod pixels;
 pub mod placeholder;
 pub mod placement;
 pub mod sprite;

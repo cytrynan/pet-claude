@@ -16,8 +16,10 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
+use pet_core::clips::{ClipKind, Player, Show, Still};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
+use pet_core::pixels::{fit, render_bgra, stretch_up};
 use pet_core::placement::{self, Monitor};
 use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, SheetLayout, breath_level, breath_scale};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
@@ -41,6 +43,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::core::w;
 
+use crate::clipstore::{ClipCache, ClipFrames, ClipPack};
 use crate::log::log;
 use crate::monitors::{self, to_rect};
 use crate::pets::{self, CellStore, LoadedSheet, PetEntry};
@@ -58,8 +61,6 @@ const TIMER_HOVER: usize = 4;
 const HOVER_DWELL_MS: u32 = 200;
 const DRAG_THRESHOLD_PX: i32 = 4;
 const DEFAULT_INSET: i32 = 24;
-/// この値未満のアルファは 0 に落とす（縁のかすかな影でクリックを拾わない）。
-const ALPHA_CUTOFF: u8 = 24;
 
 struct Drag {
     down_cursor: Point,
@@ -106,6 +107,8 @@ struct Pet {
     last_tick_ms: u64,
     /// 散歩で動かす物理ピクセルの端数（1px 未満を次の tick へ持ち越す）
     walk_carry: f32,
+    /// 動画クリップ（あるペットだけ。無ければシートで描く）
+    clips: Option<Clips>,
 }
 
 thread_local! {
@@ -137,24 +140,70 @@ fn message_cursor() -> Point {
 
 /// コマを切り出し、事前乗算 → 縮小 → BGRA に並べ替える。
 fn render_cell(sheet: &CellStore, row: u32, frame: u32, w: u32, h: u32) -> Vec<u8> {
-    let mut cell = sheet.cell_image(row, frame);
-    // 透明な黒と補間して縁が黒ずむのを防ぐため、縮小の前に事前乗算する
-    for p in cell.pixels_mut() {
-        let a = u16::from(p[3]);
-        for c in 0..3 {
-            p[c] = ((u16::from(p[c]) * a + 127) / 255) as u8;
+    render_bgra(sheet.cell_image(row, frame), w, h)
+}
+
+/// クリップの読み込み要求の番号。Clips を作り直しても重ならないよう、プロセス全体で数える。
+fn next_clip_request() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// 動画クリップで描くペットの状態（`pet.json` に `clips` があるペットだけ）。
+struct Clips {
+    pack: ClipPack,
+    player: Player,
+    cache: ClipCache,
+    /// 別スレッドで読んでいる要求の番号（同時に 1 本だけ。番号は `next_clip_request` でプロセス全体で一意）
+    loading: Option<u64>,
+    /// いま描いているもの
+    show: Option<Show>,
+    /// 最後に描いた画素（クリップを読み終える前に窓を動かす・描き直すときに出す）
+    last: Option<((u32, u32), Vec<u8>)>,
+    /// 止めたコマに呼吸を付けた絵（呼吸の段階 → 画素）。止めるコマが変わったら捨てる
+    hold: HashMap<u32, Vec<u8>>,
+    /// 読めなかったクリップ（読み直さない。シートを読み直したら空にする）
+    failed: Vec<usize>,
+}
+
+impl Clips {
+    fn new(pack: ClipPack, pose: Pose, now: u64) -> Self {
+        let player = Player::new(pack.set.clone(), pose, now);
+        // 待機とつまみ中のループは捨てない（clipstore::ClipCache::pinned）
+        let pinned = pack
+            .set
+            .clips
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| {
+                c.kind == ClipKind::Loop && matches!(c.from.still, Still::Idle | Still::Dragged)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        Self {
+            pack,
+            player,
+            cache: ClipCache::with_pinned(pinned),
+            loading: None,
+            show: None,
+            last: None,
+            hold: HashMap::new(),
+            failed: Vec::new(),
         }
     }
-    let scaled = image::imageops::resize(&cell, w, h, image::imageops::FilterType::Triangle);
-    let mut out = Vec::with_capacity((w * h * 4) as usize);
-    for p in scaled.pixels() {
-        if p[3] < ALPHA_CUTOFF {
-            out.extend_from_slice(&[0, 0, 0, 0]);
-        } else {
-            out.extend_from_slice(&[p[2], p[1], p[0], p[3]]);
+
+    /// 眠るつなぎの最後のコマで止まっている（呼吸を付ける）か。
+    fn holding_sleep(&self) -> bool {
+        match self.show {
+            Some(Show::Clip { index, frame, .. }) => {
+                let c = &self.pack.set.clips[index];
+                c.kind == ClipKind::Transition
+                    && c.to.still == Still::Sleep
+                    && frame + 1 == c.frames
+            }
+            _ => false,
         }
     }
-    out
 }
 
 /// 呼吸の段階のコマを描く。`scale` だけ縦に伸ばして描き、上にはみ出した分を切り落とす
@@ -213,17 +262,53 @@ impl Pet {
             self.behavior.set_held(held, now);
         }
         let out = self.behavior.tick(now);
-        let mut dirty = self.set_pose(out.pose, now);
-        let (frame, _) = self.playback.frame_at(now);
-        if frame != self.frame {
-            self.frame = frame;
-            dirty = true;
+        let mut dirty = false;
+        let mut may_move = true;
+        // クリップがあるペットは、動画のコマとシートの行のどちらで描くかを Player が決める
+        let mut sheet_pose = Some(out.pose);
+        let mut breath_pose = None;
+        let mut from_clip = false;
+        if let Some(c) = self.clips.as_mut() {
+            c.player.set_pose(out.pose, now);
+            let show = c.player.tick(now);
+            may_move = c.player.may_move();
+            if c.show != Some(show) {
+                from_clip = matches!(c.show, Some(Show::Clip { .. }));
+                c.show = Some(show);
+                c.hold.clear();
+                dirty = true;
+            }
+            sheet_pose = match show {
+                Show::Sheet(p) => Some(p),
+                Show::Clip { .. } => None,
+            };
+            if c.holding_sleep() {
+                breath_pose = Some(Pose::Sleep);
+            }
+        }
+        if let Some(pose) = sheet_pose {
+            if from_clip {
+                // 動画からシートに戻ったら、同じポーズでも頭から（前に見せたときの時計を使わない）
+                self.pose = pose;
+                self.playback = Playback {
+                    clip: pose.clip_in(&self.layout),
+                    started_ms: now,
+                };
+                self.frame = 0;
+            } else {
+                dirty |= self.set_pose(pose, now);
+            }
+            let (frame, _) = self.playback.frame_at(now);
+            if frame != self.frame {
+                self.frame = frame;
+                dirty = true;
+            }
+            breath_pose = Some(pose);
         }
         // 呼吸は時刻から描くたびに計算する（コマに焼き込むと 1 周 6 コマの段差になる）
-        let breath = if self.breathe > 0.0 {
-            breath_level(self.pose, now).unwrap_or(0)
-        } else {
-            0
+        let breath = match breath_pose {
+            Some(p) if self.breathe > 0.0 => breath_level(p, now).unwrap_or(0),
+            _ => 0,
         };
         if breath != self.breath {
             if std::env::var_os("PET_TRACE").is_some() {
@@ -232,7 +317,8 @@ impl Pet {
             self.breath = breath;
             dirty = true;
         }
-        if out.vx != 0.0 && self.drag.is_none() {
+        // 窓を動かすのは歩きのループの間だけ（止まる・歩き出すのつなぎの最中は動かさない）
+        if out.vx != 0.0 && self.drag.is_none() && may_move {
             dirty |= self.walk(out.vx, dt, now);
         }
         if dirty {
@@ -264,6 +350,15 @@ impl Pet {
 
     /// 現在のコマを現在の位置に描く。
     fn present(&mut self) {
+        if let Some(Show::Clip {
+            index,
+            frame,
+            mirror,
+        }) = self.clips.as_ref().and_then(|c| c.show)
+        {
+            self.present_clip(index, frame, mirror);
+            return;
+        }
         let (w, h) = self.size();
         let key = (self.playback.clip.row, self.frame, self.breath);
         let sheet = &self.sheet;
@@ -278,6 +373,186 @@ impl Pet {
         ui::note_pet(self.rect, self.dpi);
     }
 
+    /// 動画のコマを描く。まだ読めていなければ読み込みを始め、それまでは直前の絵（無ければシートの待機）を出す
+    /// （窓の移動は描くことで行うので、何も出さないとつまんだ窓がついて来ない）。
+    fn present_clip(&mut self, index: usize, frame: u32, mirror: bool) {
+        let (w, h) = self.size();
+        let size = (w as u32, h as u32);
+        let store = self.clip_store_size();
+        // 止めたコマの呼吸は 8 段（偶数の段）で描く。下の hold の鍵（breath / 2）と同じ段から伸び具合を出す
+        let breath = self.breath / 2 * 2;
+        let scale = breath_scale(breath, self.breathe);
+        let Some(c) = self.clips.as_mut() else {
+            return;
+        };
+        let holding_sleep = c.holding_sleep();
+        let fresh = match c.cache.get(index) {
+            Some(f) if f.size == store => {
+                // 元の解像度より大きく描くときだけ、描く瞬間に引き伸ばす（持つ量を元の解像度までに抑える）
+                let full = |f: &ClipFrames| fit(f.compose(frame, mirror), store, size);
+                Some(if holding_sleep && scale > 1.0 {
+                    // 止めたコマの呼吸は窓の大きさの絵を段階ごとに持つので、16 段を 8 段に丸める
+                    // （200% の画面で 16 段は 11MB。8 段なら 1 段 0.8px 未満で段差は見えない）
+                    c.hold
+                        .entry(breath / 2)
+                        .or_insert_with(|| stretch_up(&full(f), size, scale))
+                        .clone()
+                } else {
+                    full(f)
+                })
+            }
+            _ => None,
+        };
+        let loaded = fresh.is_some();
+        if let Some(px) = fresh {
+            c.last = Some((size, px));
+        }
+        let fallback;
+        let pixels: &[u8] = match c.last.as_ref().filter(|(s, _)| *s == size) {
+            Some((_, px)) => px,
+            None => {
+                fallback = render_cell(
+                    &self.sheet,
+                    Pose::Idle.clip_in(&self.layout).row,
+                    0,
+                    size.0,
+                    size.1,
+                );
+                &fallback
+            }
+        };
+        if let Err(e) = blit(self.hwnd, &self.rect, pixels, w, h) {
+            log(format!("UpdateLayeredWindow に失敗: {e}"));
+        }
+        ui::note_pet(self.rect, self.dpi);
+        if !loaded {
+            self.request_clip(index);
+            return;
+        }
+        // 次に流すつなぎを先に読んでおく（流す番になってから読むと、最初の数コマが飛ぶ）。
+        // 無ければ、固定したクリップ（つまみ中など）のまだ読んでいないものを読む
+        let next = self.clips.as_ref().and_then(|c| {
+            c.player.next_clip().or_else(|| {
+                c.cache
+                    .pinned
+                    .iter()
+                    .copied()
+                    .find(|&i| !c.cache.contains(i) && !c.failed.contains(&i))
+            })
+        });
+        if let Some(next) = next {
+            self.request_clip(next);
+        }
+    }
+
+    /// クリップのコマを別スレッドで読む（同時に 1 本だけ。読めたら `finish_clip`）。
+    fn request_clip(&mut self, index: usize) {
+        let size = self.clip_store_size();
+        let pet_id = self.pet.id.clone();
+        let app = self.app.clone();
+        let Some(c) = self.clips.as_mut() else {
+            return;
+        };
+        if c.loading.is_some() || c.cache.contains(index) || c.failed.contains(&index) {
+            return;
+        }
+        let def = c.pack.set.clips[index].clone();
+        let dir = c.pack.dir.clone();
+        // 読み込む分の場所を先に空ける（切り抜くと窓の 7〜8 割になるので、多めに 8 割で見積もる）
+        let playing = match c.show {
+            Some(Show::Clip { index, .. }) => Some(index),
+            _ => None,
+        };
+        let need = def.frames as usize * (size.0 * size.1 * 4) as usize * 8 / 10;
+        c.cache.make_room(need, playing);
+        let request = next_clip_request();
+        c.loading = Some(request);
+        let spawned = std::thread::Builder::new().spawn(move || {
+            let started = Instant::now();
+            // 壊れたコマで展開が panic しても「失敗」として戻す（戻さないと loading が立ったままになる）
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                ClipFrames::load(&dir, &def.name, def.frames, size)
+            }))
+            .unwrap_or_else(|_| Err("クリップの読み込みが panic した".into()));
+            let ms = started.elapsed().as_millis();
+            let _ = app.run_on_main_thread(move || {
+                with_pet(move |pet| pet.finish_clip(&pet_id, request, index, ms, result))
+            });
+        });
+        if let Err(e) = spawned {
+            c.loading = None;
+            log(format!("クリップを読むスレッドを作れない: {e}"));
+        }
+    }
+
+    /// クリップの読み込みが終わった（メインスレッド）。いまのペットと窓の大きさのものなら持つ。
+    fn finish_clip(
+        &mut self,
+        pet_id: &str,
+        request: u64,
+        index: usize,
+        ms: u128,
+        result: Result<ClipFrames, String>,
+    ) {
+        let store = self.clip_store_size();
+        let same_pet = pet_id == self.pet.id;
+        let Some(c) = self.clips.as_mut() else {
+            return;
+        };
+        // いまの Clips が待っている要求でなければ捨てる。読んでいる間にペットが替わった、A→B→A と戻って
+        // Clips が作り直された、のどちらでも番号が合わない（添字は別のクリップを指しうる。検証係の指摘 2026-10-21）
+        if !same_pet || c.loading != Some(request) {
+            return;
+        }
+        c.loading = None;
+        let playing = match c.show {
+            Some(Show::Clip { index, .. }) => Some(index),
+            _ => None,
+        };
+        match result {
+            Ok(f) if same_pet && f.size == store => {
+                log(format!(
+                    "clip {} loaded in {ms} ms: {} KB (cache {} KB)",
+                    c.pack.set.clips[index].name,
+                    f.bytes() / 1024,
+                    (c.cache.bytes() + f.bytes()) / 1024
+                ));
+                c.cache.insert(index, f, playing);
+            }
+            // 読んでいる間にペットか窓の大きさが変わった。次に描くときに読み直す
+            Ok(_) => {}
+            Err(e) => {
+                // 同じクリップを何度も読みに行かない（直前の絵で描き続ける）
+                log(format!(
+                    "クリップ {} を読めない: {e}",
+                    c.pack.set.clips[index].name
+                ));
+                c.failed.push(index);
+            }
+        }
+        self.present();
+    }
+
+    /// クリップのコマを持つ大きさ: 窓の大きさ。ただし元のコマ（シートと同じ `source_cell`）の 3/4 より大きくはしない
+    /// （それより大きい窓には描く瞬間に引き伸ばす）。2026-10-21 実測: 元の大きさ（384×416）で持つと、大きさ 105%・
+    /// 200% の画面（窓 404×437）で待機 17MB・つまみ中 9MB・歩き 15MB になり、散歩中の専有が 66.7MB と PRD N1（50MB）を
+    /// 超えた。3/4（288×312）なら 100% の画面の大きさ 150% と同じ持ち方になり、44MB で収まる
+    fn clip_store_size(&self) -> (u32, u32) {
+        let (w, h) = self.size();
+        let (w, h) = (w as u32, h as u32);
+        let cap = pets::max_cell(self.source_cell, true);
+        if w > cap.0 || h > cap.1 { cap } else { (w, h) }
+    }
+
+    /// 描いた絵の保存を捨てる（窓の大きさが変わった・シートを差し替えた）。
+    fn clear_caches(&mut self) {
+        self.cache.clear();
+        if let Some(c) = self.clips.as_mut() {
+            c.cache.clear();
+            c.hold.clear();
+        }
+    }
+
     /// 窓の大きさを `dpi` に合わせる。足元（下端中央）を基準に置き直す。
     fn apply_dpi(&mut self, dpi: u32) {
         if dpi == self.dpi {
@@ -285,7 +560,7 @@ impl Pet {
         }
         let anchor = placement::anchor_of(&self.rect);
         self.dpi = dpi;
-        self.cache.clear();
+        self.clear_caches();
         let (w, h) = self.size();
         self.rect = placement::rect_from_anchor(anchor, w, h);
         log(format!("dpi -> {dpi} size {w}x{h}"));
@@ -303,7 +578,8 @@ impl Pet {
         }
         let need = pets::needed_cell(display_factor(self.state.scale));
         let switching = self.want.id != self.pet.id;
-        let sharper = need.0 > self.cell.0 && self.cell.0 < self.source_cell.0;
+        let max = pets::max_cell(self.source_cell, self.clips.is_some());
+        let sharper = need.0 > self.cell.0 && self.cell.0 < max.0;
         if !switching && !sharper {
             return;
         }
@@ -364,7 +640,18 @@ impl Pet {
         self.breathe = loaded.breathe;
         self.cell = loaded.cell;
         self.source_cell = loaded.source_cell;
-        self.cache.clear();
+        // 同じペットを読み直しただけ（大きさの変更）なら、動画の再生の状態は保つ
+        let now = now_ms(self.epoch);
+        self.clips = match (loaded.clips, self.clips.take()) {
+            (Some(pack), Some(mut c)) if c.pack.dir == pack.dir => {
+                c.pack = pack;
+                c.failed.clear();
+                Some(c)
+            }
+            (Some(pack), _) => Some(Clips::new(pack, self.pose, now)),
+            (None, _) => None,
+        };
+        self.clear_caches();
         self.playback.clip = self.pose.clip_in(&self.layout);
         self.frame = self.frame.min(self.playback.clip.frames.saturating_sub(1));
     }
@@ -389,7 +676,7 @@ impl Pet {
         let dpi = placement::monitor_for_rect(&ms, &rect).map_or(96, |m| m.dpi);
         if dpi != self.dpi {
             self.dpi = dpi;
-            self.cache.clear();
+            self.clear_caches();
         }
         // 画面の構成が変わり、より高い DPI の画面がつながったかもしれない（2026-10-21 検証係の指摘）
         self.kick_load();
@@ -756,6 +1043,7 @@ pub fn create(
     let layout = loaded.layout;
     let walk = state.walk;
     let epoch = Instant::now();
+    let clips = loaded.clips.map(|pack| Clips::new(pack, Pose::Idle, 0));
     let mut pet = Pet {
         hwnd,
         sheet: loaded.cells,
@@ -785,6 +1073,7 @@ pub fn create(
         held: false,
         last_tick_ms: 0,
         walk_carry: 0.0,
+        clips,
     };
     pet.relayout("startup");
     // SAFETY: 自分の窓の表示とタイマー
@@ -883,7 +1172,7 @@ pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
         if (scale - pet.state.scale).abs() > f32::EPSILON {
             let anchor = placement::anchor_of(&pet.rect);
             pet.state.scale = scale;
-            pet.cache.clear();
+            pet.clear_caches();
             let (w, h) = pet.size();
             let mut rect = placement::rect_from_anchor(anchor, w, h);
             if let Some(m) = monitors::at_point(rect.center()) {

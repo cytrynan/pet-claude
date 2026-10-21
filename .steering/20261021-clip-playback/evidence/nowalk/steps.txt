@@ -1,0 +1,10 @@
+2.1 start rect=(2275,-883)-(2563,-571) size=288x312 exstyle=0x08080088 visible=true
+28.1 mem args='' processes=2 workingset=59.1MB private=35.7MB
+28.5 hook Stop（完了 → 起きる → 喜ぶ）
+37.3 hook Notification（入力待ち → 呼びかけ）
+44.9 hook PreToolUse（作業中）
+53.6 mem args='' processes=8 workingset=349.3MB private=138.2MB
+53.9 hook Stop（作業の終わり → 喜ぶ → 待機）
+69.1 cpu nowalk 10s: 0.78% of one core
+70.5 mem args='' processes=8 workingset=361.1MB private=137.9MB
+72.4 restored C:\Users\meer0\dev\pet-claude\pet-claude-main\target\debug\pet-app.exe

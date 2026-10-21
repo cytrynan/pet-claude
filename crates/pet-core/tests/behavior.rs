@@ -197,13 +197,13 @@ fn grabbed_elapsed_is_zero_and_drag_end_restarts_clock() {
     assert_walking(b.tick(11_000), SPEED);
 }
 
-// 要件 1-2: クリック → Jumping が 1680ms（1ms 前は残り、ちょうどで消える）
+// 要件 1-2: クリック → Petted（なでられ。2026-10-21 K の動きの一覧で Jumping から変更） が 1680ms（1ms 前は残り、ちょうどで消える）
 #[test]
 fn click_plays_jumping_for_exact_clip_length() {
     let mut b = quiet_at(0);
     b.on_user(UserEvent::Click, 100);
-    assert_still(b.tick(100), Pose::Jumping);
-    assert_still(b.tick(100 + JUMP_MS - 1), Pose::Jumping);
+    assert_still(b.tick(100), Pose::Petted);
+    assert_still(b.tick(100 + JUMP_MS - 1), Pose::Petted);
     assert_still(b.tick(100 + JUMP_MS), Pose::Idle);
 }
 
@@ -239,7 +239,7 @@ fn new_reaction_replaces_running_one_and_restarts_clock() {
     // Jumping → Failed
     let mut b = quiet_at(0);
     b.on_user(UserEvent::Click, 0);
-    assert_still(b.tick(500), Pose::Jumping);
+    assert_still(b.tick(500), Pose::Petted);
     b.on_agent(
         AgentEvent::Error {
             session: session("x"),
@@ -259,15 +259,15 @@ fn new_reaction_replaces_running_one_and_restarts_clock() {
         0,
     );
     b.on_user(UserEvent::Click, 100);
-    assert_still(b.tick(100), Pose::Jumping);
+    assert_still(b.tick(100), Pose::Petted);
     assert_still(b.tick(100 + JUMP_MS), Pose::Idle); // 元の Failed（〜2440）は残らない
 
     // Jumping → Jumping（同じ反応でも開始時刻が更新される。questions.md 1 を参照）
     let mut b = quiet_at(0);
     b.on_user(UserEvent::Click, 0);
     b.on_user(UserEvent::Click, 1000);
-    assert_still(b.tick(JUMP_MS), Pose::Jumping); // 最初の反応だけなら消えている時刻
-    assert_still(b.tick(1000 + JUMP_MS - 1), Pose::Jumping);
+    assert_still(b.tick(JUMP_MS), Pose::Petted); // 最初の反応だけなら消えている時刻
+    assert_still(b.tick(1000 + JUMP_MS - 1), Pose::Petted);
     assert_still(b.tick(1000 + JUMP_MS), Pose::Idle);
 }
 
@@ -281,7 +281,7 @@ fn reaction_keeps_running_while_grabbed_and_drag_does_not_clear_it() {
     assert_still(b.tick(0), Pose::Grabbed);
     assert_still(b.tick(1000), Pose::Grabbed);
     b.on_user(UserEvent::DragEnd, JUMP_MS - 1);
-    assert_still(b.tick(JUMP_MS - 1), Pose::Jumping);
+    assert_still(b.tick(JUMP_MS - 1), Pose::Petted);
     assert_still(b.tick(JUMP_MS), Pose::Idle);
 
     // DragEnd がちょうど反応の長さ → 反応はもう返らない
@@ -340,11 +340,11 @@ fn priority_grabbed_over_reaction_over_agent_state() {
     );
     assert_still(b.tick(0), Pose::Running);
     b.on_user(UserEvent::Click, 0);
-    assert_still(b.tick(0), Pose::Jumping);
+    assert_still(b.tick(0), Pose::Petted);
     b.on_user(UserEvent::DragStart, 0);
     assert_still(b.tick(0), Pose::Grabbed);
     b.on_user(UserEvent::DragEnd, 10);
-    assert_still(b.tick(10), Pose::Jumping);
+    assert_still(b.tick(10), Pose::Petted);
     assert_still(b.tick(JUMP_MS), Pose::Running); // 反応が終わると Claude の状態
 }
 
@@ -398,7 +398,7 @@ fn held_forces_idle_for_autonomous_but_not_for_higher_priorities() {
     );
     assert_still(b.tick(100_000), Pose::Running);
     b.on_user(UserEvent::Click, 100_000);
-    assert_still(b.tick(100_000), Pose::Jumping);
+    assert_still(b.tick(100_000), Pose::Petted);
     b.on_user(UserEvent::DragStart, 100_000);
     assert_still(b.tick(100_000), Pose::Grabbed);
 }
@@ -671,7 +671,7 @@ fn agent_event_updates_idle_clock() {
 fn click_updates_idle_clock() {
     let mut b = Behavior::new(config(1000, 2000, 1000), 7, 0);
     b.on_user(UserEvent::Click, 500);
-    assert_still(b.tick(500 + JUMP_MS - 1), Pose::Jumping);
+    assert_still(b.tick(500 + JUMP_MS - 1), Pose::Petted);
     assert_walking(b.tick(500 + JUMP_MS), SPEED);
 }
 
@@ -940,8 +940,8 @@ fn operation_cancels_walk_or_rest_and_next_cycle_starts_with_walk() {
     let mut b = new_at(0);
     assert_walking(b.tick(1000), SPEED);
     b.on_user(UserEvent::Click, 1200); // 最後の操作 = 1200
-    assert_still(b.tick(1200), Pose::Jumping);
-    assert_still(b.tick(1200 + JUMP_MS - 1), Pose::Jumping);
+    assert_still(b.tick(1200), Pose::Petted);
+    assert_still(b.tick(1200 + JUMP_MS - 1), Pose::Petted);
     assert_walking(b.tick(1200 + JUMP_MS), SPEED); // 無操作 1680 ≥ 1000 → 散歩開始（〜+500）
     assert_walking(b.tick(1200 + JUMP_MS + 499), SPEED);
     assert_still(b.tick(1200 + JUMP_MS + 500), Pose::Idle);

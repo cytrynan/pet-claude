@@ -179,7 +179,8 @@ impl Behavior {
     /// 利用者の操作を受ける。
     pub fn on_user(&mut self, event: UserEvent, now_ms: u64) {
         match event {
-            UserEvent::Click => self.start_reaction(Pose::Jumping, now_ms),
+            // クリックは「なでられ」。完了の「喜ぶ」（Jumping）と分ける（2026-10-21 K の動きの一覧）
+            UserEvent::Click => self.start_reaction(Pose::Petted, now_ms),
             UserEvent::DragStart => self.grabbed = true,
             UserEvent::DragEnd => self.grabbed = false,
         }

@@ -11,9 +11,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
+use pet_core::clips::sheet_poses;
 use pet_core::compose::resize_clean;
-use pet_core::sprite::{CELL_H, CELL_W, COLUMNS, PetManifest, SheetLayout};
+use pet_core::sprite::{CELL_H, CELL_W, COLUMNS, PetManifest, Pose, SheetLayout};
 
+use crate::clipstore::ClipPack;
 use crate::log::{data_dir, log};
 
 pub const BUILTIN_ID: &str = "placeholder";
@@ -40,15 +42,20 @@ pub struct CellStore {
 
 impl CellStore {
     /// シートの中身のあるコマ（`layout` の数だけ）を、`cell` の大きさに縮めてから切り抜く。
+    /// `rows` を渡したらその行だけ持つ（動画クリップのあるペットは、クリップで描かない行だけで足りる）。
     fn build(
         sheet: &RgbaImage,
         source_cell: (u32, u32),
         cell: (u32, u32),
         layout: &SheetLayout,
+        rows: Option<&[u32]>,
     ) -> Self {
         let mut cells = HashMap::new();
         for (row, &n) in layout.frames.iter().enumerate() {
             let row = row as u32;
+            if rows.is_some_and(|r| !r.contains(&row)) {
+                continue;
+            }
             for col in 0..n {
                 let src = image::imageops::crop_imm(
                     sheet,
@@ -115,6 +122,8 @@ pub struct LoadedSheet {
     pub layout: SheetLayout,
     /// 待機と睡眠の呼吸の大きさ（pet.json の `breathe`。内蔵の仮キャラは 0）
     pub breathe: f32,
+    /// 動画クリップ（pet.json の `clips`。無ければシートだけで動く）
+    pub clips: Option<ClipPack>,
 }
 
 fn roots() -> Vec<PathBuf> {
@@ -202,6 +211,19 @@ pub fn entry_for_dir(dir: &Path) -> Result<PetEntry, String> {
     })
 }
 
+/// 持つコマの解像度の上限。動画のあるペットは元のコマの 3/4（それより大きい窓には描く瞬間に引き伸ばす）。
+/// 2026-10-21 実測: 元の大きさで持つと、大きさ 105%・200% の画面で動画のコマ（待機 17MB・つまみ中 9MB・
+/// 歩き 15MB）とシートの行（10MB）で、散歩中の専有が 66.7MB と PRD N1（50MB）を超えた。
+/// 読み直しの判定（`pet_window::kick_load`）もこの上限を使う（使わないと「もっと細かく」が成り立ち続け、
+/// シートを読み直し続けた。2026-10-21 実測で CPU 200%）
+pub fn max_cell(source_cell: (u32, u32), has_clips: bool) -> (u32, u32) {
+    if has_clips {
+        (source_cell.0 * 3 / 4, source_cell.1 * 3 / 4)
+    } else {
+        source_cell
+    }
+}
+
 /// 表示倍率 `factor`（= 大きさ × DPI / 96 の最大）で 1 コマを描くのに要る画素数。
 pub fn needed_cell(factor: f32) -> (u32, u32) {
     (
@@ -214,13 +236,14 @@ pub fn needed_cell(factor: f32) -> (u32, u32) {
 /// 補間しないように 1 コマずつ）。
 pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String> {
     let started = std::time::Instant::now();
-    let (image, source_cell, breathe) = match &entry.dir {
+    let (image, source_cell, breathe, clips) = match &entry.dir {
         None => (
             image::load_from_memory(BUILTIN_SHEET)
                 .map_err(|e| e.to_string())?
                 .into_rgba8(),
             (CELL_W, CELL_H),
             0.0,
+            None,
         ),
         Some(dir) => {
             let m = read_manifest(dir)?;
@@ -228,7 +251,18 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
                 .map_err(|e| format!("{}: {e}", m.spritesheet_path))?
                 // 複製せずに取り出す（展開した 56MB をもう 1 つ作らない。2026-10-21 検証係の指摘）
                 .into_rgba8();
-            (img, m.cell_size(), m.breathe())
+            // クリップが壊れていても、シートだけで動けるのでペットは読み込む（ログに残す）
+            let clips = m
+                .clips
+                .as_deref()
+                .and_then(|rel| match ClipPack::load(dir, rel) {
+                    Ok(pack) => Some(pack),
+                    Err(e) => {
+                        log(format!("{}: クリップを使わない: {e}", dir.display()));
+                        None
+                    }
+                });
+            (img, m.cell_size(), m.breathe(), clips)
         }
     };
     let rows = image.height() / source_cell.1;
@@ -247,12 +281,25 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
     if layout.is_empty() {
         return Err("中身のあるコマが 1 つも無い".into());
     }
-    let cell = (needed.0.min(source_cell.0), needed.1.min(source_cell.1));
-    let cells = CellStore::build(&image, source_cell, cell, &layout);
+    let max = max_cell(source_cell, clips.is_some());
+    let cell = (needed.0.min(max.0), needed.1.min(max.1));
+    // クリップがあるなら、シートで描くのはクリップで描けないポーズ（困る・ループの無い姿勢）の行だけ
+    let rows: Option<Vec<u32>> = clips.as_ref().map(|pack| {
+        // 待機の行は、最初のクリップを読み終えるまでの 1 枚に使う（無いと起動直後の窓が透明になる）
+        let mut r: Vec<u32> = sheet_poses(&pack.set)
+            .into_iter()
+            .chain([Pose::Idle])
+            .map(|p| p.clip_in(&layout).row)
+            .collect();
+        r.sort_unstable();
+        r.dedup();
+        r
+    });
+    let cells = CellStore::build(&image, source_cell, cell, &layout, rows.as_deref());
     // 元のシート（まめドラゴンで 56MB）はここで手放す。切り抜いたコマだけを持って戻る
     drop(image);
     log(format!(
-        "pet '{}' ({}) loaded in {} ms: {} rows (frames {:?}), cell {}x{} (source {}x{}), {} KB",
+        "pet '{}' ({}) loaded in {} ms: {} rows (frames {:?}), cell {}x{} (source {}x{}), {} KB, clips {}, sheet rows kept {:?}",
         entry.name,
         entry.id,
         started.elapsed().as_millis(),
@@ -262,7 +309,9 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         cell.1,
         source_cell.0,
         source_cell.1,
-        cells.bytes() / 1024
+        cells.bytes() / 1024,
+        clips.as_ref().map_or(0, |p| p.set.clips.len()),
+        rows
     ));
     Ok(LoadedSheet {
         cells,
@@ -270,6 +319,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         source_cell,
         layout,
         breathe,
+        clips,
     })
 }
 
