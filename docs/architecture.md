@@ -118,7 +118,7 @@ Grabbed（ドラッグ中）
 
 ### 4.4 ペットの素材と切り替え（2026-10-21 K 指示）
 
-- ペット＝フォルダ（`pet.json`＋スプライトシート PNG/WebP）。`pet.json` は Codex 互換の `id`・`displayName`・`spritesheetPath` に、独自の `cellScale`（1 コマを 192×208 の何倍で描いたか。既定 1・上限 4）を足した
+- ペット＝フォルダ（`pet.json`＋スプライトシート PNG/WebP）。`pet.json` の中のパス（`spritesheetPath`・`clips`）はフォルダの中の相対パスだけ受け付ける（`..`・絶対パス・ドライブ名・UNC・`.` 始まりは読み込まない）。クリップ名は英小文字・数字・`_` だけ（2026-10-21 セキュリティレビューの指摘。フォルダの中に外を指すリンクを置かれた場合は防げない）。`pet.json` は Codex 互換の `id`・`displayName`・`spritesheetPath` に、独自の `cellScale`（1 コマを 192×208 の何倍で描いたか。既定 1・上限 4）を足した
 - 探す場所（先に見つかった id を使う）: `%LOCALAPPDATA%\pet-claude\pets\<id>\` → exe と同じフォルダの `pets\<id>\` → デバッグビルドだけリポジトリの `assets\pets\<id>\`。内蔵の仮キャラ（`placeholder`）は exe に埋め込む
 - 起動時に試す順: `--pet <dir>`（指定したら、それが読めなければ起動しない）→ state.json の `pet` → フォルダにあるペット（見つかった順）→ 仮キャラ（クリックの抜けを試す絵なので最後の手段）。読めないペットは飛ばして次を試す（`pets::startup_order`）
 - 設定画面の「ペット」で切り替える。足元の位置と大きさはそのまま。選択は state.json の `pet`
