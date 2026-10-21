@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-22
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — チャット欄をバーと同じ規則で置く（ペットの真下、収まらなければ真上。答えの欄で高くなっても置き直す） (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §6.1 にチャット欄とペットの重なり（チャット欄が出ている間はペットが最前面を取り直さない・開いた直後の前面の喪失を 1 回取り直す）。実機確認で見つかった 2 件の修正に合わせた (kuroko/claude-opus-5-5 ← human:K)
 
 ## 2026-10-21

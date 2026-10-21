@@ -122,8 +122,8 @@ thread_local! {
     static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
     /// チャットの最後の答え（チャット欄に出す全文, 失敗か）。「新しいチャット」で消す
     static CHAT_LAST: RefCell<Option<(String, bool)>> = const { RefCell::new(None) };
-    /// チャット欄の入力欄の中心（物理座標）と DPI。答えが来て欄の高さが変わっても入力欄の位置を保つ
-    static CHAT_ANCHOR: Cell<Option<(Point, u32)>> = const { Cell::new(None) };
+    /// チャット欄を開いた時のペットの矩形（物理座標）と DPI。チャット欄はこれに重ならないよう置く
+    static CHAT_PET: Cell<Option<(Rect, u32)>> = const { Cell::new(None) };
     /// チャット欄を開いた時刻。開いた直後の前面の喪失を 1 回だけ取り直すのに使う（使ったら消す）
     static CHAT_OPENED_AT: Cell<Option<Instant>> = const { Cell::new(None) };
 }
@@ -363,27 +363,16 @@ fn open_bar(pet: Rect, dpi: u32) {
     log("bar shown");
 }
 
-/// バーの「チャット」: バーを隠してチャット入力を同じ場所に出す。バーが無い時（吹き出しの「続きを見る」）は、
-/// バーが出るはずの場所（ペットの真下）に出す。
+/// バーの「チャット」・吹き出しの「続きを見る」: バーを隠してチャット欄をペットの真下に出す
+/// （下に収まらなければ真上。ペットには重ねない）。
 fn open_chat() {
     // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
     HOVER_BAR.with(|h| h.set(false));
-    let bar_rect = window(BAR)
-        .filter(|_| bar_visible())
-        .and_then(|b| window_rect(&b));
-    let anchor = match bar_rect {
-        Some(r) => (
-            r.center(),
-            monitors::at_point(r.center()).map_or(96, |m| m.dpi),
-        ),
-        None => {
-            let Some((pet, dpi)) = PET_AT.with(Cell::get) else {
-                return;
-            };
-            (below_pet(&pet, BAR_ISLAND, dpi).center(), dpi)
-        }
+    let Some(pet) = PET_AT.with(Cell::get) else {
+        return;
     };
-    CHAT_ANCHOR.with(|a| a.set(Some(anchor)));
+    CHAT_PET.with(|a| a.set(Some(pet)));
+    let anchor = pet;
     let Some(chat) = island(CHAT) else { return };
     let rect = chat_rect();
     if let Some(bar) = window(BAR) {
@@ -421,14 +410,14 @@ fn chat_island() -> (f64, f64) {
     }
 }
 
-/// チャット欄の窓の矩形。入力欄（島の一番下の 48px）の中心を `CHAT_ANCHOR` に合わせ、答えの欄は上に伸ばす。
+/// チャット欄の窓の矩形。バーと同じく、ペットの真下に置き、作業領域の下に収まらなければ真上に置く。
+/// 答えの欄が足されて高くなったときも同じ規則で置き直す（入力欄の位置を保つ置き方だと、画面の下の方では
+/// 答えの欄がペットに重なり、ペットに隠れた。2026-10-22 K の指示「端っこでチャットを開くと重なる問題も直して」）。
 fn chat_rect() -> Rect {
-    let (c, dpi) = CHAT_ANCHOR
-        .with(Cell::get)
-        .unwrap_or((Point { x: 0, y: 0 }, 96));
-    let (w, h) = window_size(chat_island(), dpi);
-    let below = ((CHAT_ISLAND.1 / 2.0 + SHADOW_PAD) * scale(dpi)).round() as i32;
-    clamp_to_screen(Rect::from_xywh(c.x - w / 2, c.y + below - h, w, h))
+    let Some((pet, dpi)) = CHAT_PET.with(Cell::get) else {
+        return Rect::from_xywh(0, 0, 1, 1);
+    };
+    below_pet(&pet, chat_island(), dpi)
 }
 
 /// chat.html が読み込み時・答えが来た時に受け取る中身。
@@ -455,7 +444,7 @@ pub fn refresh_chat() {
         "window.renderChat && window.renderChat({})",
         chat_state()
     ));
-    set_chat_inside(rect, CHAT_ANCHOR.with(Cell::get).map_or(96, |a| a.1));
+    set_chat_inside(rect, CHAT_PET.with(Cell::get).map_or(96, |a| a.1));
 }
 
 /// チャットの答え（チャットのスレッドから run_on_main_thread で呼ばれる）。
