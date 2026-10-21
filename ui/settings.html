@@ -44,6 +44,16 @@
   .switch:checked::after { transform: translateX(20px); }
   .switch:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
   @media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+  /* 行の中の小さなボタン（HIG の bordered button を写す: 灰の塗り・角丸 8・高さ 28） */
+  .btn { height: 28px; padding: 0 12px; border: 0; border-radius: 8px; flex: none;
+    font: inherit; font-feature-settings: "palt"; color: var(--label); background: var(--surface-hover); }
+  .btn:hover { background: var(--surface-press); }
+  .btn:disabled { opacity: .4; }
+  .btn:focus-visible, .key:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+  .key { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 0; border-radius: 8px;
+    font: inherit; color: var(--label); background: var(--surface-hover); outline: 0; }
+  .status { color: var(--label-2); font-feature-settings: "palt"; text-align: right; }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -77,6 +87,30 @@
     </div>
   </div>
   <p class="note">声の機能は Phase 3 以降で使えます（設定は保存されます）。</p>
+
+  <h2>チャット</h2>
+  <div class="group">
+    <div class="row">
+      <label for="auth">接続</label>
+      <span class="popup"><select id="auth">
+        <option value="subscription">サブスク</option>
+        <option value="api_key">API キー</option>
+      </select></span>
+    </div>
+    <div class="row" id="key-row" hidden>
+      <label for="key" id="key-label">API キー</label>
+      <input type="password" class="key" id="key" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+      <span class="status" id="key-saved" hidden>保存済み</span>
+      <button type="button" class="btn" id="key-save" disabled>保存</button>
+      <button type="button" class="btn" id="key-delete" hidden>削除</button>
+    </div>
+    <div class="row">
+      <label>いまの接続</label>
+      <span class="status" id="check-result"></span>
+      <button type="button" class="btn" id="check">確かめる</button>
+    </div>
+  </div>
+  <p class="note">サブスクは Claude Code にログインしているアカウントで答えます。API キーは使った分だけ課金され、鍵は Windows の資格情報マネージャーに保存します。</p>
 </main>
 <script src="ui.js"></script>
 <script>
@@ -102,12 +136,53 @@
     }));
     pet.value = s.pet;
   };
+  // ---- チャットの接続（鍵は画面に読み返さない。保存されているかだけ受け取る） ----
+  const auth = document.getElementById("auth");
+  const keyRow = document.getElementById("key-row");
+  const key = document.getElementById("key");
+  const keySave = document.getElementById("key-save");
+  const keyDelete = document.getElementById("key-delete");
+  const keySaved = document.getElementById("key-saved");
+  const checkResult = document.getElementById("check-result");
+  const check = document.getElementById("check");
+  const showAuth = (mode, hasKey) => {
+    auth.value = mode;
+    keyRow.hidden = mode !== "api_key";
+    key.hidden = hasKey;
+    keySave.hidden = hasKey;
+    keySaved.hidden = !hasKey;
+    keyDelete.hidden = !hasKey;
+    checkResult.textContent = "";
+  };
+  auth.addEventListener("change", () => {
+    invoke("chat_auth_set", { mode: auth.value });
+    invoke("settings_get").then((s) => showAuth(auth.value, s.hasApiKey));
+  });
+  key.addEventListener("input", () => { keySave.disabled = key.value.trim() === ""; });
+  keySave.addEventListener("click", async () => {
+    const ok = await invoke("chat_key_save", { key: key.value });
+    key.value = "";
+    keySave.disabled = true;
+    showAuth(auth.value, ok);
+    if (!ok) checkResult.textContent = "保存できませんでした";
+  });
+  keyDelete.addEventListener("click", async () => {
+    await invoke("chat_key_delete");
+    showAuth(auth.value, false);
+  });
+  check.addEventListener("click", async () => {
+    check.disabled = true;
+    checkResult.textContent = "確かめています…";
+    checkResult.textContent = await invoke("chat_auth_check", { mode: auth.value });
+    check.disabled = false;
+  });
   window.reload = () => invoke("settings_get").then((s) => {
     scale.value = Math.round(s.scale * 100);
     tts.checked = s.tts;
     wake.checked = s.wake;
     walk.checked = s.walk;
     fillPets(s);
+    showAuth(s.chatAuth || "subscription", !!s.hasApiKey);
     show();
   });
   window.reload();

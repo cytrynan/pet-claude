@@ -16,6 +16,7 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
+use pet_core::chat::AuthMode;
 use pet_core::clips::{ClipKind, Player, Show, Still};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
@@ -1232,6 +1233,8 @@ pub fn settings() -> serde_json::Value {
                 serde_json::json!({
                     "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk,
                     "pet": p.want.id, "pets": pets,
+                    // 鍵は返さない。保存されているかだけ（N4）
+                    "chatAuth": p.state.chat_auth.as_str(), "hasApiKey": crate::cred::has_key(),
                 })
             })
         })
@@ -1343,6 +1346,54 @@ pub fn on_wire_event(ev: &WireEvent) {
     if let Some(text) = phrase {
         ui::show_status(text);
     }
+}
+
+/// チャットの返答待ちの間、ペットを作業中の動きにする（hooks の Prompt と同じ扱い。セッション名で区別）。
+pub fn chat_thinking(session: &'static str) {
+    with_pet(move |pet| {
+        let now = now_ms(pet.epoch);
+        pet.behavior.on_agent(
+            AgentEvent::Prompt {
+                session: session.to_string(),
+            },
+            now,
+        );
+    });
+}
+
+/// チャットの返答が終わった（`ok` なら喜ぶ、失敗なら落ち込む）。
+pub fn chat_finished(session: &'static str, ok: bool) {
+    with_pet(move |pet| {
+        let now = now_ms(pet.epoch);
+        let session = session.to_string();
+        let ev = if ok {
+            AgentEvent::Done { session }
+        } else {
+            AgentEvent::Error { session }
+        };
+        pet.behavior.on_agent(ev, now);
+    });
+}
+
+/// チャットの接続（設定）。ペットがまだ無い時は既定のサブスク。
+pub fn chat_auth() -> AuthMode {
+    PET.with(|cell| {
+        cell.try_borrow()
+            .ok()
+            .and_then(|g| g.as_ref().map(|p| p.state.chat_auth))
+    })
+    .unwrap_or(AuthMode::Subscription)
+}
+
+/// 設定画面でチャットの接続を変えて保存する。
+pub fn set_chat_auth(mode: AuthMode) {
+    with_pet(move |pet| {
+        if pet.state.chat_auth != mode {
+            pet.state.chat_auth = mode;
+            pet.state.save();
+            log(format!("chat_auth -> {}", mode.as_str()));
+        }
+    });
 }
 
 /// 位置を既定（主画面の右下）に戻す。

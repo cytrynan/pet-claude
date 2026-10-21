@@ -50,6 +50,20 @@ const STATUS_ISLAND: (f64, f64) = (180.0, 40.0);
 const PERMISSION_ISLAND: (f64, f64) = (320.0, 148.0);
 /// 「許可」を出さないカードは注記が 1 行増える（撮影で要約の行が潰れたので分けた）。
 const PERMISSION_NOTE_ISLAND: (f64, f64) = (320.0, 172.0);
+/// チャットの答えの吹き出し: 幅と、1 行目の高さ（上下の余白込み）・2 行目からの 1 行の高さ・「続きを見る」の行。
+/// 本文 13px・行の高さ 20px。幅 300px の中身 272px＝全角 20 字。字幅の誤差を見込んで 1 行 38 桁で数える。
+const ANSWER_WIDTH: f64 = 300.0;
+const ANSWER_BASE: f64 = 44.0;
+const ANSWER_LINE_HEIGHT: f64 = 20.0;
+const ANSWER_MORE_ROW: f64 = 34.0;
+const ANSWER_COLS: usize = 38;
+/// 答えの吹き出しを出しておく時間: 基本＋1 字ごと、上限あり（読み終える前に消えないように）。
+const ANSWER_BASE_MS: u64 = 6000;
+const ANSWER_PER_CHAR_MS: u64 = 120;
+const ANSWER_MAX_MS: u64 = 20_000;
+/// チャット欄の上に出す答えの欄の高さ（論理ピクセル。中はスクロール）と、入力欄との間。
+const CHAT_ANSWER_HEIGHT: f64 = 188.0;
+const CHAT_GAP: f64 = 8.0;
 /// 吹き出しの下端を、ペットの窓の上端からこの分だけ下げる（素材の上の透明な余白を詰める。論理ピクセル）。
 const BUBBLE_DROP: f64 = 20.0;
 /// 承認の要約: 折り返して全文を出す。行数の上限・1 行の桁数（多めに数える）・1 行の高さ（論理ピクセル）。
@@ -101,6 +115,10 @@ thread_local! {
     static HOVER_BAR: Cell<bool> = const { Cell::new(false) };
     /// ホバーのバーから離れたかの確認を待っている
     static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
+    /// チャットの最後の答え（チャット欄に出す全文, 失敗か）。「新しいチャット」で消す
+    static CHAT_LAST: RefCell<Option<(String, bool)>> = const { RefCell::new(None) };
+    /// チャット欄の入力欄の中心（物理座標）と DPI。答えが来て欄の高さが変わっても入力欄の位置を保つ
+    static CHAT_ANCHOR: Cell<Option<(Point, u32)>> = const { Cell::new(None) };
 }
 
 fn app() -> Option<AppHandle> {
@@ -320,30 +338,168 @@ fn open_bar(pet: Rect, dpi: u32) {
     log("bar shown");
 }
 
-/// バーの「チャット」: バーを隠してチャット入力を同じ場所に出す。
+/// バーの「チャット」: バーを隠してチャット入力を同じ場所に出す。バーが無い時（吹き出しの「続きを見る」）は、
+/// バーが出るはずの場所（ペットの真下）に出す。
 fn open_chat() {
     // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
     HOVER_BAR.with(|h| h.set(false));
-    let Some(bar_rect) = window(BAR).and_then(|b| window_rect(&b)) else {
-        return;
+    let bar_rect = window(BAR)
+        .filter(|_| bar_visible())
+        .and_then(|b| window_rect(&b));
+    let anchor = match bar_rect {
+        Some(r) => (
+            r.center(),
+            monitors::at_point(r.center()).map_or(96, |m| m.dpi),
+        ),
+        None => {
+            let Some((pet, dpi)) = PET_AT.with(Cell::get) else {
+                return;
+            };
+            (below_pet(&pet, BAR_ISLAND, dpi).center(), dpi)
+        }
     };
-    let dpi = monitors::at_point(bar_rect.center()).map_or(96, |m| m.dpi);
+    CHAT_ANCHOR.with(|a| a.set(Some(anchor)));
     let Some(chat) = island(CHAT) else { return };
-    let (w, h) = window_size(CHAT_ISLAND, dpi);
-    let c = bar_rect.center();
-    let rect = clamp_to_screen(Rect::from_xywh(c.x - w / 2, c.y - h / 2, w, h));
+    let rect = chat_rect();
     if let Some(bar) = window(BAR) {
         let _ = bar.hide();
     }
     mark_shown(BAR, false);
     place_and_show(CHAT, &chat, rect, true);
+    let _ = chat.eval(format!(
+        "window.renderChat && window.renderChat({})",
+        chat_state()
+    ));
     let _ = chat.eval("window.focusInput && window.focusInput()");
-    INSIDE.with(|i| {
-        let mut v = i.borrow_mut();
-        v.retain(|r| *r != island_rect(bar_rect, dpi));
-        v.push(island_rect(rect, dpi));
-    });
+    set_chat_inside(rect, anchor.1);
     log("chat shown");
+}
+
+/// 外側クリックの判定に、チャット欄とペットを入れる。
+fn set_chat_inside(rect: Rect, dpi: u32) {
+    let mut inside = vec![island_rect(rect, dpi)];
+    if let Some((pet, _)) = PET_AT.with(Cell::get) {
+        inside.push(pet);
+    }
+    set_inside(inside);
+}
+
+/// チャット欄の島の大きさ。答えがあれば入力欄の上に答えの欄を足す。
+fn chat_island() -> (f64, f64) {
+    let has_answer = CHAT_LAST.with(|c| c.borrow().is_some());
+    if has_answer {
+        (CHAT_ISLAND.0, CHAT_ISLAND.1 + CHAT_GAP + CHAT_ANSWER_HEIGHT)
+    } else {
+        CHAT_ISLAND
+    }
+}
+
+/// チャット欄の窓の矩形。入力欄（島の一番下の 48px）の中心を `CHAT_ANCHOR` に合わせ、答えの欄は上に伸ばす。
+fn chat_rect() -> Rect {
+    let (c, dpi) = CHAT_ANCHOR
+        .with(Cell::get)
+        .unwrap_or((Point { x: 0, y: 0 }, 96));
+    let (w, h) = window_size(chat_island(), dpi);
+    let below = ((CHAT_ISLAND.1 / 2.0 + SHADOW_PAD) * scale(dpi)).round() as i32;
+    clamp_to_screen(Rect::from_xywh(c.x - w / 2, c.y + below - h, w, h))
+}
+
+/// chat.html が読み込み時・答えが来た時に受け取る中身。
+pub fn chat_state() -> serde_json::Value {
+    CHAT_LAST.with(|c| {
+        let c = c.borrow();
+        serde_json::json!({
+            "answer": c.as_ref().map(|(t, _)| t.clone()),
+            "error": c.as_ref().is_some_and(|(_, e)| *e),
+            "busy": crate::chat::busy(),
+        })
+    })
+}
+
+/// 答えが変わったら、開いているチャット欄を描き直し、高さを合わせる。
+fn refresh_chat() {
+    if !visible(CHAT) {
+        return;
+    }
+    let Some(w) = window(CHAT) else { return };
+    let rect = chat_rect();
+    place_and_show(CHAT, &w, rect, false);
+    let _ = w.eval(format!(
+        "window.renderChat && window.renderChat({})",
+        chat_state()
+    ));
+    set_chat_inside(rect, CHAT_ANCHOR.with(Cell::get).map_or(96, |a| a.1));
+}
+
+/// チャットの答え（チャットのスレッドから run_on_main_thread で呼ばれる）。
+/// 全文はチャット欄に、吹き出しには `bubble_text` で整えた 1 行を出す（N3）。
+pub fn show_chat_answer(text: &str) {
+    show_chat_result(
+        pet_core::chat::panel_text(text),
+        pet_core::chat::bubble_text(text),
+        false,
+    );
+}
+
+/// チャットの失敗。理由はもう一度 `bubble_text` に通す（N3。呼び出し元を信用しない）。
+pub fn show_chat_failure(reason: &str) {
+    let line = pet_core::chat::bubble_text(reason);
+    show_chat_result(line.clone(), line, true);
+}
+
+fn show_chat_result(panel: String, bubble: String, error: bool) {
+    // 吹き出しに全部は出ていない（切り詰めた・チャット欄に回した）なら「続きを見る」
+    let more = !error && panel != bubble;
+    CHAT_LAST.with(|c| *c.borrow_mut() = Some((panel, error)));
+    if visible(CHAT) {
+        // 開いているチャット欄に出す（吹き出しは重ねない）
+        refresh_chat();
+        return;
+    }
+    // 承認のカードが出ている間は上書きしない（答えはチャット欄で見られる）
+    if PERMS.with(|q| !q.borrow().is_empty()) {
+        return;
+    }
+    let chars = bubble.chars().count() as u64;
+    let ms = (ANSWER_BASE_MS + chars * ANSWER_PER_CHAR_MS).min(ANSWER_MAX_MS);
+    let generation = STATUS_GEN.with(|g| {
+        g.set(g.get() + 1);
+        g.get()
+    });
+    render_bubble(serde_json::json!({
+        "mode": "answer", "text": bubble, "more": more, "error": error,
+        "lines": answer_lines(&bubble),
+    }));
+    let Some(handle) = app() else { return };
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(Duration::from_millis(ms));
+        let _ = handle.run_on_main_thread(move || {
+            let current = STATUS_GEN.with(Cell::get) == generation;
+            let is_answer = BUBBLE_STATE.with(|s| s.borrow()["mode"] == "answer");
+            if current && is_answer {
+                render_bubble(serde_json::Value::Null);
+            }
+        });
+    });
+}
+
+/// 答えの吹き出しで折り返したときの行数の見積もり（多めに数える。半角 1 桁・全角 2 桁）。
+fn answer_lines(text: &str) -> usize {
+    let cols: usize = text
+        .chars()
+        .map(|c| if (c as u32) < 0x1100 { 1 } else { 2 })
+        .sum();
+    cols.div_ceil(ANSWER_COLS).max(1)
+}
+
+/// 「新しいチャット」: 会話と最後の答えを消す。
+pub fn new_chat() {
+    crate::chat::new_chat();
+    CHAT_LAST.with(|c| *c.borrow_mut() = None);
+    if BUBBLE_STATE.with(|s| s.borrow()["mode"] == "answer") {
+        render_bubble(serde_json::Value::Null);
+    }
+    refresh_chat();
 }
 
 /// 右クリックメニューを出す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
@@ -501,7 +657,7 @@ pub fn open_settings() {
         let built =
             WebviewWindowBuilder::new(&app, SETTINGS, WebviewUrl::App("settings.html".into()))
                 .title("pet-claude の設定")
-                .inner_size(440.0, 380.0)
+                .inner_size(440.0, 600.0)
                 .resizable(false)
                 .maximizable(false)
                 .center()
@@ -534,6 +690,12 @@ pub fn action(action: String) {
     log(format!("ui action: {action}"));
     defer(move || match action.as_str() {
         "chat" => open_chat(),
+        // 吹き出しの「続きを見る」: チャット欄を開いて全文を出す
+        "chat:more" => {
+            render_bubble(serde_json::Value::Null);
+            open_chat();
+        }
+        "chat:new" => new_chat(),
         // 音声入力は Phase 3。いまはバーを閉じるだけ
         "voice" => hide(BAR),
         "close" => hide_all(),
@@ -547,6 +709,7 @@ pub fn action(action: String) {
             crate::pet_window::reset_position();
         }
         "menu:quit" => {
+            crate::chat::shutdown();
             crate::pet_window::shutdown();
             crate::ipc_server::stop();
             log("quit");
@@ -575,6 +738,18 @@ pub fn note_pet(rect: Rect, dpi: u32) {
 fn bubble_island() -> (f64, f64) {
     BUBBLE_STATE.with(|s| {
         let s = s.borrow();
+        if s["mode"] == "answer" {
+            let lines = s["lines"].as_u64().unwrap_or(1).max(1);
+            let more = if s["more"] == true {
+                ANSWER_MORE_ROW
+            } else {
+                0.0
+            };
+            return (
+                ANSWER_WIDTH,
+                ANSWER_BASE + (lines - 1) as f64 * ANSWER_LINE_HEIGHT + more,
+            );
+        }
         if s["mode"] != "permission" {
             return STATUS_ISLAND;
         }
