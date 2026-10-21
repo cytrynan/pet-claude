@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [プロダクト要求定義書](product-requirements.md) — N1（メモリは子孫プロセス込みの専有で判定。普段 50MB・UI 表示中 150MB）を K 承認済みに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[ロードマップ](roadmap.md)・[プロダクト要求定義書](product-requirements.md) — メモリの数値を実測の幅（専有とワーキングセット）に。N1 の改訂は K 未承認と明記（評価係の指摘） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md) — §3-b の「後回し」の説明を訂正（run_on_main_thread はメインスレッドから呼ぶと同期実行。defer は別スレッド経由）、§4.1 の型を実装に合わせた（検証係の指摘） (kuroko/claude-opus-5-5)
 * **Update**: [DESIGN.md](../DESIGN.md) — 色付けの例外（設定画面の標準部品）を明記 (kuroko/claude-opus-5-5)
