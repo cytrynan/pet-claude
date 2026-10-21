@@ -1,8 +1,12 @@
 //! 状態ごとの静止画から、ペットのフォルダ（`pet.json`＋`spritesheet.webp`）を作る。
 //!
 //! ```text
-//! cargo run --release -p pet-core --example build_pet -- <静止画のフォルダ> <出力フォルダ> <id> <表示名> [cellScale]
+//! cargo run --release -p pet-core --example build_pet -- <静止画のフォルダ> <出力フォルダ> <id> <表示名> [cellScale] [--frames <状態>=<フォルダ>]...
 //! ```
+//!
+//! `--frames walk=<フォルダ>` のように、状態ごとに描いたアニメーションのコマ（フォルダの PNG・WebP を
+//! 名前の順に 8 枚まで）を渡すと、その状態の行は静止画の代わりにそのコマで作る。キャラの大きさは
+//! 同じ状態の静止画に合わせる（2026-10-21 K 指示: 歩くまめドラゴンの 8 コマを導入）。
 //!
 //! 静止画のファイル名は「状態の名前」を含むこと（例 `01-idle.png`）。状態の名前と、シートの
 //! どの行に・どの動きで置くかは下の `PLAN`。足りない状態は、近い状態の絵で埋める（`FALLBACK`）。
@@ -63,6 +67,43 @@ fn find(dir: &Path, state: &str) -> Option<PathBuf> {
     hits.into_iter().next()
 }
 
+/// フォルダの PNG・WebP を名前の順に読む（8 枚を超えた分は使わない）。全部同じ大きさであること。
+fn load_frames(dir: &Path) -> Result<Vec<RgbaImage>, String> {
+    let mut paths: Vec<PathBuf> = std::fs::read_dir(dir)
+        .map_err(|e| format!("{}: {e}", dir.display()))?
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("webp"))
+        })
+        .collect();
+    paths.sort();
+    let frames: Vec<RgbaImage> = paths
+        .iter()
+        .take(8)
+        .map(|p| {
+            image::open(p)
+                .map(|i| i.into_rgba8())
+                .map_err(|e| format!("{}: {e}", p.display()))
+        })
+        .collect::<Result<_, _>>()?;
+    let Some(first) = frames.first() else {
+        return Err(format!("{} にコマが無い", dir.display()));
+    };
+    if frames.iter().any(|f| f.dimensions() != first.dimensions()) {
+        return Err(format!("{} のコマの大きさがそろっていない", dir.display()));
+    }
+    eprintln!(
+        "{}: {} コマ（{}x{}）",
+        dir.display(),
+        frames.len(),
+        first.width(),
+        first.height()
+    );
+    Ok(frames)
+}
+
 fn load(dir: &Path, state: &str) -> Result<(String, RgbaImage), String> {
     let mut name = state;
     loop {
@@ -82,7 +123,24 @@ fn load(dir: &Path, state: &str) -> Result<(String, RgbaImage), String> {
 }
 
 fn main() -> Result<(), String> {
-    let args: Vec<String> = std::env::args().collect();
+    let all: Vec<String> = std::env::args().collect();
+    // `--frames <状態>=<フォルダ>` を取り出し、残りを位置引数として読む
+    let mut animations: Vec<(String, Vec<RgbaImage>)> = Vec::new();
+    let mut args: Vec<String> = Vec::new();
+    let mut it = all.into_iter();
+    while let Some(a) = it.next() {
+        if a == "--frames" {
+            let spec = it
+                .next()
+                .ok_or("--frames の後に <状態>=<フォルダ> が要る")?;
+            let (state, dir) = spec
+                .split_once('=')
+                .ok_or_else(|| format!("--frames は <状態>=<フォルダ>: {spec}"))?;
+            animations.push((state.to_ascii_lowercase(), load_frames(Path::new(dir))?));
+        } else {
+            args.push(a);
+        }
+    }
     if args.len() < 5 {
         return Err(
             "使い方: build_pet <静止画のフォルダ> <出力フォルダ> <id> <表示名> [cellScale]".into(),
@@ -111,11 +169,23 @@ fn main() -> Result<(), String> {
     let get = |s: &str| &cache.iter().find(|(n, _)| n == s).expect("読み込み済み").1;
     let specs: Vec<RowSpec<'_>> = PLAN
         .iter()
-        .map(|&(state, pose, mirror, motion)| RowSpec {
-            pose,
-            image: get(state),
-            mirror,
-            motion,
+        .map(|&(state, pose, mirror, motion)| {
+            let animation = animations
+                .iter()
+                .find(|(s, _)| s == state)
+                .map(|(_, f)| f.as_slice());
+            RowSpec {
+                pose,
+                image: get(state),
+                mirror,
+                // 描いたコマには、もう動きが入っている（足を交互に出す）ので、上下の揺れは足さない
+                motion: if animation.is_some() {
+                    Motion::Still
+                } else {
+                    motion
+                },
+                animation,
+            }
         })
         .collect();
     let sheet = compose_sheet(&specs, get("idle"), 11, cw, ch);

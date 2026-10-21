@@ -54,7 +54,7 @@ hooks を settings.json に登録する。`pet-hook.exe` は `pet-app.exe` と�
 cargo run --release -p pet-core --example build_pet -- <静止画のフォルダ> <出力フォルダ> <id> <表示名>
 ```
 
-まめドラゴン（`assets/pets/mame-dragon/`）はこのコマンドで作った。1 コマは 384×416（`pet.json` の `cellScale: 2`）で、表示倍率 200% の画面でも引き伸ばさずに済む。
+歩くなどの描いたアニメーションがあれば、`--frames walk=<コマのフォルダ>` を付けると、その状態は静止画の代わりにそのコマで動く。まめドラゴン（`assets/pets/mame-dragon/`）は、静止画 8 枚と歩きの 8 コマから作った（歩く姿は「放置すると散歩する」をオンにすると見られる）。1 コマは 384×416（`pet.json` の `cellScale: 2`）で、表示倍率 200% の画面でも引き伸ばさずに済む。
 
 ## 技術の詳細
 

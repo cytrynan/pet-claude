@@ -73,10 +73,13 @@ impl Motion {
 /// シートの 1 行の作り方。
 pub struct RowSpec<'a> {
     pub pose: Pose,
+    /// その状態の静止画。`animation` があるときは、キャラの大きさをこの絵に合わせるためだけに使う
     pub image: &'a RgbaImage,
     /// 左右反転する（右向きの絵から左向きを作る）
     pub mirror: bool,
     pub motion: Motion,
+    /// 描いたアニメーションのコマ（同じ大きさの画像を順に。8 枚まで）。None なら `image` から作る
+    pub animation: Option<&'a [RgbaImage]>,
 }
 
 fn premultiply(img: &mut RgbaImage) {
@@ -149,6 +152,63 @@ fn draw_cell(base: &RgbaImage, motion: (f32, f32, f32), cell_w: u32, cell_h: u32
     cell
 }
 
+/// 描いたアニメーションのコマを 1 行に並べる。
+///
+/// 全部のコマの不透明な範囲を合わせた枠で同じように切り出す（コマごとに切り出すと、足の出し入れで
+/// 中心がずれて揺れる）。キャラの高さは同じ状態の静止画（`still_h`）に合わせる。アニメーションは
+/// 静止画と描いた解像度が違うことが多い（まめドラゴンの歩きは 448×448 のコマで、静止画は 1312×1199）。
+fn draw_animation(
+    sheet: &mut RgbaImage,
+    spec: &RowSpec<'_>,
+    frames: &[RgbaImage],
+    still_h: f32,
+    row: u32,
+    (cell_w, cell_h): (u32, u32),
+) {
+    let union =
+        frames
+            .iter()
+            .filter_map(alpha_bbox)
+            .fold(None, |acc: Option<(u32, u32, u32, u32)>, b| {
+                let (x0, y0, x1, y1) = (b.0, b.1, b.0 + b.2, b.1 + b.3);
+                Some(match acc {
+                    None => (x0, y0, x1, y1),
+                    Some((a0, b0, a1, b1)) => (a0.min(x0), b0.min(y0), a1.max(x1), b1.max(y1)),
+                })
+            });
+    let Some((x0, y0, x1, y1)) = union else {
+        return;
+    };
+    let (uw, uh) = (x1 - x0, y1 - y0);
+    let room_h = cell_h as f32 * (1.0 - FOOT_MARGIN) * FIT_MARGIN;
+    let room_w = cell_w as f32 * FIT_MARGIN;
+    let s = (still_h / uh as f32)
+        .min(room_w / uw as f32)
+        .min(room_h / uh as f32);
+    let (w, h) = (
+        (uw as f32 * s).round() as u32,
+        (uh as f32 * s).round() as u32,
+    );
+    let n = (frames.len() as u32).min(COLUMNS);
+    for (i, frame) in frames.iter().take(n as usize).enumerate() {
+        // 枠が画像からはみ出す（大きさの違うコマが混じった）ときは、その画像に収まる分だけ切る
+        let cw = uw.min(frame.width().saturating_sub(x0));
+        let ch = uh.min(frame.height().saturating_sub(y0));
+        let mut crop = imageops::crop_imm(frame, x0, y0, cw, ch).to_image();
+        if spec.mirror {
+            crop = imageops::flip_horizontal(&crop);
+        }
+        let base = resize_clean(&crop, w, h);
+        let cell = draw_cell(&base, spec.motion.at(i as u32, n), cell_w, cell_h);
+        imageops::replace(
+            sheet,
+            &cell,
+            i64::from(i as u32 * cell_w),
+            i64::from(row * cell_h),
+        );
+    }
+}
+
 /// シートを組み立てる。行数は `rows`（`Pose::native_clip` の行番号まで）、1 コマ `cell_w`×`cell_h`。
 /// `reference` は大きさの基準（待機の絵）。`specs` に無い行は透明のまま。
 pub fn compose_sheet(
@@ -170,6 +230,18 @@ pub fn compose_sheet(
             trimmed = imageops::flip_horizontal(&trimmed);
         }
         let s = fit_scale(&trimmed, scale, cell_w, cell_h);
+        if let Some(frames) = spec.animation.filter(|f| !f.is_empty()) {
+            let still_h = trimmed.height() as f32 * s;
+            draw_animation(
+                &mut sheet,
+                spec,
+                frames,
+                still_h,
+                clip.row,
+                (cell_w, cell_h),
+            );
+            continue;
+        }
         let w = (trimmed.width() as f32 * s).round() as u32;
         let h = (trimmed.height() as f32 * s).round() as u32;
         let base = resize_clean(&trimmed, w, h);
@@ -232,12 +304,14 @@ mod tests {
                 image: &a,
                 mirror: false,
                 motion: Motion::Still,
+                animation: None,
             },
             RowSpec {
                 pose: Pose::Waiting,
                 image: &b,
                 mirror: false,
                 motion: Motion::Still,
+                animation: None,
             },
         ];
         let (cw, ch) = (96, 104);
@@ -266,6 +340,7 @@ mod tests {
             image: &tall,
             mirror: false,
             motion: Motion::Still,
+            animation: None,
         }];
         let sheet = compose_sheet(&specs, &a, 11, 96, 104);
         let b = alpha_bbox(&cell(&sheet, 10, 0, 96, 104)).unwrap();
@@ -286,6 +361,7 @@ mod tests {
             image: &img,
             mirror: true,
             motion: Motion::Still,
+            animation: None,
         }];
         let sheet = compose_sheet(&specs, &img, 11, 96, 104);
         let c = cell(&sheet, 2, 0, 96, 104);
@@ -305,12 +381,14 @@ mod tests {
                 image: &a,
                 mirror: false,
                 motion: Motion::Breathe(0.04),
+                animation: None,
             },
             RowSpec {
                 pose: Pose::Jumping,
                 image: &a,
                 mirror: false,
                 motion: Motion::Hop(0.1),
+                animation: None,
             },
         ];
         let sheet = compose_sheet(&specs, &a, 11, 96, 104);
@@ -330,6 +408,72 @@ mod tests {
     }
 
     #[test]
+    fn animation_frames_keep_their_relative_motion_and_the_still_size() {
+        // 静止画（高さ 200）と、低い解像度で描いたアニメーション 3 コマ（高さ 60・足が左右に動く）
+        let still = blob((300, 300), 50, 50, 100, 200);
+        let frames = [
+            blob((100, 100), 20, 20, 40, 60),
+            blob((100, 100), 30, 20, 40, 60),
+            blob((100, 100), 40, 20, 40, 60),
+        ];
+        let specs = [RowSpec {
+            pose: Pose::RunRight,
+            image: &still,
+            mirror: false,
+            motion: Motion::Still,
+            animation: Some(&frames),
+        }];
+        let sheet = compose_sheet(&specs, &still, 11, 96, 104);
+        let boxes: Vec<_> = (0..3)
+            .map(|f| alpha_bbox(&cell(&sheet, 1, f, 96, 104)).unwrap())
+            .collect();
+        // 3 コマとも書かれ、4 コマ目は空
+        assert_eq!(alpha_bbox(&cell(&sheet, 1, 3, 96, 104)), None);
+        // キャラの高さは静止画と同じ（FILL_HEIGHT の 89px 前後）。アニメーションの解像度に引きずられない
+        let still_row = compose_sheet(
+            &[RowSpec {
+                pose: Pose::Idle,
+                image: &still,
+                mirror: false,
+                motion: Motion::Still,
+                animation: None,
+            }],
+            &still,
+            11,
+            96,
+            104,
+        );
+        let sb = alpha_bbox(&cell(&still_row, 0, 0, 96, 104)).unwrap();
+        assert!(
+            boxes.iter().all(|b| b.3.abs_diff(sb.3) <= 1),
+            "{boxes:?} vs {sb:?}"
+        );
+        // 足元は 3 コマともそろい、横の動き（左→右）は保たれる
+        assert!(
+            boxes
+                .iter()
+                .all(|b| (b.1 + b.3).abs_diff(boxes[0].1 + boxes[0].3) <= 1)
+        );
+        assert!(
+            boxes[0].0 < boxes[1].0 && boxes[1].0 < boxes[2].0,
+            "{boxes:?}"
+        );
+        // 反転すると動きも逆になる
+        let specs = [RowSpec {
+            pose: Pose::RunLeft,
+            image: &still,
+            mirror: true,
+            motion: Motion::Still,
+            animation: Some(&frames),
+        }];
+        let sheet = compose_sheet(&specs, &still, 11, 96, 104);
+        let left: Vec<_> = (0..3)
+            .map(|f| alpha_bbox(&cell(&sheet, 2, f, 96, 104)).unwrap().0)
+            .collect();
+        assert!(left[0] > left[1] && left[1] > left[2], "{left:?}");
+    }
+
+    #[test]
     fn still_rows_get_a_single_frame() {
         let a = blob((100, 100), 20, 0, 60, 100);
         let specs = [RowSpec {
@@ -337,6 +481,7 @@ mod tests {
             image: &a,
             mirror: false,
             motion: Motion::Still,
+            animation: None,
         }];
         let sheet = compose_sheet(&specs, &a, 11, 96, 104);
         assert!(alpha_bbox(&cell(&sheet, 0, 0, 96, 104)).is_some());
