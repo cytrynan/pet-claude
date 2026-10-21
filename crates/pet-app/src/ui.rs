@@ -81,9 +81,13 @@ fn browser_args() -> String {
 /// 後回しにするには別スレッドから呼んでイベントループのキューに積む（2026-10-21 検証係の指摘で判明）。
 pub fn defer(f: impl FnOnce() + Send + 'static) {
     if let Some(handle) = app() {
-        std::thread::spawn(move || {
+        // spawn は失敗すると panic する（フックの中なら abort）。Builder で失敗をログに落とす
+        let spawned = std::thread::Builder::new().spawn(move || {
             let _ = handle.run_on_main_thread(f);
         });
+        if let Err(e) = spawned {
+            log(format!("defer のスレッドを作れない: {e}"));
+        }
     }
 }
 

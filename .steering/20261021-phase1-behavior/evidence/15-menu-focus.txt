@@ -1,0 +1,3 @@
+before right-click: fg class=Notepad title=*無題 - メモ帳
+after menu shown:  fg class=Notepad title=*無題 - メモ帳
+after bar shown:   fg class=Notepad title=*無題 - メモ帳
