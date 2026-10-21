@@ -7,6 +7,7 @@
 //!   展開して 56MB）。読み込んだらすぐ、いまの表示に要る解像度までコマごとに縮めて持つ
 //!   （PRD N1: 普段の専有 50MB）。もっと大きく表示するときに読み直す
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use image::RgbaImage;
@@ -27,10 +28,88 @@ pub struct PetEntry {
     pub dir: Option<PathBuf>,
 }
 
+/// 中身のあるコマだけを、不透明な範囲で切り抜いて持つ。シートを丸ごと持つと、空のコマ（まめドラゴンは
+/// 88 コマ中 31）と透明な余白の分まで抱える。2026-10-21、K の大きさ 105%（200% の画面で 1 コマ 404×437 が要る）
+/// でシートを縮めずに持ち、専有 58.6MB と PRD N1（50MB）を超えた
+pub struct CellStore {
+    /// 1 コマの画素数（縮めた後）
+    pub cell: (u32, u32),
+    /// (行, コマ) → (コマの中での左上, 切り抜いた絵)
+    cells: HashMap<(u32, u32), (u32, u32, RgbaImage)>,
+}
+
+impl CellStore {
+    /// シートの中身のあるコマ（`layout` の数だけ）を、`cell` の大きさに縮めてから切り抜く。
+    fn build(
+        sheet: &RgbaImage,
+        source_cell: (u32, u32),
+        cell: (u32, u32),
+        layout: &SheetLayout,
+    ) -> Self {
+        let mut cells = HashMap::new();
+        for (row, &n) in layout.frames.iter().enumerate() {
+            let row = row as u32;
+            for col in 0..n {
+                let src = image::imageops::crop_imm(
+                    sheet,
+                    col * source_cell.0,
+                    row * source_cell.1,
+                    source_cell.0,
+                    source_cell.1,
+                )
+                .to_image();
+                let img = if cell == source_cell {
+                    src
+                } else {
+                    resize_clean(&src, cell.0, cell.1)
+                };
+                if let Some((x, y, w, h)) = visible_bbox(&img) {
+                    cells.insert(
+                        (row, col),
+                        (x, y, image::imageops::crop_imm(&img, x, y, w, h).to_image()),
+                    );
+                }
+            }
+        }
+        Self { cell, cells }
+    }
+
+    /// 1 コマを元の大きさのキャンバスに戻す（持っていないコマは透明）。
+    pub fn cell_image(&self, row: u32, frame: u32) -> RgbaImage {
+        let mut canvas = RgbaImage::new(self.cell.0, self.cell.1);
+        if let Some((x, y, img)) = self.cells.get(&(row, frame)) {
+            image::imageops::replace(&mut canvas, img, i64::from(*x), i64::from(*y));
+        }
+        canvas
+    }
+
+    /// 持っている画素のバイト数（ログと試験用）。
+    pub fn bytes(&self) -> usize {
+        self.cells
+            .values()
+            .map(|(_, _, img)| img.as_raw().len())
+            .sum()
+    }
+}
+
+/// アルファが 0 でない画素の範囲（縁のかすかなにじみも残す）。
+fn visible_bbox(img: &RgbaImage) -> Option<(u32, u32, u32, u32)> {
+    let (mut x0, mut y0, mut x1, mut y1) = (u32::MAX, u32::MAX, 0, 0);
+    for (x, y, p) in img.enumerate_pixels() {
+        if p[3] > 0 {
+            x0 = x0.min(x);
+            y0 = y0.min(y);
+            x1 = x1.max(x);
+            y1 = y1.max(y);
+        }
+    }
+    (x0 != u32::MAX).then(|| (x0, y0, x1 - x0 + 1, y1 - y0 + 1))
+}
+
 /// 読み込んだシート。`cell` は 1 コマの画素数（縮めた後）、`source_cell` は元のシートのコマ。
-/// `layout` は行ごとの中身のあるコマ数（縮めた後のシートを測る）。
+/// `layout` は行ごとの中身のあるコマ数（縮める前の元のシートで測る）。
 pub struct LoadedSheet {
-    pub image: RgbaImage,
+    pub cells: CellStore,
     pub cell: (u32, u32),
     pub source_cell: (u32, u32),
     pub layout: SheetLayout,
@@ -169,16 +248,11 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         return Err("中身のあるコマが 1 つも無い".into());
     }
     let cell = (needed.0.min(source_cell.0), needed.1.min(source_cell.1));
-    let image = if cell == source_cell {
-        image
-    } else {
-        let small = shrink_cells(&image, source_cell, cell, rows);
-        // 元のシート（まめドラゴンで 56MB）はここで手放す。縮めたものだけを持って戻る
-        drop(image);
-        small
-    };
+    let cells = CellStore::build(&image, source_cell, cell, &layout);
+    // 元のシート（まめドラゴンで 56MB）はここで手放す。切り抜いたコマだけを持って戻る
+    drop(image);
     log(format!(
-        "pet '{}' ({}) loaded in {} ms: {} rows (frames {:?}), cell {}x{} (source {}x{})",
+        "pet '{}' ({}) loaded in {} ms: {} rows (frames {:?}), cell {}x{} (source {}x{}), {} KB",
         entry.name,
         entry.id,
         started.elapsed().as_millis(),
@@ -187,33 +261,16 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         cell.0,
         cell.1,
         source_cell.0,
-        source_cell.1
+        source_cell.1,
+        cells.bytes() / 1024
     ));
     Ok(LoadedSheet {
-        image,
+        cells,
         cell,
         source_cell,
         layout,
         breathe,
     })
-}
-
-fn shrink_cells(sheet: &RgbaImage, from: (u32, u32), to: (u32, u32), rows: u32) -> RgbaImage {
-    let mut out = RgbaImage::new(to.0 * COLUMNS, to.1 * rows);
-    for row in 0..rows {
-        for col in 0..COLUMNS {
-            let cell = image::imageops::crop_imm(sheet, col * from.0, row * from.1, from.0, from.1)
-                .to_image();
-            let small = resize_clean(&cell, to.0, to.1);
-            image::imageops::replace(
-                &mut out,
-                &small,
-                i64::from(col * to.0),
-                i64::from(row * to.1),
-            );
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -311,11 +368,20 @@ mod tests {
             (s.cell, s.source_cell, s.layout.rows()),
             ((212, 229), (384, 416), 11)
         );
-        assert_eq!(s.image.dimensions(), (212 * COLUMNS, 229 * 11));
-        // 縮めてもコマの中央の点は残り、隣のコマへはみ出さない
-        let center = s.image.get_pixel(212 / 2, 229 / 2);
+        // 縮めてもコマの中央の点は残り、コマの端は透明のまま
+        let c = s.cells.cell_image(0, 0);
+        assert_eq!(c.dimensions(), (212, 229));
+        let center = c.get_pixel(212 / 2, 229 / 2);
         assert!(center[3] > 200, "{center:?}");
-        assert_eq!(s.image.get_pixel(212 - 1, 229 / 2)[3], 0);
+        assert_eq!(c.get_pixel(212 - 1, 229 / 2)[3], 0);
+        // 持つのは切り抜いた点のまわりだけ（コマ全体の 1 割未満）
+        assert!(
+            s.cells.bytes() < (212 * 229 * 4 * 88) / 10,
+            "{}",
+            s.cells.bytes()
+        );
+        // 持っていないコマ（範囲外）は透明
+        assert!(s.cells.cell_image(10, 99).pixels().all(|p| p[3] == 0));
         // 要る大きさが元より大きければ、元のまま（引き伸ばさない）
         let s = load(&entry, needed_cell(3.0)).unwrap();
         assert_eq!(s.cell, (384, 416));

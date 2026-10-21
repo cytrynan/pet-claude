@@ -15,7 +15,6 @@ use std::collections::HashMap;
 use std::ffi::c_void;
 use std::time::Instant;
 
-use image::RgbaImage;
 use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
@@ -44,7 +43,7 @@ use windows::core::w;
 
 use crate::log::log;
 use crate::monitors::{self, to_rect};
-use crate::pets::{self, LoadedSheet, PetEntry};
+use crate::pets::{self, CellStore, LoadedSheet, PetEntry};
 use crate::state::{AppState, MAX_SCALE, MIN_SCALE};
 use crate::ui;
 
@@ -71,7 +70,7 @@ struct Drag {
 
 struct Pet {
     hwnd: HWND,
-    sheet: RgbaImage,
+    sheet: CellStore,
     /// 行ごとの中身のあるコマ数（シートを測った値。空の行は代わりの行で再生する）
     layout: SheetLayout,
     /// 待機と睡眠の呼吸の大きさ（0 なら付けない）と、いま描いている呼吸の段階
@@ -137,16 +136,8 @@ fn message_cursor() -> Point {
 }
 
 /// コマを切り出し、事前乗算 → 縮小 → BGRA に並べ替える。
-fn render_cell(
-    sheet: &RgbaImage,
-    cell_size: (u32, u32),
-    row: u32,
-    frame: u32,
-    w: u32,
-    h: u32,
-) -> Vec<u8> {
-    let (x, y) = (frame * cell_size.0, row * cell_size.1);
-    let mut cell = image::imageops::crop_imm(sheet, x, y, cell_size.0, cell_size.1).to_image();
+fn render_cell(sheet: &CellStore, row: u32, frame: u32, w: u32, h: u32) -> Vec<u8> {
+    let mut cell = sheet.cell_image(row, frame);
     // 透明な黒と補間して縁が黒ずむのを防ぐため、縮小の前に事前乗算する
     for p in cell.pixels_mut() {
         let a = u16::from(p[3]);
@@ -169,8 +160,7 @@ fn render_cell(
 /// 呼吸の段階のコマを描く。`scale` だけ縦に伸ばして描き、上にはみ出した分を切り落とす
 /// （足元を固定したまま伸び縮みする。コマの上は透明な余白なので、切り落としても絵は欠けない）。
 fn render_breathing(
-    sheet: &RgbaImage,
-    cell: (u32, u32),
+    sheet: &CellStore,
     row: u32,
     frame: u32,
     size: (u32, u32),
@@ -179,9 +169,9 @@ fn render_breathing(
     let (w, h) = size;
     let tall = (h as f32 * scale).round() as u32;
     if tall <= h {
-        return render_cell(sheet, cell, row, frame, w, h);
+        return render_cell(sheet, row, frame, w, h);
     }
-    let full = render_cell(sheet, cell, row, frame, w, tall);
+    let full = render_cell(sheet, row, frame, w, tall);
     full[((tall - h) * w * 4) as usize..].to_vec()
 }
 
@@ -276,11 +266,12 @@ impl Pet {
     fn present(&mut self) {
         let (w, h) = self.size();
         let key = (self.playback.clip.row, self.frame, self.breath);
-        let (sheet, cell) = (&self.sheet, self.cell);
+        let sheet = &self.sheet;
         let scale = breath_scale(self.breath, self.breathe);
-        let pixels = self.cache.entry(key).or_insert_with(|| {
-            render_breathing(sheet, cell, key.0, key.1, (w as u32, h as u32), scale)
-        });
+        let pixels = self
+            .cache
+            .entry(key)
+            .or_insert_with(|| render_breathing(sheet, key.0, key.1, (w as u32, h as u32), scale));
         if let Err(e) = blit(self.hwnd, &self.rect, pixels, w, h) {
             log(format!("UpdateLayeredWindow に失敗: {e}"));
         }
@@ -368,7 +359,7 @@ impl Pet {
     /// 読み込んだシートに差し替える。再生中のポーズは時計を保ったまま新しいシートで続ける
     /// （一度きりの反応を、差し替えのたびに見せ直さない）。
     fn use_sheet(&mut self, loaded: LoadedSheet) {
-        self.sheet = loaded.image;
+        self.sheet = loaded.cells;
         self.layout = loaded.layout;
         self.breathe = loaded.breathe;
         self.cell = loaded.cell;
@@ -767,7 +758,7 @@ pub fn create(
     let epoch = Instant::now();
     let mut pet = Pet {
         hwnd,
-        sheet: loaded.image,
+        sheet: loaded.cells,
         layout,
         breathe: loaded.breathe,
         breath: 0,
