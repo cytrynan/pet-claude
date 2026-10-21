@@ -13,7 +13,7 @@ jobs:
     runs-on: windows-latest  # 対象 OS が Windows（Win32 API を使う）
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Setup Rust toolchain
         uses: dtolnay/rust-toolchain@stable
