@@ -25,9 +25,8 @@ use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, SheetLayout, breath_level
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
-    CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetDC,
-    GetMonitorInfoW, HGDIOBJ, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, ReleaseDC,
-    SelectObject,
+    CreateCompatibleDC, CreateDIBSection, DIB_RGB_COLORS, DeleteDC, DeleteObject, GetMonitorInfoW,
+    HBITMAP, HDC, HGDIOBJ, MONITOR_DEFAULTTONEAREST, MONITORINFO, MonitorFromWindow, SelectObject,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture};
@@ -883,59 +882,143 @@ fn foreground_is_fullscreen(own: HWND) -> bool {
 }
 
 /// BGRA 事前乗算済みの画素を窓に転送する（位置と大きさも同時に設定）。
-fn blit(hwnd: HWND, rect: &Rect, pixels: &[u8], w: i32, h: i32) -> windows::core::Result<()> {
-    // SAFETY: DC とビットマップはこの関数内で作って必ず解放する。bits は w*h*4 バイトの DIB
-    unsafe {
-        let screen = GetDC(None);
-        let mem = CreateCompatibleDC(Some(screen));
-        let bmi = BITMAPINFO {
-            bmiHeader: BITMAPINFOHEADER {
-                biSize: size_of::<BITMAPINFOHEADER>() as u32,
-                biWidth: w,
-                biHeight: -h,
-                biPlanes: 1,
-                biBitCount: 32,
-                biCompression: BI_RGB.0,
+/// 窓に描く DIB とそれを選んだメモリ DC。作り直さずに使い回し、窓の大きさが変わったときだけ作り直す。
+///
+/// 以前は描くたびに GetDC・CreateCompatibleDC・CreateDIBSection（窓の大きさの確保とゼロ埋め）・解放をしていた。
+/// 動画のループは 1 秒に 8 回描くので、大きさ 105%・200% の画面（窓 403×437）で待機の CPU が 2.81% と
+/// PRD N1（2%）を超えた（2026-10-21 実測。動画なしの版も呼吸の描き直しで同条件 2.34%）
+struct Surface {
+    dc: HDC,
+    dib: HBITMAP,
+    /// DIB を選ぶ前に DC が持っていたもの（解放の前に戻す）
+    old: HGDIOBJ,
+    bits: *mut u8,
+    size: (i32, i32),
+}
+
+impl Surface {
+    fn new(w: i32, h: i32) -> windows::core::Result<Self> {
+        // SAFETY: 画面互換のメモリ DC と、上から下へ並ぶ 32bit の DIB を作る。失敗したら作ったものを解放して返す
+        unsafe {
+            let dc = CreateCompatibleDC(None);
+            if dc.is_invalid() {
+                return Err(windows::core::Error::from_thread());
+            }
+            let bmi = BITMAPINFO {
+                bmiHeader: BITMAPINFOHEADER {
+                    biSize: size_of::<BITMAPINFOHEADER>() as u32,
+                    biWidth: w,
+                    biHeight: -h,
+                    biPlanes: 1,
+                    biBitCount: 32,
+                    biCompression: BI_RGB.0,
+                    ..Default::default()
+                },
                 ..Default::default()
-            },
-            ..Default::default()
-        };
-        let mut bits: *mut c_void = std::ptr::null_mut();
-        let result = CreateDIBSection(Some(mem), &bmi, DIB_RGB_COLORS, &mut bits, None, 0)
-            .and_then(|dib| {
-                std::ptr::copy_nonoverlapping(pixels.as_ptr(), bits.cast::<u8>(), pixels.len());
-                let old = SelectObject(mem, HGDIOBJ(dib.0));
-                let pos = POINT {
-                    x: rect.left,
-                    y: rect.top,
-                };
-                let size = SIZE { cx: w, cy: h };
-                let src = POINT { x: 0, y: 0 };
-                let blend = BLENDFUNCTION {
-                    BlendOp: AC_SRC_OVER as u8,
-                    BlendFlags: 0,
-                    SourceConstantAlpha: 255,
-                    AlphaFormat: AC_SRC_ALPHA as u8,
-                };
-                let r = UpdateLayeredWindow(
-                    hwnd,
-                    Some(screen),
-                    Some(&pos),
-                    Some(&size),
-                    Some(mem),
-                    Some(&src),
-                    COLORREF(0),
-                    Some(&blend),
-                    ULW_ALPHA,
-                );
-                SelectObject(mem, old);
+            };
+            let mut bits: *mut c_void = std::ptr::null_mut();
+            let dib = match CreateDIBSection(Some(dc), &bmi, DIB_RGB_COLORS, &mut bits, None, 0) {
+                Ok(dib) => dib,
+                Err(e) => {
+                    let _ = DeleteDC(dc);
+                    return Err(e);
+                }
+            };
+            let old = SelectObject(dc, HGDIOBJ(dib.0));
+            if old.is_invalid() {
+                // 選べなかった DIB のまま保存すると、同じ大きさでは作り直さず描けないままになる（検証係の指摘）
                 let _ = DeleteObject(HGDIOBJ(dib.0));
-                r
-            });
-        let _ = DeleteDC(mem);
-        ReleaseDC(None, screen);
-        result
+                let _ = DeleteDC(dc);
+                return Err(windows::core::Error::from_thread());
+            }
+            Ok(Self {
+                dc,
+                dib,
+                old,
+                bits: bits.cast::<u8>(),
+                size: (w, h),
+            })
+        }
     }
+}
+
+impl Drop for Surface {
+    fn drop(&mut self) {
+        // SAFETY: new で作った DC と DIB。DIB を外してから消す
+        unsafe {
+            SelectObject(self.dc, self.old);
+            let _ = DeleteObject(HGDIOBJ(self.dib.0));
+            let _ = DeleteDC(self.dc);
+        }
+    }
+}
+
+thread_local! {
+    /// 窓は 1 つなので、描く面も 1 つ（メインスレッドだけで使う）
+    static SURFACE: RefCell<Option<Surface>> = const { RefCell::new(None) };
+}
+
+/// 窓 w×h の BGRA のバイト数。0 以下の大きさと桁あふれは None（i32 のまま掛けると大きな窓で panic する。検証係の指摘）。
+fn frame_bytes(w: i32, h: i32) -> Option<usize> {
+    if w <= 0 || h <= 0 {
+        return None;
+    }
+    usize::try_from(w)
+        .ok()?
+        .checked_mul(usize::try_from(h).ok()?)?
+        .checked_mul(4)
+}
+
+fn blit(hwnd: HWND, rect: &Rect, pixels: &[u8], w: i32, h: i32) -> windows::core::Result<()> {
+    if frame_bytes(w, h) != Some(pixels.len()) {
+        // 大きさと画素の数が合わないまま写すと、DIB の外へ書いてしまう
+        return Err(windows::core::Error::new(
+            windows::core::HRESULT(0x8007_0057_u32 as i32), // E_INVALIDARG
+            format!(
+                "画素の数が窓の大きさと合わない: {}x{} に {} バイト",
+                w,
+                h,
+                pixels.len()
+            ),
+        ));
+    }
+    SURFACE.with(|cell| {
+        let mut surface = cell.borrow_mut();
+        if surface.as_ref().map(|s| s.size) != Some((w, h)) {
+            // 古い面を先に解放してから作る（窓の大きさの DIB を 2 枚同時に持たない）
+            *surface = None;
+            *surface = Some(Surface::new(w, h)?);
+        }
+        let s = surface.as_ref().expect("直前で作った");
+        // SAFETY: bits は w*h*4 バイトの DIB（大きさは上で確かめた）。DC は DIB を選んだまま
+        unsafe {
+            std::ptr::copy_nonoverlapping(pixels.as_ptr(), s.bits, pixels.len());
+            let pos = POINT {
+                x: rect.left,
+                y: rect.top,
+            };
+            let size = SIZE { cx: w, cy: h };
+            let src = POINT { x: 0, y: 0 };
+            let blend = BLENDFUNCTION {
+                BlendOp: AC_SRC_OVER as u8,
+                BlendFlags: 0,
+                SourceConstantAlpha: 255,
+                AlphaFormat: AC_SRC_ALPHA as u8,
+            };
+            // 転送先の DC は None（既定のパレット）でよい。毎回 GetDC しない
+            UpdateLayeredWindow(
+                hwnd,
+                None,
+                Some(&pos),
+                Some(&size),
+                Some(s.dc),
+                Some(&src),
+                COLORREF(0),
+                Some(&blend),
+                ULW_ALPHA,
+            )
+        }
+    })
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
@@ -1280,6 +1363,8 @@ pub fn shutdown() {
             let _ = unsafe { DestroyWindow(pet.hwnd) };
         }
     });
+    // 描く面（DC と DIB）も解放する
+    SURFACE.with(|cell| cell.borrow_mut().take());
 }
 
 /// ログと検証用: いまの窓の矩形とポーズ。
@@ -1299,4 +1384,21 @@ pub fn describe_monitors(ms: &[Monitor]) -> String {
         })
         .collect::<Vec<_>>()
         .join(" | ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_bytes_rejects_bad_sizes() {
+        assert_eq!(frame_bytes(403, 437), Some(403 * 437 * 4));
+        assert_eq!(frame_bytes(0, 437), None);
+        assert_eq!(frame_bytes(-1, 437), None);
+        // i32 で掛けると 2^31 を超える大きさ（壊しにいくケース。2026-10-21 司令塔）
+        assert_eq!(
+            frame_bytes(32768, 16384),
+            usize::try_from(32768u64 * 16384 * 4).ok()
+        );
+    }
 }

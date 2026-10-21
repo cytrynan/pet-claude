@@ -67,6 +67,13 @@ until_t() { while awk -v n="$(t)" -v e="$1" 'BEGIN{exit !(n<e)}'; do shoot; slee
 powershell -NoProfile -Command "\$env:PET_FAST='1'; \$env:PET_TRACE='1'; \$env:PET_CLAUDE_DATA_DIR='$(cygpath -w "$DATA")'; Start-Process -FilePath '$(cygpath -w "$APP")' -WindowStyle Hidden"
 for _ in $(seq 1 20); do "$W" find | grep -q rect && break; sleep 0.5; done
 step "start $("$W" find)"
+# 吹き出し（hook で出る UI）が出る前の待機の CPU。後半の CPU は吹き出しを出している間の値になる
+# （吹き出しがあると pet-app が UI の窓も動かす。2026-10-21 R5 の判定で混ざっていた）
+# walk では 5 秒で散歩が始まって混ざるので、nowalk のときだけ測る（検証係の指摘）
+if [ "$WALK" = nowalk ]; then
+  sleep 1; C0=$(cpu); sleep 10; C1=$(cpu)
+  step "cpu 待機（吹き出しなし）10s: $(awk -v a="$C0" -v b="$C1" 'BEGIN{printf "%.2f%% of one core", (b-a)/100}')"
+fi
 until_t 26          # 待機 → 散歩（PET_FAST: 5 秒で散歩・20 秒で眠る）→ 眠る
 step "mem $(mem)"
 S='"session_id":"sweep","cwd":"C:\\\\tmp","transcript_path":"C:\\\\tmp\\\\t.jsonl"'
@@ -81,7 +88,7 @@ hook "{\"hook_event_name\":\"Stop\",$S}" "Stop（作業の終わり → 喜ぶ �
 until_t 58
 # 待機（nowalk なら散歩しない）の CPU。PET_FAST は 20 秒で眠るので、直前の Stop から 10 秒の間に測る
 C0=$(cpu); sleep 10; C1=$(cpu)
-step "cpu $WALK 10s: $(awk -v a="$C0" -v b="$C1" 'BEGIN{printf "%.2f%% of one core", (b-a)/100}')"
+step "cpu $WALK（吹き出しあり）10s: $(awk -v a="$C0" -v b="$C1" 'BEGIN{printf "%.2f%% of one core", (b-a)/100}')"
 step "mem $(mem)"
 cp "$DATA/logs/pet.log" "$OUT/pet.log" 2>/dev/null
 # シートの読み込みが 1 回か（解像度の上限を変えたとき、読み直しが止まらなくなったことがある）と、K の入力が混ざっていないか
