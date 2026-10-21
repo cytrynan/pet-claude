@@ -173,7 +173,15 @@ pub fn compose_sheet(
         let w = (trimmed.width() as f32 * s).round() as u32;
         let h = (trimmed.height() as f32 * s).round() as u32;
         let base = resize_clean(&trimmed, w, h);
-        for frame in 0..clip.frames.min(COLUMNS) {
+        // 動かない行は 1 コマだけ書く（同じ絵を並べても、アプリは行のコマ数を数えて 1 コマの静止画として
+        // 再生する。描いた絵の保存も 1 枚で済む。2026-10-21: 待機に呼吸の 16 段階を付けたら、同じ絵 6 コマ分の
+        // 保存で専有メモリが 16MB 増えた）
+        let frames = if spec.motion == Motion::Still {
+            1
+        } else {
+            clip.frames.min(COLUMNS)
+        };
+        for frame in 0..frames {
             let cell = draw_cell(&base, spec.motion.at(frame, clip.frames), cell_w, cell_h);
             imageops::replace(
                 &mut sheet,
@@ -319,6 +327,20 @@ mod tests {
             .map(|b| b.1 + b.3)
             .collect();
         assert!(hop.iter().min() < hop.iter().max(), "{hop:?}");
+    }
+
+    #[test]
+    fn still_rows_get_a_single_frame() {
+        let a = blob((100, 100), 20, 0, 60, 100);
+        let specs = [RowSpec {
+            pose: Pose::Idle,
+            image: &a,
+            mirror: false,
+            motion: Motion::Still,
+        }];
+        let sheet = compose_sheet(&specs, &a, 11, 96, 104);
+        assert!(alpha_bbox(&cell(&sheet, 0, 0, 96, 104)).is_some());
+        assert_eq!(alpha_bbox(&cell(&sheet, 0, 1, 96, 104)), None);
     }
 
     #[test]

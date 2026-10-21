@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md) — §4.4 呼吸をアプリが描くたびに計算する（pet.json の breathe・16 段階・待機 3.6 秒/睡眠 5.2 秒）、動かない行は 1 コマ (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 に読み込みの 1 本化（kick_load）、行の有無とコマ数をシートから測る（embed-pet の取り込み）、メモリが N1 を超えうる条件 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ペットの素材と切り替え（pet.json の cellScale・探す場所・起動時の選び方・設定画面のポップアップ・メモリのための縮小・静止画からシートを作る build_pet） (kuroko/claude-opus-5-5 ← human:K)
 * **Creation**: [embed-pet 解析](embed-pet-analysis.md) — JinTanba/embed-pet（Apache-2.0）と比較。推す取り込み 1 つ（行の有無とコマ数をシートのアルファから決め、空の行は代替へ）と見送り 8 件、まめドラゴンの行の当てはめ、切り替え時の測り直し (kuroko/claude-opus-5-5 ← human:K)

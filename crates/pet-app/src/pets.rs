@@ -34,6 +34,8 @@ pub struct LoadedSheet {
     pub cell: (u32, u32),
     pub source_cell: (u32, u32),
     pub layout: SheetLayout,
+    /// 待機と睡眠の呼吸の大きさ（pet.json の `breathe`。内蔵の仮キャラは 0）
+    pub breathe: f32,
 }
 
 fn roots() -> Vec<PathBuf> {
@@ -133,12 +135,13 @@ pub fn needed_cell(factor: f32) -> (u32, u32) {
 /// 補間しないように 1 コマずつ）。
 pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String> {
     let started = std::time::Instant::now();
-    let (image, source_cell) = match &entry.dir {
+    let (image, source_cell, breathe) = match &entry.dir {
         None => (
             image::load_from_memory(BUILTIN_SHEET)
                 .map_err(|e| e.to_string())?
                 .into_rgba8(),
             (CELL_W, CELL_H),
+            0.0,
         ),
         Some(dir) => {
             let m = read_manifest(dir)?;
@@ -146,7 +149,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
                 .map_err(|e| format!("{}: {e}", m.spritesheet_path))?
                 // 複製せずに取り出す（展開した 56MB をもう 1 つ作らない。2026-10-21 検証係の指摘）
                 .into_rgba8();
-            (img, m.cell_size())
+            (img, m.cell_size(), m.breathe())
         }
     };
     let rows = image.height() / source_cell.1;
@@ -191,6 +194,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         cell,
         source_cell,
         layout,
+        breathe,
     })
 }
 

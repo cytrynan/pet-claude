@@ -238,7 +238,7 @@ pub const fn rows_in(sheet_height: u32) -> u32 {
 }
 
 /// `assets/pets/<name>/pet.json`（Codex 互換の項目＋pet-claude 独自の `cellScale`）。
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct PetManifest {
     pub id: String,
@@ -248,6 +248,11 @@ pub struct PetManifest {
     /// 表示倍率 200% の画面で引き伸ばさずに済むよう、高精細の素材は 2 で作る
     #[serde(default)]
     pub cell_scale: Option<u32>,
+    /// 待機と睡眠のときに、アプリが描くたびに付ける呼吸の大きさ（縦の伸びの割合。無ければ 0＝付けない）。
+    /// 静止画から作ったシートは呼吸をコマに焼き込むと 1 周 6 コマの段差になるので、こちらで滑らかに付ける
+    /// （2026-10-21 K 指示「息をしているように揺らしているのをもう少し滑らかに」）
+    #[serde(default)]
+    pub breathe: Option<f32>,
 }
 
 /// 受け付ける `cellScale` の上限（4 倍なら 768×832 のコマ。それ以上は読み込みが重すぎる）。
@@ -259,6 +264,43 @@ impl PetManifest {
         let s = self.cell_scale.unwrap_or(1).clamp(1, MAX_CELL_SCALE);
         (CELL_W * s, CELL_H * s)
     }
+
+    /// 呼吸の大きさ（0〜`MAX_BREATHE`。数でない・負なら 0）。
+    pub fn breathe(&self) -> f32 {
+        self.breathe
+            .filter(|b| b.is_finite())
+            .unwrap_or(0.0)
+            .clamp(0.0, MAX_BREATHE)
+    }
+}
+
+/// 呼吸の大きさの上限（8%。これ以上はキャラが伸び縮みして見える）。
+pub const MAX_BREATHE: f32 = 0.08;
+/// 呼吸の伸び具合を何段階に丸めるか。段階ごとに描いた絵を使い回す（毎回縮めると CPU を食う）。
+/// 16 段階なら、まめドラゴン（高さ 229px・呼吸 2.5%）で 1 段 0.4px 未満になり、段差は見えない
+pub const BREATH_LEVELS: u32 = 16;
+
+/// 呼吸の 1 周（ミリ秒）。人の安静時の呼吸（1 分に 12〜20 回）に近い速さ。睡眠はゆっくり深く。
+const fn breath_period_ms(pose: Pose) -> Option<u64> {
+    match pose {
+        Pose::Idle => Some(3600),
+        Pose::Sleep => Some(5200),
+        _ => None,
+    }
+}
+
+/// いまの呼吸の段階（0＝吐ききった〜`BREATH_LEVELS - 1`＝吸いきった）。呼吸しないポーズは None。
+/// 余弦で行き来するので、吸いきり・吐ききりの近くでゆっくりになる。
+pub fn breath_level(pose: Pose, now_ms: u64) -> Option<u32> {
+    let period = breath_period_ms(pose)?;
+    let phase = (now_ms % period) as f32 / period as f32;
+    let v = (1.0 - (phase * std::f32::consts::TAU).cos()) / 2.0;
+    Some((v * (BREATH_LEVELS - 1) as f32).round() as u32)
+}
+
+/// 段階 `level` での縦の倍率（足元を固定して伸ばす）。
+pub fn breath_scale(level: u32, amplitude: f32) -> f32 {
+    1.0 + amplitude * level.min(BREATH_LEVELS - 1) as f32 / (BREATH_LEVELS - 1) as f32
 }
 
 #[cfg(test)]
@@ -443,6 +485,44 @@ mod tests {
         assert_eq!(m.spritesheet_path, "spritesheet.webp");
         // cellScale が無ければ Codex 互換の大きさ
         assert_eq!(m.cell_size(), (CELL_W, CELL_H));
+    }
+
+    #[test]
+    fn breathing_is_smooth_and_only_for_idle_and_sleep() {
+        // 待機は 3.6 秒で 1 周: 0 → 吸いきり（中間）→ 0
+        assert_eq!(breath_level(Pose::Idle, 0), Some(0));
+        assert_eq!(breath_level(Pose::Idle, 1800), Some(BREATH_LEVELS - 1));
+        assert_eq!(breath_level(Pose::Idle, 3600), Some(0));
+        assert_eq!(breath_level(Pose::Sleep, 2600), Some(BREATH_LEVELS - 1));
+        assert_eq!(breath_level(Pose::Running, 1800), None);
+        assert_eq!(breath_level(Pose::Grabbed, 1800), None);
+        // 30fps で進めたとき、1 回の描き直しで 2 段より大きく飛ばない（段差が出ない）
+        let mut prev = 0;
+        for t in (0..7200).step_by(33) {
+            let l = breath_level(Pose::Idle, t).unwrap();
+            assert!(l.abs_diff(prev) <= 1, "t={t} {prev}->{l}");
+            prev = l;
+        }
+        assert!((breath_scale(0, 0.025) - 1.0).abs() < 1e-6);
+        assert!((breath_scale(BREATH_LEVELS - 1, 0.025) - 1.025).abs() < 1e-6);
+        assert!((breath_scale(99, 0.025) - 1.025).abs() < 1e-6);
+    }
+
+    #[test]
+    fn manifest_breathe_is_clamped() {
+        let with = |b: &str| -> PetManifest {
+            serde_json::from_str(&format!(
+                r#"{{"id":"a","displayName":"A","spritesheetPath":"s.webp","breathe":{b}}}"#
+            ))
+            .unwrap()
+        };
+        assert!((with("0.025").breathe() - 0.025).abs() < 1e-6);
+        assert_eq!(with("-1").breathe(), 0.0);
+        assert_eq!(with("9").breathe(), MAX_BREATHE);
+        let none: PetManifest =
+            serde_json::from_str(r#"{"id":"a","displayName":"A","spritesheetPath":"s.webp"}"#)
+                .unwrap();
+        assert_eq!(none.breathe(), 0.0);
     }
 
     #[test]

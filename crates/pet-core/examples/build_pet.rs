@@ -16,7 +16,9 @@ use pet_core::sprite::{CELL_H, CELL_W, MAX_CELL_SCALE, Pose};
 
 /// (状態の名前, 行, 左右反転, 動き)。行動が使うポーズは behavior.rs を参照。
 const PLAN: [(&str, Pose, bool, Motion); 11] = [
-    ("idle", Pose::Idle, false, Motion::Breathe(0.025)),
+    // 待機と睡眠の呼吸はアプリが描くたびに付ける（pet.json の breathe）。コマに焼き込むと 1 周 6 コマの
+    // 段差になってカクつく（2026-10-21 K 指示「もう少し滑らかに」）
+    ("idle", Pose::Idle, false, Motion::Still),
     ("walk", Pose::RunRight, false, Motion::Bob(0.03)),
     ("walk", Pose::RunLeft, true, Motion::Bob(0.03)),
     ("attention", Pose::Waving, false, Motion::Sway(0.015)),
@@ -27,9 +29,12 @@ const PLAN: [(&str, Pose, bool, Motion); 11] = [
     // ツールを実行中＝手元で作業
     ("working", Pose::Running, false, Motion::Bob(0.01)),
     ("working", Pose::Review, false, Motion::Bob(0.01)),
-    ("sleeping", Pose::Sleep, false, Motion::Breathe(0.02)),
+    ("sleeping", Pose::Sleep, false, Motion::Still),
     ("dragged", Pose::Grabbed, false, Motion::Sway(0.02)),
 ];
+
+/// 待機と睡眠の呼吸の大きさ（縦に 2.5%）。アプリがこの値で滑らかに伸び縮みさせる。
+const BREATHE: f64 = 0.025;
 
 /// 絵が無い状態の代わり（無ければ待機）。
 const FALLBACK: [(&str, &str); 7] = [
@@ -131,6 +136,7 @@ fn main() -> Result<(), String> {
         "displayName": name,
         "spritesheetPath": "spritesheet.webp",
         "cellScale": cell_scale,
+        "breathe": BREATHE,
     });
     let mut text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     text.push('\n');

@@ -20,7 +20,7 @@ use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
 use pet_core::placement::{self, Monitor};
-use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, SheetLayout};
+use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, SheetLayout, breath_level, breath_scale};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, SIZE, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     AC_SRC_ALPHA, AC_SRC_OVER, BI_RGB, BITMAPINFO, BITMAPINFOHEADER, BLENDFUNCTION,
@@ -74,6 +74,9 @@ struct Pet {
     sheet: RgbaImage,
     /// 行ごとの中身のあるコマ数（シートを測った値。空の行は代わりの行で再生する）
     layout: SheetLayout,
+    /// 待機と睡眠の呼吸の大きさ（0 なら付けない）と、いま描いている呼吸の段階
+    breathe: f32,
+    breath: u32,
     /// シートの 1 コマの画素数（読み込み後に縮めた大きさ）と、元のシートの 1 コマ
     cell: (u32, u32),
     source_cell: (u32, u32),
@@ -95,8 +98,8 @@ struct Pet {
     drag: Option<Drag>,
     /// カーソルが乗ってメニューまでの待ちを始めたか（TIMER_HOVER が動いている）
     hover_armed: bool,
-    /// (行, コマ) → BGRA 事前乗算済みの画素。大きさが変わったら捨てる。
-    cache: HashMap<(u32, u32), Vec<u8>>,
+    /// (行, コマ, 呼吸の段階) → BGRA 事前乗算済みの画素。大きさが変わったら捨てる。
+    cache: HashMap<(u32, u32, u32), Vec<u8>>,
     behavior: Behavior,
     pose: Pose,
     /// バー・メニューが出ていると Behavior に伝えた値
@@ -163,6 +166,25 @@ fn render_cell(
     out
 }
 
+/// 呼吸の段階のコマを描く。`scale` だけ縦に伸ばして描き、上にはみ出した分を切り落とす
+/// （足元を固定したまま伸び縮みする。コマの上は透明な余白なので、切り落としても絵は欠けない）。
+fn render_breathing(
+    sheet: &RgbaImage,
+    cell: (u32, u32),
+    row: u32,
+    frame: u32,
+    size: (u32, u32),
+    scale: f32,
+) -> Vec<u8> {
+    let (w, h) = size;
+    let tall = (h as f32 * scale).round() as u32;
+    if tall <= h {
+        return render_cell(sheet, cell, row, frame, w, h);
+    }
+    let full = render_cell(sheet, cell, row, frame, w, tall);
+    full[((tall - h) * w * 4) as usize..].to_vec()
+}
+
 impl Pet {
     fn size(&self) -> (i32, i32) {
         size_for(self.state.scale, self.dpi)
@@ -185,7 +207,7 @@ impl Pet {
         self.frame = 0;
         // 描いたコマの保存はいまの行だけにする（全ポーズ分ためると、大きく表示したとき数十 MB になる。
         // 2026-10-21 検証係の指摘。行に戻ったら描き直す。1 コマの縮小は軽い）
-        self.cache.retain(|(row, _), _| *row == clip.row);
+        self.cache.retain(|(row, _, _), _| *row == clip.row);
         true
     }
 
@@ -205,6 +227,19 @@ impl Pet {
         let (frame, _) = self.playback.frame_at(now);
         if frame != self.frame {
             self.frame = frame;
+            dirty = true;
+        }
+        // 呼吸は時刻から描くたびに計算する（コマに焼き込むと 1 周 6 コマの段差になる）
+        let breath = if self.breathe > 0.0 {
+            breath_level(self.pose, now).unwrap_or(0)
+        } else {
+            0
+        };
+        if breath != self.breath {
+            if std::env::var_os("PET_TRACE").is_some() {
+                log(format!("breath {} -> {breath}", self.breath));
+            }
+            self.breath = breath;
             dirty = true;
         }
         if out.vx != 0.0 && self.drag.is_none() {
@@ -240,12 +275,12 @@ impl Pet {
     /// 現在のコマを現在の位置に描く。
     fn present(&mut self) {
         let (w, h) = self.size();
-        let key = (self.playback.clip.row, self.frame);
+        let key = (self.playback.clip.row, self.frame, self.breath);
         let (sheet, cell) = (&self.sheet, self.cell);
-        let pixels = self
-            .cache
-            .entry(key)
-            .or_insert_with(|| render_cell(sheet, cell, key.0, key.1, w as u32, h as u32));
+        let scale = breath_scale(self.breath, self.breathe);
+        let pixels = self.cache.entry(key).or_insert_with(|| {
+            render_breathing(sheet, cell, key.0, key.1, (w as u32, h as u32), scale)
+        });
         if let Err(e) = blit(self.hwnd, &self.rect, pixels, w, h) {
             log(format!("UpdateLayeredWindow に失敗: {e}"));
         }
@@ -335,6 +370,7 @@ impl Pet {
     fn use_sheet(&mut self, loaded: LoadedSheet) {
         self.sheet = loaded.image;
         self.layout = loaded.layout;
+        self.breathe = loaded.breathe;
         self.cell = loaded.cell;
         self.source_cell = loaded.source_cell;
         self.cache.clear();
@@ -733,6 +769,8 @@ pub fn create(
         hwnd,
         sheet: loaded.image,
         layout,
+        breathe: loaded.breathe,
+        breath: 0,
         cell: loaded.cell,
         source_cell: loaded.source_cell,
         want: pet.clone(),
