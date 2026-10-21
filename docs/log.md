@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — カーソルが乗ったら出すのは右クリックのメニューでなくバー（K の訂正）。乗って出たバーはクリックで固定 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 メモリ: 中身のあるコマだけを切り抜いて持つ（K の大きさ 105% で 58.6MB → 31.6MB） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md) — §4.4 build_pet の `--frames`（描いたアニメーションのコマを行に使う・合わせた枠で切り出す・静止画の大きさに合わせる）、まめドラゴンの歩きを 8 コマに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 呼吸をアプリが描くたびに計算する（pet.json の breathe・16 段階・待機 3.6 秒/睡眠 5.2 秒）、動かない行は 1 コマ (kuroko/claude-opus-5-5 ← human:K)

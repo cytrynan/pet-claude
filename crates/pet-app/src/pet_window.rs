@@ -52,8 +52,8 @@ const TIMER_TICK: usize = 1;
 const TICK_MS: u32 = 33;
 const TIMER_TOPMOST: usize = 2;
 const TIMER_DISPLAY: usize = 3;
-/// カーソルがペットに乗ってからメニューを出すまでの待ち（K 指示 2026-10-21「乗った時点で出す」）。
-/// 0 にすると、ペットの上を通り過ぎただけでメニューが出入りしてちらつくので、通過と区別できる最小に近い値にした
+/// カーソルがペットに乗ってからバーを出すまでの待ち（K 指示 2026-10-21「乗った時点で出す」）。
+/// 0 にすると、ペットの上を通り過ぎただけでバーが出入りしてちらつくので、通過と区別できる最小に近い値にした
 const TIMER_HOVER: usize = 4;
 const HOVER_DWELL_MS: u32 = 200;
 const DRAG_THRESHOLD_PX: i32 = 4;
@@ -95,7 +95,7 @@ struct Pet {
     frame: u32,
     epoch: Instant,
     drag: Option<Drag>,
-    /// カーソルが乗ってメニューまでの待ちを始めたか（TIMER_HOVER が動いている）
+    /// カーソルが乗ってバーまでの待ちを始めたか（TIMER_HOVER が動いている）
     hover_armed: bool,
     /// (行, コマ, 呼吸の段階) → BGRA 事前乗算済みの画素。大きさが変わったら捨てる。
     cache: HashMap<(u32, u32, u32), Vec<u8>>,
@@ -406,7 +406,7 @@ impl Pet {
     }
 
     fn on_button_down(&mut self) {
-        // 押したらメニューまでの待ちはやめる（クリック・ドラッグが優先）
+        // 押したらバーまでの待ちはやめる（クリック・ドラッグが優先）
         self.disarm_hover();
         let c = message_cursor();
         let (w, h) = (
@@ -427,7 +427,7 @@ impl Pet {
     }
 
     /// ペットの不透明な部分にカーソルが乗った（WM_MOUSEMOVE は不透明な画素の上でだけ来る）。
-    /// 少し待ってから、まだ乗っていればメニューを出す。
+    /// 少し待ってから、まだ乗っていればバーを出す。
     fn arm_hover(&mut self) {
         if self.hover_armed {
             return;
@@ -460,7 +460,7 @@ impl Pet {
         if unsafe { WindowFromPoint(p) } != self.hwnd {
             return;
         }
-        ui::show_menu_on_hover(Point { x: p.x, y: p.y }, self.rect, self.dpi);
+        ui::show_bar_on_hover(self.rect, self.dpi);
     }
 
     fn on_mouse_move(&mut self) {

@@ -61,7 +61,7 @@ const SUMMARY_LINE_HEIGHT: f64 = 17.0;
 const EXACT: &str = "exact";
 /// 出たばかりの承認のカードを押せない時間（ダブルクリックの間隔 500ms より長く）。
 const FRESH_CARD_GUARD: Duration = Duration::from_millis(600);
-/// ホバーで出したメニューから離れて閉じるまでの猶予（縁をかすめただけで閉じないように）。
+/// ホバーで出したバーから離れて閉じるまでの猶予（縁をかすめただけで閉じないように）。
 const HOVER_LEAVE_MS: u64 = 400;
 /// 固定文言を出しておく時間。
 const STATUS_MS: u64 = 3000;
@@ -97,9 +97,9 @@ thread_local! {
     static PRUNING: Cell<bool> = const { Cell::new(false) };
     /// 承認のカードの先頭と、それが先頭になった時刻（出たばかりのカードへの押下を捨てる）
     static FRONT_SINCE: RefCell<Option<(String, Instant)>> = const { RefCell::new(None) };
-    /// いま出ているメニューはホバーで出したもの（離れたら閉じる）。右クリックで出したら false
-    static HOVER_MENU: Cell<bool> = const { Cell::new(false) };
-    /// ホバーのメニューから離れたかの確認を待っている
+    /// いま出ているバーはカーソルが乗って出したもの（離れたら閉じる）。クリック・チャット・右クリックで false
+    static HOVER_BAR: Cell<bool> = const { Cell::new(false) };
+    /// ホバーのバーから離れたかの確認を待っている
     static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
@@ -276,22 +276,36 @@ fn set_inside(rects: Vec<Rect>) {
 /// ペットのクリックでバーを出す／もう一度で隠す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
 pub fn toggle_bar(pet: Rect, dpi: u32) {
     defer(move || {
+        // カーソルが乗って出たバーをクリックしたら、閉じずにそのまま固定する（乗った直後のクリックで
+        // バーが消えないように。固定したバーは、もう一度のクリックか外側のクリックで閉じる）
+        if HOVER_BAR.with(Cell::get) && bar_visible() {
+            HOVER_BAR.with(|h| h.set(false));
+            log("bar pinned by click");
+            return;
+        }
         if bar_visible() || visible(CHAT) {
             hide_all();
             return;
         }
-        HOVER_MENU.with(|h| h.set(false));
-        hide(MENU);
-        let Some(w) = island(BAR) else { return };
-        let rect = below_pet(&pet, BAR_ISLAND, dpi);
-        place_and_show(BAR, &w, rect, false);
-        set_inside(vec![pet, island_rect(rect, dpi)]);
-        log("bar shown");
+        HOVER_BAR.with(|h| h.set(false));
+        open_bar(pet, dpi);
     });
+}
+
+/// バーをペットの真下に出す（クリックでもカーソルが乗ったときでも同じ）。
+fn open_bar(pet: Rect, dpi: u32) {
+    hide(MENU);
+    let Some(w) = island(BAR) else { return };
+    let rect = below_pet(&pet, BAR_ISLAND, dpi);
+    place_and_show(BAR, &w, rect, false);
+    set_inside(vec![pet, island_rect(rect, dpi)]);
+    log("bar shown");
 }
 
 /// バーの「チャット」: バーを隠してチャット入力を同じ場所に出す。
 fn open_chat() {
+    // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
+    HOVER_BAR.with(|h| h.set(false));
     let Some(bar_rect) = window(BAR).and_then(|b| window_rect(&b)) else {
         return;
     };
@@ -315,28 +329,29 @@ fn open_chat() {
 }
 
 /// 右クリックメニューを出す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
-/// 右クリックで出したメニューは、外側のクリックまで出しておく（ホバーで出したものもこれで固定される）。
+/// 右クリックしたら、カーソルが乗って出ていたバーも固定する（メニューを使っている間に消えないように）。
 pub fn show_menu(at: Point, pet: Rect, dpi: u32) {
-    HOVER_MENU.with(|h| h.set(false));
+    HOVER_BAR.with(|h| h.set(false));
     open_menu(at, pet, dpi);
 }
 
-/// カーソルがペットに乗ったらメニューを出す（K 指示 2026-10-21）。ホバーで出したメニューは、
-/// カーソルがペットとメニューの外へ出て `HOVER_LEAVE_MS` たったら閉じる（マウスフックで見る）。
+/// カーソルがペットに乗ったら、クリックと同じバー（チャット・音声入力）を出す（K 指示 2026-10-21。
+/// 最初は右クリックのメニューを出していたが、K の言う「メニュー」はこのバーだった）。乗って出したバーは、
+/// カーソルがペットとバーの外へ出て `HOVER_LEAVE_MS` たったら閉じる（マウスフックで見る）。
 /// バー・チャット・メニューが出ている間は出さない（クリックで開いた UI に重ねない）。
-pub fn show_menu_on_hover(at: Point, pet: Rect, dpi: u32) {
+pub fn show_bar_on_hover(pet: Rect, dpi: u32) {
     defer(move || {
         if popups_visible() {
             return;
         }
-        HOVER_MENU.with(|h| h.set(true));
-        log("menu on hover");
-        open_menu(at, pet, dpi);
+        HOVER_BAR.with(|h| h.set(true));
+        log("bar on hover");
+        open_bar(pet, dpi);
     });
 }
 
-/// ホバーで出したメニューから離れたかを、少し待ってから確かめて閉じる。
-/// メニューの縁をかすめただけで閉じないよう、待ってからもう一度カーソルの位置を見る。
+/// ホバーで出したバーから離れたかを、少し待ってから確かめて閉じる。
+/// バーの縁をかすめただけで閉じないよう、待ってからもう一度カーソルの位置を見る。
 fn schedule_hover_leave_check() {
     if LEAVE_PENDING.with(Cell::get) {
         return;
@@ -347,7 +362,7 @@ fn schedule_hover_leave_check() {
         std::thread::sleep(Duration::from_millis(HOVER_LEAVE_MS));
         let _ = handle.run_on_main_thread(|| {
             LEAVE_PENDING.with(|p| p.set(false));
-            if !HOVER_MENU.with(Cell::get) || !visible(MENU) {
+            if !HOVER_BAR.with(Cell::get) || !visible(BAR) {
                 return;
             }
             let mut p = POINT::default();
@@ -357,9 +372,9 @@ fn schedule_hover_leave_check() {
             }
             let at = Point { x: p.x, y: p.y };
             if INSIDE.with(|i| i.borrow().iter().all(|r| !r.contains(at))) {
-                HOVER_MENU.with(|h| h.set(false));
-                log("hover menu: left -> close");
-                hide(MENU);
+                HOVER_BAR.with(|h| h.set(false));
+                log("hover bar: left -> close");
+                hide(BAR);
             }
         });
     });
@@ -823,7 +838,7 @@ pub fn bubble_state() -> serde_json::Value {
 unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     if code >= 0 {
         let msg = wp.0 as u32;
-        if msg == WM_MOUSEMOVE && HOVER_MENU.with(Cell::get) {
+        if msg == WM_MOUSEMOVE && HOVER_BAR.with(Cell::get) {
             // SAFETY: WH_MOUSE_LL の lParam は MSLLHOOKSTRUCT を指す
             let info = unsafe { &*(lp.0 as *const MSLLHOOKSTRUCT) };
             let p = Point {

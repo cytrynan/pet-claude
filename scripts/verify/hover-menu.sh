@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# カーソルがペットに乗ったらメニューが出て、離れたら閉じるかを確かめる（K 指示 2026-10-21）。
+# カーソルがペットに乗ったらバー（チャット・音声入力）が出て、離れたら閉じるかを確かめる（K 指示 2026-10-21。
+# 最初は右クリックのメニューを出していたが、K の言う「メニュー」はこのバーだった）。
 # 本物のカーソルを約 2 秒動かし、最後に元の位置へ戻す。**K が PC を使っていない時か、K の了承を得て流す**。
 # クリックはしない（押すのはカーソルの移動だけ）。
 #
@@ -24,11 +25,11 @@ rect=$("$winctl" find | sed -n 's/^rect=(\(-\?[0-9]*\),\(-\?[0-9]*\))-(\(-\?[0-9
 read -r l t r b <<<"$rect"
 px=$(( (l + r) / 2 )); py=$(( t + (b - t) * 6 / 10 ))   # 胴体のあたり（不透明な画素）
 
-# 1. 乗る → 200ms 待ってメニュー
+# 1. 乗る → 200ms 待ってバー
 "$winctl" hover "$px" "$py" >/dev/null
 "$winctl" hover $((px + 2)) "$py" >/dev/null
 step "on pet $px $py"
-# 初回はメニューの窓を作るので出るまで約 0.7 秒かかる（2026-10-21 実測）
+# 初回はバーの窓を作るので出るまで約 0.7 秒かかる（2026-10-21 実測）
 sleep 1.5
 step "shot shown"
 "$winctl" shot $((l - 400)) $((t - 100)) $((r - l + 800)) $((b - t + 200)) "$(cygpath -w "$out/hover-shown.png")" >/dev/null
@@ -38,7 +39,7 @@ step "shot shown"
 step "left to $((l - 300)) $py"
 sleep 1.5
 step "shot left"
-# 撮ってからカーソルを戻す（元の位置がペットの上だと、戻した時点でまたメニューが出る）
+# 撮ってからカーソルを戻す（元の位置がペットの上だと、戻した時点でまたバーが出る）
 "$winctl" shot $((l - 400)) $((t - 100)) $((r - l + 800)) $((b - t + 200)) "$(cygpath -w "$out/hover-left.png")" >/dev/null
 "$winctl" hover "$cx0" "$cy0" >/dev/null   # カーソルを元へ戻す
 step "restored"
@@ -46,9 +47,12 @@ taskkill //IM pet-app.exe //F >/dev/null 2>&1
 sleep 0.5
 
 log="$data/logs/pet.log"
-shown=$(grep -c "menu on hover" "$log"); closed=$(grep -c "hover menu: left -> close" "$log")
+shown=$(grep -c "bar on hover" "$log"); closed=$(grep -c "hover bar: left -> close" "$log")
+menu=$(grep -c "menu shown" "$log")
 [ "$shown" -ge 1 ] && r1=PASS || r1=FAIL
 [ "$closed" -ge 1 ] && r2=PASS || r2=FAIL
-echo "$r1 乗ったらメニューが出た（menu on hover ×$shown）"
+echo "$r1 乗ったらバーが出た（bar on hover ×$shown）"
 echo "$r2 離れたら閉じた（left -> close ×$closed）"
-[ "$r1$r2" = PASSPASS ]
+[ "$menu" -eq 0 ] && r3=PASS || r3=FAIL
+echo "$r3 右クリックのメニューは出ていない（menu shown ×$menu）"
+[ "$r1$r2$r3" = PASSPASSPASS ]
