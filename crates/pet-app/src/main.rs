@@ -13,11 +13,13 @@ mod log;
 mod monitors;
 mod pet_window;
 mod state;
+mod ui;
 
 use std::path::Path;
 
 use image::RgbaImage;
 use pet_core::sprite::PetManifest;
+use tauri::RunEvent;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use windows::Win32::Foundation::{ERROR_ALREADY_EXISTS, GetLastError};
@@ -48,6 +50,29 @@ fn load_sheet(pet_dir: Option<&str>) -> Result<RgbaImage, String> {
         manifest.display_name, manifest.id
     ));
     Ok(img.to_rgba8())
+}
+
+/// バー・メニューのボタン。`invoke("ui_action", { action })`
+#[tauri::command]
+fn ui_action(action: String) {
+    ui::action(action);
+}
+
+/// チャットの送信。Claude へ送るのは Phase 3。いまはログに残し、入力欄に返す一言を返す
+#[tauri::command]
+fn chat_submit(text: String) -> String {
+    log(format!("chat submit ({} 字)", text.chars().count()));
+    "送信は Phase 3 で使えるようになります".to_string()
+}
+
+#[tauri::command]
+fn settings_get() -> serde_json::Value {
+    pet_window::settings()
+}
+
+#[tauri::command]
+fn settings_set(scale: f32, tts: bool, wake: bool) {
+    pet_window::set_settings(scale, tts, wake);
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
@@ -88,10 +113,17 @@ fn main() {
     log(format!("start {}", env!("CARGO_PKG_VERSION")));
 
     let result = tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![
+            ui_action,
+            chat_submit,
+            settings_get,
+            settings_set
+        ])
         .setup(move |app| {
+            let settings = MenuItem::with_id(app, "settings", "設定", true, None::<&str>)?;
             let reset = MenuItem::with_id(app, "reset", "位置をリセット", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "終了", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&reset, &quit])?;
+            let menu = Menu::with_items(app, &[&settings, &reset, &quit])?;
             let mut tray = TrayIconBuilder::with_id("pet")
                 .tooltip("pet-claude")
                 .menu(&menu);
@@ -99,6 +131,7 @@ fn main() {
                 tray = tray.icon(icon.clone());
             }
             tray.on_menu_event(|app, event| match event.id.as_ref() {
+                "settings" => ui::open_settings(),
                 "reset" => pet_window::reset_position(),
                 "quit" => {
                     pet_window::shutdown();
@@ -108,11 +141,21 @@ fn main() {
                 _ => {}
             })
             .build(app)?;
+            ui::init(app.handle());
             pet_window::create(sheet, state::AppState::load())?;
             Ok(())
         })
-        .run(tauri::generate_context!());
-    if let Err(e) = result {
-        log(format!("tauri error: {e}"));
+        .build(tauri::generate_context!());
+    match result {
+        // UI の窓はすぐ破棄するので、「最後の窓が閉じたら終了」を止める。
+        // 終了コード付き（メニュー・トレイの「終了」＝ app.exit(0)）だけを通す
+        Ok(app) => app.run(|_, event| {
+            if let RunEvent::ExitRequested { api, code, .. } = event
+                && code.is_none()
+            {
+                api.prevent_exit();
+            }
+        }),
+        Err(e) => log(format!("tauri error: {e}")),
     }
 }

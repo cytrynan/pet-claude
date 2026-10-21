@@ -4,6 +4,7 @@
 //! スプライトシートの規約（行・コマ・ポーズの代替）を持つ。Win32 には触らないので
 //! どの OS でも `cargo test` で検証できる。
 
+pub mod behavior;
 pub mod geometry;
 pub mod placeholder;
 pub mod placement;

@@ -10,7 +10,7 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-21T08:05:00+09:00 }
 
 | 候補 | 判定 | 理由 |
 |---|---|---|
-| **Rust：ペット本体＝Win32 layered window、UI＝Tauri 2** | **採用** | `UpdateLayeredWindow` に画素ごとのアルファを渡すと、アルファ 0 の画素へのクリックを OS が背後へ通す。追加の判定も監視も要らない。`WS_EX_NOACTIVATE` でフォーカスを確実に奪わない。常駐は 34MB・CPU 0.08%（Phase 0 実測、デバッグビルド）。吹き出し・バー・チャット・設定は Tauri の WebView で作れて、Windows 11 の Acrylic/Mica 背景が設定だけで使える。hook も Rust の小さな exe にでき、起動が速い |
+| **Rust：ペット本体＝Win32 layered window、UI＝Tauri 2** | **採用** | `UpdateLayeredWindow` に画素ごとのアルファを渡すと、アルファ 0 の画素へのクリックを OS が背後へ通す。追加の判定も監視も要らない。`WS_EX_NOACTIVATE` でフォーカスを確実に奪わない。常駐は専有 21MB（ワーキングセット 50MB）・CPU 0.6%（Phase 1 実測、デバッグビルド、UI を出していない間）。吹き出し・バー・チャット・設定は Tauri の WebView で作る。WebView2 は 1 枚でもあると子プロセスが常駐する（専有 +95MB 前後）ので、UI の窓は使うときだけ作り、隠して 60 秒で破棄する（§3-b）。hook も Rust の小さな exe にでき、起動が速い |
 | Python 3.12 + PySide6 | 不採用（当初案） | 窓は作れるが、凝った UI（Apple 風の吹き出し・ガラス）が Qt では重い。hook を Python で起動すると遅い |
 | C# / WPF | 次点 | layered window と DPI は良い。UI は XAML で作れる。ただし Acrylic を透過窓に重ねにくく、Web 系 UI のほうが作りやすい |
 | Electron（OpenPets 方式） | 不採用 | Windows ではクリックの forward が止まり、750ms ごとの監視で再武装が要る。常駐が重い |
@@ -55,6 +55,27 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 
 窓はメインスレッド（Tauri のイベントループと同じスレッド）で作るので、Tauri のメッセージループがそのまま配送する。状態は `thread_local` に置く。ウィンドウプロシージャは Win32 API の中から再入される（`ReleaseCapture` → `WM_CAPTURECHANGED` など）ため、借用中に来たメッセージは既定処理に回す。
 
+## 3-b. ペットの周りの UI（Phase 1・`crates/pet-app/src/ui.rs`・`ui/*.html`）
+
+見た目の正本は `DESIGN.md`。窓はすべて Tauri の WebView。**使うときに作り、全部が隠れて 60 秒たったら破棄する**（4 枚を常に持つと WebView2 の子プロセス 9 個で専有 335MB だった。2026-10-21 実測）。出すときは位置→大きさの順に設定する（画面をまたぐと DPI の調整が先に入るため）。
+
+- WebView2 の起動引数: `--renderer-process-limit=1 --disable-gpu`（描画プロセスを 1 つにまとめ、GPU プロセスを止める。表示中の専有 114MB。見た目は撮影で同じ）
+- 窓を作る・出す処理はすべて `ui::defer` でイベントループに回す。同期コマンド（WebView2 のコールバック）の中で WebView 窓を作ると初期化が止まり、中身が真っ白になる
+- 表示中かどうかは自分で記録する（Tauri の `hide()` は後から効くので、直後の `is_visible()` はまだ true）
+- 最後の窓が閉じても終了しない（`RunEvent::ExitRequested` の終了コード無しを `prevent_exit`）。メニュー・トレイの「終了」は `app.exit(0)` で通る
+
+| 窓 | 出し方 | フォーカス | 閉じ方 |
+|---|---|---|---|
+| バー（`bar`） | ペットをクリック。ペットの下・中央 | 取らない（`focusable(false)`） | もう一度ペットをクリック／外をクリック／メニュー「バーを隠す」 |
+| チャット入力（`chat`） | バーの「チャット」。バーと同じ場所 | 取る（文字を打つため。利用者が選んだとき） | フォーカスが外れる／Esc／外をクリック |
+| 右クリックメニュー（`menu`） | ペットを右クリック。カーソルの位置 | 取らない | 項目を押す／外をクリック |
+| 設定（`settings`） | メニュー「設定」かトレイ「設定」 | 取る（普通の窓） | 窓を閉じる（破棄） |
+
+- フォーカスを取らない窓は Esc もフォーカスの喪失も来ないので、**開いている間だけ低レベルのマウスフック（`WH_MOUSE_LL`）を入れ**、島とペットの外でボタンが押されたら閉じる。閉じる処理はフックの中でせず、イベントループに回す
+- 窓は島より四方 12px 大きく取り、その中に影を描く（透過窓の外に影は出せない）
+- ペットは毎 tick `ui::popups_visible()` を読み、出ている間は `Behavior::set_held(true)`（散歩も睡眠もしない）
+- UI からの操作は Tauri のコマンド（`ui_action`・`chat_submit`・`settings_get`・`settings_set`）。コマンドはメインスレッドで動く。ペットの状態に触る処理は、ウィンドウプロシージャの借用中なら `ui::defer` でイベントループに回す
+
 ## 4. 行動（Phase 1・`pet-core::behavior`）
 
 ### 4.1 入力の型
@@ -72,16 +93,18 @@ pub enum AgentEvent {
 
 ### 4.2 ポーズと優先順位
 
+正本は `.steering/20261021-phase1-behavior/requirements.md`（境界値・乱数・無操作の時計の定義まで決めてある）。ここは要約。
+
 ```
 Grabbed（ドラッグ中）
- > Reaction（クリック: Waving / 完了: Jumping を 1 回だけ）
- > Agent: needs_input(Waiting) > error(Failed) > working(Running)
+ > Reaction（クリック・完了: Jumping／失敗: Failed を 1 回だけ）
+ > Agent: needs_input(Waiting) > working(Running)
  > Autonomous: Sleep > Walk(RunLeft/RunRight) > Idle
 ```
 
-- 自律行動は `Idle` が基本。無操作 90 秒〜で散歩（作業領域の端で折り返す）、5 分〜で睡眠。Agent 状態が来たら自律行動は中断
+- 自律行動は `Idle` が基本。無操作 90 秒〜で散歩（作業領域の端で折り返す）、5 分〜で睡眠。散歩は「散歩（3〜8 秒）と休み（10〜30 秒）」を交互に繰り返す。Agent 状態が来たら自律行動は中断
 - Agent 状態は最後のイベントから 120 秒で `Idle` に戻す（hook が落ちても固まらない）
-- 複数セッションはセッションごとに状態を持ち、`needs_input > error > working` の順で代表を選ぶ
+- 複数セッションはセッションごとに状態を持ち、`needs_input > working` の順で代表を選ぶ。失敗は状態でなく 1 回きりの反応
 
 ### 4.3 スプライトの行（`pet-core::sprite`）
 

@@ -1,0 +1,69 @@
+/* pet-claude の UI 共通。値の正本は DESIGN.md */
+:root {
+  /* フォームの部品（スライダーの溝など）をシステムの明暗に合わせる */
+  color-scheme: light dark;
+  --font: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Hiragino Kaku Gothic ProN",
+    "Noto Sans JP", "BIZ UDPGothic", "Yu Gothic UI", Meiryo, sans-serif;
+  --surface: rgba(246, 246, 248, .92);
+  --surface-hover: rgba(0, 0, 0, .06);
+  --surface-press: rgba(0, 0, 0, .10);
+  --rim: rgba(0, 0, 0, .10);
+  --highlight: rgba(255, 255, 255, .70);
+  --label: #1d1d1f;
+  --label-2: rgba(60, 60, 67, .60);
+  --separator: rgba(60, 60, 67, .18);
+  --tint: #0066cc;
+  --shadow: 0 8px 24px rgba(0, 0, 0, .18);
+  --ease: cubic-bezier(0.28, 0.11, 0.32, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --surface: rgba(38, 38, 40, .92);
+    --surface-hover: rgba(255, 255, 255, .08);
+    --surface-press: rgba(255, 255, 255, .14);
+    --rim: rgba(255, 255, 255, .10);
+    --highlight: rgba(255, 255, 255, .10);
+    --label: #f5f5f7;
+    --label-2: rgba(235, 235, 245, .60);
+    --separator: rgba(84, 84, 88, .60);
+    --tint: #0a84ff;
+    --shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  }
+}
+
+* { box-sizing: border-box; margin: 0; }
+html, body { background: transparent; overflow: hidden; }
+body {
+  font-family: var(--font);
+  font-size: 13px;
+  color: var(--label);
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+  cursor: default;
+}
+
+/* 浮いた島（窓は島より 12px 大きく取り、その中に影を描く） */
+.island {
+  position: absolute;
+  inset: 12px;
+  background: var(--surface);
+  box-shadow: var(--shadow), inset 0 1px 0 var(--highlight), inset 0 0 0 .5px var(--rim);
+  animation: appear .15s var(--ease);
+}
+@keyframes appear { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .island { animation: none; } }
+
+.capsule { border-radius: 999px; }
+
+.icon-btn {
+  width: 36px; height: 36px;
+  border: 0; border-radius: 999px;
+  background: transparent; color: var(--label);
+  display: grid; place-items: center;
+  transition: background-color .15s var(--ease);
+}
+.icon-btn:hover { background: var(--surface-hover); }
+.icon-btn:active { background: var(--surface-press); }
+.icon-btn:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
+.icon-btn svg { width: 18px; height: 18px; stroke: currentColor; stroke-width: 1.6; fill: none;
+  stroke-linecap: round; stroke-linejoin: round; }

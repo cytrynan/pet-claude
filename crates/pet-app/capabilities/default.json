@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Phase 0 は webview を持たないので権限は空",
-  "windows": [],
-  "permissions": []
+  "description": "ペットの周りの UI（バー・チャット・メニュー・設定）。アプリ独自のコマンドだけを呼ぶ",
+  "windows": ["bar", "chat", "menu", "settings"],
+  "permissions": ["core:default"]
 }

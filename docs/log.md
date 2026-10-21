@@ -10,6 +10,10 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Creation**: [DESIGN.md](../DESIGN.md) — Apple 風の方向性と、Windows の透過窓での写し方（ほぼ不透明の素材・影は窓内）・トークン・部品 (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md) — §3-b ペットの周りの UI（窓・フォーカス・外側クリックのフック・使うときだけ作って 60 秒で破棄・WebView2 の起動引数）、§4.2 を要件に合わせた (kuroko/claude-opus-5-5)
+* **Update**: [プロダクト要求定義書](product-requirements.md) — N1 のメモリを「普段 50MB・UI 表示中 150MB（子プロセス込みの専有）」に改訂。旧値は WebView2 の子プロセスを数えていなかった (kuroko/claude-opus-5-5)
+* **Update**: [ロードマップ](roadmap.md) — Phase 1 を実施済みに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §3 の位置の保存・画面構成の変化を「合格（実機で外して付け直し）」に。W10 を K の了承のうえ実測 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [ロードマップ](roadmap.md) — Phase 0 を W1〜W12 すべて合格に。スクショの扱いは K と決める (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [OpenPets 解析](openpets-analysis.md) — 「pet-claude での扱い」列を Qt/Python 前提から Rust（Win32 layered window）に直した（評価係の指摘） (kuroko/claude-opus-5-5)

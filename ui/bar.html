@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pet-claude bar</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  .bar { display: flex; align-items: center; gap: 2px; padding: 0 6px; }
+  .sep { width: 1px; height: 18px; background: var(--separator); margin: 0 2px; }
+</style>
+</head>
+<body>
+<div class="island capsule bar" role="toolbar" aria-label="ペットの操作">
+  <button class="icon-btn" id="chat" title="チャット" aria-label="チャット">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z"/><path d="M13.5 6.5l4 4"/></svg>
+  </button>
+  <span class="sep" aria-hidden="true"></span>
+  <button class="icon-btn" id="voice" title="音声入力" aria-label="音声入力">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 8v8M20 11v2"/></svg>
+  </button>
+</div>
+<script src="ui.js"></script>
+<script>
+  document.getElementById("chat").onclick = () => invoke("ui_action", { action: "chat" });
+  document.getElementById("voice").onclick = () => invoke("ui_action", { action: "voice" });
+</script>
+</body>
+</html>

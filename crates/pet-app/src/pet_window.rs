@@ -16,6 +16,7 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use image::RgbaImage;
+use pet_core::behavior::{Behavior, BehaviorConfig, UserEvent};
 use pet_core::geometry::{Point, Rect};
 use pet_core::placement::{self, Monitor};
 use pet_core::sprite::{CELL_H, CELL_W, Playback, Pose, cell_origin, rows_in};
@@ -42,9 +43,12 @@ use windows::core::w;
 
 use crate::log::log;
 use crate::monitors::{self, to_rect};
-use crate::state::AppState;
+use crate::state::{AppState, MAX_SCALE, MIN_SCALE};
+use crate::ui;
 
-const TIMER_ANIM: usize = 1;
+/// 行動とアニメーションの時計（約 30fps）。
+const TIMER_TICK: usize = 1;
+const TICK_MS: u32 = 33;
 const TIMER_TOPMOST: usize = 2;
 const TIMER_DISPLAY: usize = 3;
 const DRAG_THRESHOLD_PX: i32 = 4;
@@ -73,6 +77,13 @@ struct Pet {
     drag: Option<Drag>,
     /// (行, コマ) → BGRA 事前乗算済みの画素。大きさが変わったら捨てる。
     cache: HashMap<(u32, u32), Vec<u8>>,
+    behavior: Behavior,
+    pose: Pose,
+    /// バー・メニューが出ていると Behavior に伝えた値
+    held: bool,
+    last_tick_ms: u64,
+    /// 散歩で動かす物理ピクセルの端数（1px 未満を次の tick へ持ち越す）
+    walk_carry: f32,
 }
 
 thread_local! {
@@ -130,29 +141,69 @@ impl Pet {
         size_for(self.state.scale, self.dpi)
     }
 
-    fn set_pose(&mut self, pose: Pose) {
-        let clip = pose.clip_for(self.rows);
-        if self.playback.clip == clip {
-            return;
+    /// ポーズが変わったら最初のコマから再生し直す。描くのは呼び出し側。
+    fn set_pose(&mut self, pose: Pose, now: u64) -> bool {
+        if pose == self.pose {
+            return false;
         }
+        if std::env::var_os("PET_TRACE").is_some() || std::env::var_os("PET_FAST").is_some() {
+            log(format!("pose -> {pose:?}"));
+        }
+        self.pose = pose;
         self.playback = Playback {
-            clip,
-            started_ms: now_ms(self.epoch),
+            clip: pose.clip_for(self.rows),
+            started_ms: now,
         };
         self.frame = 0;
-        // SAFETY: 自分の窓へのタイマー設定
-        unsafe { SetTimer(Some(self.hwnd), TIMER_ANIM, self.playback.frame_ms(), None) };
-        self.present();
+        true
     }
 
+    /// 約 30fps で呼ばれる。行動を決め、コマを進め、散歩なら窓を動かす。
     fn tick(&mut self) {
-        let (frame, done) = self.playback.frame_at(now_ms(self.epoch));
-        if done {
-            self.set_pose(Pose::Idle);
-        } else if frame != self.frame {
+        let now = now_ms(self.epoch);
+        let dt = now.saturating_sub(self.last_tick_ms).min(200);
+        self.last_tick_ms = now;
+
+        let held = ui::popups_visible();
+        if held != self.held {
+            self.held = held;
+            self.behavior.set_held(held, now);
+        }
+        let out = self.behavior.tick(now);
+        let mut dirty = self.set_pose(out.pose, now);
+        let (frame, _) = self.playback.frame_at(now);
+        if frame != self.frame {
             self.frame = frame;
+            dirty = true;
+        }
+        if out.vx != 0.0 && self.drag.is_none() {
+            dirty |= self.walk(out.vx, dt, now);
+        }
+        if dirty {
             self.present();
         }
+    }
+
+    /// 散歩で横に動く。いまの画面の作業領域から出そうなら止めて向きを変えさせる。
+    fn walk(&mut self, vx: f32, dt_ms: u64, now: u64) -> bool {
+        let px = vx * (dt_ms as f32 / 1000.0) * (self.dpi as f32 / 96.0) + self.walk_carry;
+        let step = px.trunc() as i32;
+        self.walk_carry = px.fract();
+        if step == 0 {
+            return false;
+        }
+        let moved = self.rect.offset(step, 0);
+        let rect = match monitors::at_point(self.rect.center()) {
+            Some(m) => placement::clamp_into(&moved, &m.work),
+            None => moved,
+        };
+        if rect.left != moved.left {
+            self.walk_carry = 0.0;
+            self.behavior.on_blocked(now);
+        }
+        let changed = rect != self.rect;
+        self.rect = rect;
+        changed
     }
 
     /// 現在のコマを現在の位置に描く。
@@ -247,7 +298,11 @@ impl Pet {
             }
             drag.moved = true;
             log("drag start");
-            self.set_pose(Pose::Grabbed);
+            ui::hide_all();
+            let now = now_ms(self.epoch);
+            self.behavior.on_user(UserEvent::DragStart, now);
+            let pose = self.behavior.tick(now).pose;
+            self.set_pose(pose, now);
         }
         let grab = self.drag.as_ref().map_or((0.5, 0.5), |d| d.grab);
         // カーソルの居る画面の DPI に合わせ、その画面の作業領域に収める
@@ -283,7 +338,8 @@ impl Pet {
                 "click at ({},{})",
                 drag.down_cursor.x, drag.down_cursor.y
             ));
-            self.set_pose(Pose::Waving);
+            self.behavior.on_user(UserEvent::Click, now_ms(self.epoch));
+            ui::toggle_bar(self.rect, self.dpi);
         }
     }
 
@@ -304,7 +360,8 @@ impl Pet {
             ));
             self.place(rect);
         }
-        self.set_pose(Pose::Idle);
+        self.behavior
+            .on_user(UserEvent::DragEnd, now_ms(self.epoch));
     }
 
     /// 他の最前面窓に埋もれないよう取り直す。全画面の窓が手前に居る間は譲る。
@@ -440,9 +497,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) 
                     pet.drag = None;
                 }
             }
-            WM_RBUTTONUP => log("right-click（Phase 1 でメニュー）"),
+            WM_RBUTTONUP => ui::show_menu(message_cursor(), pet.rect, pet.dpi),
             WM_TIMER => match wp.0 {
-                TIMER_ANIM => pet.tick(),
+                TIMER_TICK => pet.tick(),
                 TIMER_TOPMOST => pet.reassert_topmost(),
                 // ドラッグ中は置き直さない（掴んでいるペットが保存位置へ飛ぶ）。
                 // タイマーは止めずに残し、離した後の次の発火で置き直す
@@ -522,12 +579,17 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
         epoch,
         drag: None,
         cache: HashMap::new(),
+        behavior: Behavior::new(behavior_config(), seed(), 0),
+        pose: Pose::Idle,
+        held: false,
+        last_tick_ms: 0,
+        walk_carry: 0.0,
     };
     pet.relayout("startup");
     // SAFETY: 自分の窓の表示とタイマー
     unsafe {
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-        SetTimer(Some(hwnd), TIMER_ANIM, pet.playback.frame_ms(), None);
+        SetTimer(Some(hwnd), TIMER_TICK, TICK_MS, None);
         SetTimer(Some(hwnd), TIMER_TOPMOST, 1000, None);
     }
     log(format!("pet window created rows={rows}"));
@@ -535,14 +597,85 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
     Ok(())
 }
 
+/// 行動の定数。`PET_FAST=1` のときは検証用に短くする（散歩 5 秒・睡眠 20 秒・Claude の状態 10 秒）。
+fn behavior_config() -> BehaviorConfig {
+    let d = BehaviorConfig::default();
+    if std::env::var_os("PET_FAST").is_none() {
+        return d;
+    }
+    BehaviorConfig {
+        walk_after_ms: 5_000,
+        sleep_after_ms: 20_000,
+        rest_min_ms: 2_000,
+        rest_max_ms: 4_000,
+        agent_timeout_ms: 10_000,
+        ..d
+    }
+}
+
+/// 散歩の向き・長さの乱数の種（起動ごとに変える）。
+fn seed() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(1, |d| d.as_nanos() as u64)
+}
+
+/// 借用中（ウィンドウプロシージャの中）なら、イベントループに回してから実行する。
+fn with_pet(f: impl FnOnce(&mut Pet) + Send + 'static) {
+    let done = PET.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut guard) => {
+            if let Some(pet) = guard.as_mut() {
+                f(pet);
+            }
+            None
+        }
+        Err(_) => Some(f),
+    });
+    if let Some(f) = done {
+        ui::defer(move || with_pet(f));
+    }
+}
+
+/// 設定画面へ渡す値。
+pub fn settings() -> serde_json::Value {
+    PET.with(|cell| {
+        cell.try_borrow().ok().and_then(|g| {
+            g.as_ref().map(|p| {
+                serde_json::json!({ "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake })
+            })
+        })
+    })
+    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false }))
+}
+
+/// 設定画面からの変更。大きさは足元を基準に描き直す。
+pub fn set_settings(scale: f32, tts: bool, wake: bool) {
+    with_pet(move |pet| {
+        pet.state.tts = tts;
+        pet.state.wake = wake;
+        let scale = scale.clamp(MIN_SCALE, MAX_SCALE);
+        if (scale - pet.state.scale).abs() > f32::EPSILON {
+            let anchor = placement::anchor_of(&pet.rect);
+            pet.state.scale = scale;
+            pet.cache.clear();
+            let (w, h) = pet.size();
+            let mut rect = placement::rect_from_anchor(anchor, w, h);
+            if let Some(m) = monitors::at_point(rect.center()) {
+                rect = placement::clamp_into(&rect, &m.work);
+            }
+            pet.place(rect);
+            log(format!("scale -> {scale:.2} size {w}x{h}"));
+        }
+        pet.state.save();
+    });
+}
+
 /// 位置を既定（主画面の右下）に戻す。
 pub fn reset_position() {
-    PET.with(|cell| {
-        if let Some(pet) = cell.borrow_mut().as_mut() {
-            pet.state.positions = Default::default();
-            pet.state.save();
-            pet.relayout("reset");
-        }
+    with_pet(|pet| {
+        pet.state.positions = Default::default();
+        pet.state.save();
+        pet.relayout("reset");
     });
 }
 

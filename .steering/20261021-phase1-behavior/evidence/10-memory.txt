@@ -1,0 +1,31 @@
+args='' processes=11 workingset=591.4MB private=335.0MB
+  conhost.exe x1
+  msedgewebview2.exe x9
+  pet-app.exe x1
+args='--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1' processes=9 workingset=484.0MB private=269.8MB
+  conhost.exe x1
+  msedgewebview2.exe x7
+  pet-app.exe x1
+args='--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --renderer-process-limit=1 --disable-gpu' processes=9 workingset=442.4MB private=159.6MB
+  conhost.exe x1
+  msedgewebview2.exe x7
+  pet-app.exe x1
+args='' processes=2 workingset=45.0MB private=18.8MB
+  conhost.exe x1
+  pet-app.exe x1
+args='' processes=7 workingset=331.8MB private=114.0MB
+  msedgewebview2.exe x6
+  pet-app.exe x1
+args='' processes=7 workingset=339.7MB private=114.2MB
+  pet-app.exe x1
+  msedgewebview2.exe x6
+args='' processes=7 workingset=347.7MB private=116.3MB
+  pet-app.exe x1
+  msedgewebview2.exe x6
+args='' processes=6 workingset=398.7MB private=26.0MB
+  System Idle Process x1
+  System x1
+  Secure System x1
+  Registry x1
+  smss.exe x1
+  Memory Compression x1

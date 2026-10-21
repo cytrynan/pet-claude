@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pet-claude の設定</title>
+<link rel="stylesheet" href="ui.css">
+<style>
+  :root { --bg-grouped: #f2f2f7; --cell: #fff; --green: #34c759; }
+  @media (prefers-color-scheme: dark) { :root { --bg-grouped: #000; --cell: #1c1c1e; --green: #30d158; } }
+  html, body { background: var(--bg-grouped); overflow: auto; }
+  main { padding: 20px 16px 24px; }
+  h2 { font-size: 11px; font-weight: 600; color: var(--label-2); letter-spacing: .02em;
+    margin: 18px 16px 6px; font-feature-settings: "palt"; }
+  h2:first-child { margin-top: 0; }
+  .group { background: var(--cell); border-radius: 10px; overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 8px 16px; }
+  .row + .row { border-top: .5px solid var(--separator); }
+  .row label { flex: 1; font-feature-settings: "palt"; }
+  .note { font-size: 11px; color: var(--label-2); margin: 6px 16px 0; line-height: 1.5; }
+  .value { color: var(--label-2); min-width: 3.5em; text-align: right; font-variant-numeric: tabular-nums; }
+  input[type="range"] { width: 160px; accent-color: var(--tint); }
+  /* スイッチ（HIG: 51×31・オンは緑・白いつまみ） */
+  .switch { appearance: none; width: 51px; height: 31px; border-radius: 999px; flex: none;
+    background: rgba(120, 120, 128, .32); position: relative; transition: background-color .2s var(--ease); }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+    border-radius: 999px; background: #fff; box-shadow: 0 3px 8px rgba(0, 0, 0, .15);
+    transition: transform .2s var(--ease); }
+  .switch:checked { background: var(--green); }
+  .switch:checked::after { transform: translateX(20px); }
+  .switch:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .switch, .switch::after { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h2>表示</h2>
+  <div class="group">
+    <div class="row">
+      <label for="scale">ペットの大きさ</label>
+      <input type="range" id="scale" min="25" max="150" step="5">
+      <span class="value" id="scale-value"></span>
+    </div>
+  </div>
+
+  <h2>声</h2>
+  <div class="group">
+    <div class="row">
+      <label for="tts">声で知らせる</label>
+      <input type="checkbox" class="switch" id="tts" role="switch">
+    </div>
+    <div class="row">
+      <label for="wake">呼びかけで音声入力を始める</label>
+      <input type="checkbox" class="switch" id="wake" role="switch">
+    </div>
+  </div>
+  <p class="note">声の機能は Phase 3 以降で使えます（設定は保存されます）。</p>
+</main>
+<script src="ui.js"></script>
+<script>
+  const scale = document.getElementById("scale");
+  const scaleValue = document.getElementById("scale-value");
+  const tts = document.getElementById("tts");
+  const wake = document.getElementById("wake");
+  const show = () => { scaleValue.textContent = scale.value + "%"; };
+  const save = () => invoke("settings_set", {
+    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked,
+  });
+  window.reload = () => invoke("settings_get").then((s) => {
+    scale.value = Math.round(s.scale * 100);
+    tts.checked = s.tts;
+    wake.checked = s.wake;
+    show();
+  });
+  window.reload();
+  scale.addEventListener("input", () => { show(); save(); });
+  tts.addEventListener("change", save);
+  wake.addEventListener("change", save);
+</script>
+</body>
+</html>
