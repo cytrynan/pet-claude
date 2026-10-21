@@ -38,7 +38,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     FindWindowW, GA_ROOT, GWL_EXSTYLE, GetAncestor, GetClassNameW, GetForegroundWindow,
     GetSystemMetrics, GetWindowLongW, GetWindowRect, GetWindowTextW, IsWindowVisible, PostMessageW,
     SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, SWP_NOZORDER,
-    SetCursorPos, SetForegroundWindow, SetWindowPos, WM_DISPLAYCHANGE, WindowFromPoint,
+    SetCursorPos, SetForegroundWindow, SetWindowPos, WM_CLOSE, WM_DISPLAYCHANGE, WindowFromPoint,
 };
 use windows::core::HSTRING;
 
@@ -297,6 +297,17 @@ fn main() {
             }
             None => println!("not found"),
         },
+        Some("closetitle") => {
+            // タイトルが完全一致する窓に WM_CLOSE を送る（検証で開いた窓だけを閉じるため）
+            // SAFETY: 読み取りと通知のみ
+            match unsafe { FindWindowW(None, &HSTRING::from(args[1].as_str())) } {
+                Ok(h) if !h.is_invalid() => {
+                    let _ = unsafe { PostMessageW(Some(h), WM_CLOSE, WPARAM(0), LPARAM(0)) };
+                    println!("closed");
+                }
+                _ => println!("not found"),
+            }
+        }
         Some("shot") => shot(n(&args, 1), n(&args, 2), n(&args, 3), n(&args, 4), &args[5]),
         _ => eprintln!("usage: winctl find|fg|point|click|rclick|drag|focus|place|shot ..."),
     }
