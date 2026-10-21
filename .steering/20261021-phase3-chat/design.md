@@ -6,7 +6,7 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-21T21:55:00+09:00 }
 
 # 設計: チャット（`claude -p` を子プロセスで起こす）
 
-一次資料（2026-10-21 に確認）: https://code.claude.com/docs/en/cli-reference の CLI flags、https://code.claude.com/docs/en/authentication の「Authentication precedence」。
+一次資料（2026-10-21 に確認）と手元の実測 `evidence.md`（#7）: https://code.claude.com/docs/en/cli-reference の CLI flags、https://code.claude.com/docs/en/authentication の「Authentication precedence」。
 
 ## 1. なぜ SDK のライブラリでなく `claude -p` か
 
@@ -18,6 +18,8 @@ Agent SDK は TypeScript と Python のライブラリで、中で動いてい�
 
 ```
 claude -p --output-format json
+       --safe-mode
+       --model sonnet
        --tools "" --disallowedTools "mcp__*" --strict-mcp-config
        --settings "{\"disableAllHooks\":true}"
        --disable-slash-commands
@@ -30,6 +32,8 @@ claude -p --output-format json
 
 | 引数 | 狙い | 根拠 |
 |---|---|---|
+| `--safe-mode` | K の `~/.claude/CLAUDE.md`・自動メモリ・スキル・プラグイン・hooks・MCP を読まない（認証はそのまま）。**無いと K の個人の指示書がペットの会話に毎回入る**（入力 19,156 → 787 トークン、evidence E8・E9） | `--help`「Start with all customizations ... disabled」。実測 E6・E9 |
+| `--model sonnet` | **CLI 既定（Fable）は K の上限に達すると全く答えない**（E2。`--fallback-model` も効かない）。秒数は haiku と変わらない（起動が約 3 秒を占める） | 実測 E2・E3・秒数表。要求の非スコープ「モデルの選択」は画面での選択のこと。固定値は定数 1 か所 |
 | `--tools ""` | 組み込みツールを全部外す | cli-reference「Use `""` to disable all」 |
 | `--disallowedTools "mcp__*"`・`--strict-mcp-config` | MCP のツールも外す（`--tools` は MCP に効かない） | 同「The flag doesn't affect MCP tools」 |
 | `--settings {"disableAllHooks":true}` | K の `~/.claude/settings.json` に入れた pet の hooks が、チャット自身の会話で鳴らないようにする（A4） | `--settings` は同じキーを上書き。**`disableAllHooks` の効き方は実機で確かめる**（効かなければ §5 の予備策） |
@@ -44,7 +48,7 @@ claude -p --output-format json
 
 | 設定 | 子プロセスの環境 |
 |---|---|
-| サブスク（既定） | 親の環境から `ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`CLAUDE_CODE_USE_BEDROCK`・`CLAUDE_CODE_USE_VERTEX`・`CLAUDE_CODE_USE_FOUNDRY`・`ANTHROPIC_PROFILE` を**消す**。`claude -p` は API キーが環境にあれば必ずそれを使う（authentication「In non-interactive mode (-p), the key is always used when present」）ので、消さないと K が気づかないまま API 課金になる |
+| サブスク（既定） | 親の環境から `ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`CLAUDE_CODE_USE_BEDROCK`・`CLAUDE_CODE_USE_VERTEX`・`CLAUDE_CODE_USE_FOUNDRY`・`ANTHROPIC_PROFILE` を**消す**（ほかに `CLAUDECODE`・`CLAUDE_CODE_ENTRYPOINT` も消す＝pet-app を Claude Code の中から起動した時に入れ子と誤認させない）。`claude -p` は API キーが環境にあれば必ずそれを使う（authentication「In non-interactive mode (-p), the key is always used when present」）ので、消さないと K が気づかないまま API 課金になる |
 | API キー | 上と同じものを消したうえで、資格情報マネージャーから読んだ鍵を `ANTHROPIC_API_KEY` に入れる |
 
 - 環境の組み立ては純粋関数 `pet_core::chat::child_env(mode, parent_env, key) -> Vec<(String, String)>` にしてテストする（A1・A2）
@@ -58,15 +62,16 @@ claude -p --output-format json
 - 同時に 1 本だけ。待ち中の送信は「まだ考え中です」で断る。120 秒で子プロセスを止めて時間切れ
 - 終わったら JSON を読む: `is_error`・`result`・`session_id`。答えはメインスレッドへ渡して吹き出しに出す
 - 吹き出しには `sanitize_line` を通した先頭 140 字（N3）。全文はチャット欄の下に出す（「続きを見る」）
-- `claude` の場所: PATH から `claude.exe` → `claude.cmd` の順に探す。見つからなければ「Claude Code が見つかりません」
+- `claude` の場所: PATH の各フォルダで `claude.exe` を探し、無ければ同じフォルダの `claude.cmd` の隣の `node_modules\@anthropic-ai\claude-codein\claude.exe`（npm 版。evidence 冒頭）、最後に `%USERPROFILE%\.localin\claude.exe`（ネイティブ版）。**`.cmd` は直接起こさない**（cmd.exe を挟むと `--settings` の JSON の引用符が cmd の解釈を受ける）。見つからなければ「Claude Code が見つかりません」
+- 失敗の見分け: 終了コードが 0 でも 1 でも、標準出力が JSON なら `is_error`・`result` を見る（上限・鍵違いは `is_error: true` で `result` に理由。E2・E11）。JSON でなければ標準エラーの先頭行を理由にする（E12）
 - アプリ終了・「新しいチャット」・時間切れでは子プロセスを `TerminateProcess` で止める。子は Job Object に入れ、pet-app が落ちても道連れにする（A7）
 - ログには「送った字数・かかった秒数・終了コード・is_error」だけ。本文と答えは書かない（N4）
 
 ## 5. 未確定と予備策
 
-- `disableAllHooks` が `--settings` で効かなかった場合: pet-app が `--session-id <自分で作った UUID>` を付けて起こし、hooks の受け口でその session id の出来事を捨てる（確実だが受け口に手が入る）
-- `--permission-prompts` が入っていない古い CLI: 引数エラーになったら外して再試行し、ログに CLI の版を書く
-- 起動の速さ: サブスクでの 1 回目の答えまでの秒数を実測して記録する（目安 5 秒以内。超えるなら `--model haiku` 等を K と相談）
+- ~~`disableAllHooks` が効かなかった場合の予備策~~ → **不要**: `--settings {"disableAllHooks":true}` でも `--safe-mode` でも hooks は鳴らない（E6）。両方付ける
+- `--permission-prompts` が入っていない古い CLI: 2.1.305 では通る（E1）。引数エラー（E12）なら理由をそのまま吹き出しに出し、ログに CLI の版を書く（再試行はしない＝外すと安全側の引数が消えるため）
+- 起動の速さ: サブスクで 5.0〜7.6 秒（sonnet）、4.7〜5.2 秒（haiku）。起動が約 3 秒で、モデルでは縮まない（evidence の秒数表）。目安 5 秒はわずかに超えるが、考え中の動きで待たせる
 
 ## 6. テストの置き場所
 
