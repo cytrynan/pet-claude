@@ -40,6 +40,10 @@
       <input type="range" id="scale" min="25" max="150" step="5">
       <span class="value" id="scale-value"></span>
     </div>
+    <div class="row">
+      <label for="walk">放置すると散歩する</label>
+      <input type="checkbox" class="switch" id="walk" role="switch">
+    </div>
   </div>
 
   <h2>声</h2>
@@ -61,16 +65,18 @@
   const scaleValue = document.getElementById("scale-value");
   const tts = document.getElementById("tts");
   const wake = document.getElementById("wake");
+  const walk = document.getElementById("walk");
   const show = () => { scaleValue.textContent = scale.value + "%"; };
   // スライダーを動かしている間は描き直すだけ（save: false）、離したら保存する
   const send = (persist) => invoke("settings_set", {
-    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, save: persist,
+    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, walk: walk.checked, save: persist,
   });
   const save = () => send(true);
   window.reload = () => invoke("settings_get").then((s) => {
     scale.value = Math.round(s.scale * 100);
     tts.checked = s.tts;
     wake.checked = s.wake;
+    walk.checked = s.walk;
     show();
   });
   window.reload();
@@ -78,6 +84,7 @@
   scale.addEventListener("change", save);
   tts.addEventListener("change", save);
   wake.addEventListener("change", save);
+  walk.addEventListener("change", save);
 </script>
 </body>
 </html>

@@ -21,6 +21,8 @@ pub struct AppState {
     pub tts: bool,
     /// 呼びかけで音声入力を始める（Phase 4 で使う。いまは保存だけ）
     pub wake: bool,
+    /// 放置すると散歩する（K 指示 2026-10-21: 既定はオフ。睡眠は対象外）
+    pub walk: bool,
 }
 
 impl Default for AppState {
@@ -30,6 +32,7 @@ impl Default for AppState {
             positions: PositionStore::default(),
             tts: true,
             wake: false,
+            walk: false,
         }
     }
 }
@@ -55,6 +58,7 @@ impl AppState {
             positions: serde_json::from_value(v["positions"].clone()).unwrap_or_default(),
             tts: v["tts"].as_bool().unwrap_or(d.tts),
             wake: v["wake"].as_bool().unwrap_or(d.wake),
+            walk: v["walk"].as_bool().unwrap_or(d.walk),
         }
     }
 
@@ -67,6 +71,7 @@ impl AppState {
             "positions": self.positions,
             "tts": self.tts,
             "wake": self.wake,
+            "walk": self.walk,
         });
         let tmp = dir.join("state.json.tmp");
         let ok = fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())

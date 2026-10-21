@@ -567,6 +567,7 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
         )?
     };
     let rows = rows_in(sheet.height());
+    let walk = state.walk;
     let epoch = Instant::now();
     let mut pet = Pet {
         hwnd,
@@ -583,7 +584,7 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
         epoch,
         drag: None,
         cache: HashMap::new(),
-        behavior: Behavior::new(behavior_config(), seed(), 0),
+        behavior: Behavior::new(behavior_config(walk), seed(), 0),
         pose: Pose::Idle,
         held: false,
         last_tick_ms: 0,
@@ -602,11 +603,22 @@ pub fn create(sheet: RgbaImage, state: AppState) -> windows::core::Result<()> {
 }
 
 /// 行動の定数。`PET_FAST=1` のときは検証用に短くする（散歩 5 秒・睡眠 20 秒・Claude の状態 10 秒）。
-fn behavior_config() -> BehaviorConfig {
-    let d = BehaviorConfig::default();
-    if std::env::var_os("PET_FAST").is_none() {
-        return d;
+/// `walk` が false（既定）なら散歩しない。睡眠はそのまま。
+fn behavior_config(walk: bool) -> BehaviorConfig {
+    let mut c = if std::env::var_os("PET_FAST").is_none() {
+        BehaviorConfig::default()
+    } else {
+        fast_config()
+    };
+    if !walk {
+        // 無操作がこの長さに届くことは無いので、散歩に入らない（睡眠の判定はこれより先に行われる）
+        c.walk_after_ms = u64::MAX;
     }
+    c
+}
+
+fn fast_config() -> BehaviorConfig {
+    let d = BehaviorConfig::default();
     BehaviorConfig {
         walk_after_ms: 5_000,
         sleep_after_ms: 20_000,
@@ -645,19 +657,25 @@ pub fn settings() -> serde_json::Value {
     PET.with(|cell| {
         cell.try_borrow().ok().and_then(|g| {
             g.as_ref().map(|p| {
-                serde_json::json!({ "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake })
+                serde_json::json!({ "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk })
             })
         })
     })
-    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false }))
+    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false, "walk": false }))
 }
 
 /// 設定画面からの変更。大きさは足元を基準に描き直す。`save` が true のときだけ state.json に書く
 /// （スライダーを動かしている間は描き直すだけにして、離したときに 1 回保存する）。
-pub fn set_settings(scale: f32, tts: bool, wake: bool, save: bool) {
+pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
     with_pet(move |pet| {
         pet.state.tts = tts;
         pet.state.wake = wake;
+        if walk != pet.state.walk {
+            // 定数が変わるので作り直す（散歩中なら止まり、待機から数え直す）
+            pet.state.walk = walk;
+            pet.behavior = Behavior::new(behavior_config(walk), seed(), now_ms(pet.epoch));
+            log(format!("walk -> {walk}"));
+        }
         let scale = scale.clamp(MIN_SCALE, MAX_SCALE);
         if (scale - pet.state.scale).abs() > f32::EPSILON {
             let anchor = placement::anchor_of(&pet.rect);
