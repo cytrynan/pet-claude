@@ -298,7 +298,8 @@ impl Pet {
             }
             drag.moved = true;
             log("drag start");
-            ui::hide_all();
+            // 借用中なので後回しにする（UI の窓に触る処理はすべて defer を通す）
+            ui::defer(ui::hide_all);
             let now = now_ms(self.epoch);
             self.behavior.on_user(UserEvent::DragStart, now);
             let pose = self.behavior.tick(now).pose;

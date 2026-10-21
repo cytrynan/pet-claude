@@ -59,8 +59,8 @@ thread_local! {
     static INSIDE: RefCell<Vec<Rect>> = const { RefCell::new(Vec::new()) };
     /// 全部の窓が隠れた時刻（破棄の判定用）
     static HIDDEN_SINCE: Cell<Option<Instant>> = const { Cell::new(None) };
-    /// いま出している窓。Tauri の `hide()` はイベントループ経由で後から効くので、直後の `is_visible()` は
-    /// まだ true を返す（2026-10-21 実測: そのせいで破棄の予約が入らなかった）。出した・隠したは自分で記録する
+    /// いま出している窓。出した・隠したは自分で記録する（毎フレームの問い合わせを減らす）。
+    /// 「`hide()` 直後の `is_visible()` が古い値を返す」は当初の推測で、確かめていない
     static SHOWN: RefCell<Vec<&'static str>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -201,6 +201,11 @@ fn visible(label: &str) -> bool {
 /// バー・チャット・メニューのどれかが出ているか（ペットはこの間、散歩も睡眠もしない）。
 pub fn popups_visible() -> bool {
     POPUPS.iter().any(|l| visible(l))
+}
+
+/// メニューのページが読み込まれたときに、今バーが出ているかを聞く（作った直後の eval は読み込み前で空振りする）。
+pub fn bar_visible_for_menu() -> bool {
+    bar_visible()
 }
 
 fn bar_visible() -> bool {

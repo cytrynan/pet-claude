@@ -48,6 +48,8 @@
   }
   // Rust 側が表示の直前に呼ぶ: バーが出ていないときは「バーを隠す」を押せなくする
   window.setBarShown = (shown) => { document.getElementById("hide-bar").disabled = !shown; };
+  // 窓を作った直後は Rust からの eval が読み込み前で空振りするので、読み込んだら自分で聞く
+  invoke("bar_shown").then(window.setBarShown);
 </script>
 </body>
 </html>

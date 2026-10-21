@@ -65,6 +65,12 @@ fn chat_submit(text: String) -> String {
     "送信は Phase 3 で使えるようになります".to_string()
 }
 
+/// メニューのページが読み込まれたときに呼ぶ。今バーが出ているか
+#[tauri::command]
+fn bar_shown() -> bool {
+    ui::bar_visible_for_menu()
+}
+
 #[tauri::command]
 fn settings_get() -> serde_json::Value {
     pet_window::settings()
@@ -115,6 +121,7 @@ fn main() {
     let result = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             ui_action,
+            bar_shown,
             chat_submit,
             settings_get,
             settings_set

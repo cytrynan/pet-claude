@@ -87,6 +87,11 @@ fn mouse(flags: MOUSE_EVENT_FLAGS) {
 /// 移動・押す・離すを 1 回の SendInput で送る（間に本物のマウスの入力が割り込まない）。
 /// 座標は仮想デスクトップ全体を 0..65535 に正規化した絶対座標。
 fn click_at(x: i32, y: i32, down: MOUSE_EVENT_FLAGS, up: MOUSE_EVENT_FLAGS) {
+    send_at(x, y, &[down, up]);
+}
+
+/// 移動と、続く `flags` を 1 回の SendInput で送る。
+fn send_at(x: i32, y: i32, flags: &[MOUSE_EVENT_FLAGS]) {
     // SAFETY: 読み取りのみ
     let (vx, vy, vw, vh) = unsafe {
         (
@@ -110,8 +115,9 @@ fn click_at(x: i32, y: i32, down: MOUSE_EVENT_FLAGS, up: MOUSE_EVENT_FLAGS) {
             },
         },
     };
-    let inputs = [ev(MOUSEEVENTF_MOVE), ev(down), ev(up)];
-    // SAFETY: 3 件の入力をまとめて送る
+    let mut inputs = vec![ev(MOUSEEVENTF_MOVE)];
+    inputs.extend(flags.iter().map(|f| ev(*f)));
+    // SAFETY: まとめて送る
     unsafe { SendInput(&inputs, size_of::<INPUT>() as i32) };
 }
 
@@ -248,9 +254,8 @@ fn main() {
             println!("dragged");
         }
         Some("down") => {
-            move_to(n(&args, 1), n(&args, 2));
-            sleep(Duration::from_millis(80));
-            mouse(MOUSEEVENTF_LEFTDOWN);
+            // 移動と押し下げを 1 回で送る（間に本物のマウスが割り込まない）
+            send_at(n(&args, 1), n(&args, 2), &[MOUSEEVENTF_LEFTDOWN]);
             println!("down");
         }
         Some("move") => {
