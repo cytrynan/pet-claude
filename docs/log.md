@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-21
+* **Update**: [プロダクト要求定義書](product-requirements.md) — U1 を決定に（新しいセッション・`claude -p` の子プロセス・ツールなし・認証はサブスク／API キー切替で既定サブスク）、F18・F19 に反映 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 pet.json のパスはフォルダの中の相対パスだけ・クリップ名の文字の制限（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md) — §3 窓に描く DIB を使い回す（R5 の待機の CPU 2.81% → 1.56〜1.88%）、§4.5 の実測表を更新 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.5 動画クリップ（clips.json・build_clips.py・Player の計画・持ち方の上限と固定・実測）、§4.2 クリックは Petted（なでられ） (kuroko/claude-opus-5-5 ← human:K)
