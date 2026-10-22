@@ -1233,7 +1233,7 @@ pub fn settings() -> serde_json::Value {
             g.as_ref().map(|p| {
                 let pets: Vec<_> = pets::discover()
                     .into_iter()
-                    .map(|e| serde_json::json!({ "id": e.id, "name": e.name }))
+                    .map(|e| serde_json::json!({ "id": e.id, "name": e.name, "wakeWord": e.wake_word }))
                     .collect();
                 serde_json::json!({
                     "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk,

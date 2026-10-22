@@ -64,6 +64,11 @@
       <label for="pet">ペット</label>
       <span class="popup"><select id="pet"></select></span>
     </div>
+    <!-- 選んだペットの呼びかけの言葉（pet.json の wakeWord。ペットごとに決まるので読むだけ。2026-10-22 K 指示） -->
+    <div class="row">
+      <label>ウェイクワード</label>
+      <span class="status" id="wake-word"></span>
+    </div>
     <div class="row">
       <label for="scale">ペットの大きさ</label>
       <input type="range" id="scale" min="25" max="150" step="5">
@@ -126,15 +131,24 @@
     scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, walk: walk.checked, save: persist,
   });
   const save = () => send(true);
+  const wakeWord = document.getElementById("wake-word");
+  let petList = [];
+  // 選択欄で選んでいるペットのウェイクワード。決めていないペット（仮キャラなど）は「なし」
+  const showWakeWord = () => {
+    const p = petList.find((q) => q.id === pet.value);
+    wakeWord.textContent = (p && p.wakeWord) || "なし";
+  };
   // ペットの一覧は開くたびに作り直す（フォルダに足したペットも次に開いたとき出る）
   const fillPets = (s) => {
-    pet.replaceChildren(...(s.pets || []).map((p) => {
+    petList = s.pets || [];
+    pet.replaceChildren(...petList.map((p) => {
       const o = document.createElement("option");
       o.value = p.id;
       o.textContent = p.name;
       return o;
     }));
     pet.value = s.pet;
+    showWakeWord();
   };
   // ---- チャットの接続（鍵は画面に読み返さない。保存されているかだけ受け取る） ----
   const auth = document.getElementById("auth");
@@ -199,6 +213,7 @@
   // select は選んだ後もフォーカスを持ち続けるので、フォーカスでは判定しない
   pet.addEventListener("change", () => {
     const picked = pet.value;
+    showWakeWord();
     invoke("pet_set", { id: picked });
     setTimeout(() => {
       if (pet.value !== picked) return;
