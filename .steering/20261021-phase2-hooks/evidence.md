@@ -26,3 +26,4 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-21T12:00:00+09:00 }
 - アプリ側の故障注入（`scripts/verify/fault-app.py`）: 遅い接続・期限後に完成した要求・問い合わせ中は pending・6 秒放置で 404・カードを下げた、の 5 項目 PASS
 - 吹き出しの撮影（`scripts/verify/shot-bubble.sh`、クリックなし）: 短いコマンド＝許可あり、100 字＝3 行に折り返して許可あり、150 字＝切り詰めで許可なし＋注記、固定文言「できたよ」
 - 本物のボタン押下: 故障注入中に人が「許可」を押し、`pressed=allow state=allow (accepted=true)` が残った（意図した試験ではない）
+- 本物のボタン押下（意図した試験・2026-10-21 22:27・K の了承で `scripts/verify/approve-buttons.sh`）: 試験用のペットにダミーの承認（Bash の `git status`）を出し、本物のマウスで 1 回ずつ左クリック。「許可」→ pet-hook の出力が `{"decision":{"behavior":"allow"}}`、「拒否」→ `{"decision":{"behavior":"deny","message":"ペット（pet-claude）の吹き出しで拒否されました"}}`。どちらもクリックから 0.4 秒で hook が終わった（期限 30 秒）。ボタンの位置は同じスクリプトの `shot` で撮って測った（ペットの窓の左上から 許可 (128,-62)・拒否 (8,-62)、200% の画面・既定の大きさ）

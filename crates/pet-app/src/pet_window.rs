@@ -273,6 +273,18 @@ impl Pet {
             let show = c.player.tick(now);
             may_move = c.player.may_move();
             if c.show != Some(show) {
+                // クリップ再生中は set_pose を通らず「pose ->」が出ないので、実機の検証用に
+                // 描く対象（どのクリップか・シートか）が変わった時だけ書く（コマ送りでは書かない）
+                if std::env::var_os("PET_TRACE").is_some() {
+                    let what = |s: Show| match s {
+                        Show::Clip { index, .. } => c.pack.set.clips[index].name.clone(),
+                        Show::Sheet(p) => format!("sheet {p:?}"),
+                    };
+                    let next = what(show);
+                    if c.show.map(what).as_deref() != Some(next.as_str()) {
+                        log(format!("show -> {next}"));
+                    }
+                }
                 from_clip = matches!(c.show, Some(Show::Clip { .. }));
                 c.show = Some(show);
                 c.hold.clear();
