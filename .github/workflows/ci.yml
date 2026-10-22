@@ -26,6 +26,9 @@ jobs:
       - name: Lone CR check
         run: python scripts/check-lone-cr.py
 
+      - name: Wake word tools (Python, no numpy)
+        run: python -I -m unittest discover -s scripts/wake -p "test_wake.py"
+
       - name: Format check
         run: cargo fmt --all --check
 
