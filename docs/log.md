@@ -9,7 +9,14 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-22
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — チャット欄をバーと同じ規則で置く（ペットの真下、収まらなければ真上。答えの欄で高くなっても置き直す） (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §6.1 にチャット欄とペットの重なり（チャット欄が出ている間はペットが最前面を取り直さない・開いた直後の前面の喪失を 1 回取り直す）。実機確認で見つかった 2 件の修正に合わせた (kuroko/claude-opus-5-5 ← human:K)
+
 ## 2026-10-21
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §6.1 を検証係の指摘の回収に合わせた（止めた状態で起こして Job に入れる・標準入力は別スレッド・本文 2000 字・予約は答えを受けてから外す・チャット欄でも秘密を伏せる・失敗の理由・確かめるの時間切れ）、最初の返事を待つ間の答えの島 (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §6.1 チャット（claude -p の子プロセス・--safe-mode・--model sonnet・認証の切り替えと子の環境・Job Object・1 本だけ・表示の検査）、§7 に chat_auth と資格情報マネージャー、答えの吹き出し・チャット欄の答え・設定のチャットの欄 (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [プロダクト要求定義書](product-requirements.md) — U1 を決定に（新しいセッション・`claude -p` の子プロセス・ツールなし・認証はサブスク／API キー切替で既定サブスク）、F18・F19 に反映 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 pet.json のパスはフォルダの中の相対パスだけ・クリップ名の文字の制限（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md) — §3 窓に描く DIB を使い回す（R5 の待機の CPU 2.81% → 1.56〜1.88%）、§4.5 の実測表を更新 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.5 動画クリップ（clips.json・build_clips.py・Player の計画・持ち方の上限と固定・実測）、§4.2 クリックは Petted（なでられ） (kuroko/claude-opus-5-5 ← human:K)

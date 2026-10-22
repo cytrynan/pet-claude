@@ -5,6 +5,7 @@
 //! どの OS でも `cargo test` で検証できる。
 
 pub mod behavior;
+pub mod chat;
 pub mod clips;
 pub mod compose;
 pub mod geometry;

@@ -5,7 +5,8 @@
 <title>pet-claude chat</title>
 <link rel="stylesheet" href="ui.css">
 <style>
-  .chat { display: flex; align-items: center; gap: 4px; padding: 0 6px; }
+  .chat { display: flex; align-items: center; gap: 4px; padding: 0 6px;
+    top: auto; height: 48px; }
   input {
     flex: 1; min-width: 0; height: 36px;
     border: 0; outline: 0; background: transparent;
@@ -23,11 +24,36 @@
   .send:not(:disabled):active { opacity: .8; }
   .send svg { width: 16px; height: 16px; stroke: currentColor; stroke-width: 2; fill: none;
     stroke-linecap: round; stroke-linejoin: round; }
+  #attach:disabled { opacity: .35; }
+  /* 最後の答え（入力欄の上。高さは ui.rs の CHAT_ANSWER_HEIGHT = 188px、入力欄との間 8px）。
+     文は読ませるので不透明の面。全文を折り返し、長ければ中でスクロール */
+  .answer { bottom: calc(12px + 48px + 8px); border-radius: 16px; background: var(--surface-solid);
+    display: flex; flex-direction: column; }
+  .answer[hidden] { display: none; }
+  .answer header { display: flex; align-items: center; justify-content: space-between;
+    height: 36px; padding: 0 6px 0 14px; flex: none; }
+  .answer h1 { font-size: 11px; font-weight: 600; color: var(--label-2); font-feature-settings: "palt"; }
+  .answer .new { height: 28px; padding: 0 10px; border: 0; border-radius: 999px; background: transparent;
+    font: inherit; font-size: 12px; color: var(--label-2); font-feature-settings: "palt";
+    transition: background-color .15s var(--ease); }
+  .answer .new:hover { background: var(--surface-hover); }
+  .answer .new:active { background: var(--surface-press); }
+  .answer .new:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
+  .answer .text { flex: 1; overflow-y: auto; padding: 0 14px 12px; line-height: 20px;
+    white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; cursor: text; }
+  .answer.error .text, .answer.busy .text { color: var(--label-2); }
 </style>
 </head>
 <body>
+<section class="island answer" id="answer" hidden aria-live="polite">
+  <header>
+    <h1>こたえ</h1>
+    <button type="button" class="new" id="new" title="会話を忘れて最初から">新しいチャット</button>
+  </header>
+  <div class="text" id="answer-text"></div>
+</section>
 <form class="island capsule chat" id="form" autocomplete="off">
-  <button type="button" class="icon-btn" id="attach" title="添付（Phase 3）" aria-label="添付">
+  <button type="button" class="icon-btn" id="attach" title="添付（まだ使えません）" aria-label="添付" disabled>
     <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
   </button>
   <input id="text" placeholder="新しいチャットを開始" aria-label="メッセージ" maxlength="2000">
@@ -39,21 +65,49 @@
 <script>
   const text = document.getElementById("text");
   const send = document.getElementById("send");
-  const placeholder = text.placeholder;
-  text.addEventListener("input", () => { send.disabled = text.value.trim() === ""; });
+  const answer = document.getElementById("answer");
+  const answerText = document.getElementById("answer-text");
+  const idle = "新しいチャットを開始";
+  const followUp = "続けて話す";
+  let busy = false;
+  const update = () => { send.disabled = busy || text.value.trim() === ""; };
+  text.addEventListener("input", update);
+  // Rust 側（ui.rs の chat_state）から: { answer, error, busy }
+  window.renderChat = (s) => {
+    busy = !!(s && s.busy);
+    const has = s && typeof s.answer === "string";
+    // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）
+    answer.hidden = !has && !busy;
+    answer.classList.toggle("error", !!(s && s.error));
+    answerText.textContent = busy ? "考え中…" : (has ? s.answer : "");
+    answer.classList.toggle("busy", busy);
+    answerText.scrollTop = 0;
+    text.placeholder = busy ? "考え中…" : (has && !s.error ? followUp : idle);
+    update();
+  };
   document.getElementById("form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const value = text.value.trim();
-    if (!value) return;
+    if (!value || busy) return;
     const reply = await invoke("chat_submit", { text: value });
-    text.value = "";
-    send.disabled = true;
-    text.placeholder = reply;
-    setTimeout(() => { text.placeholder = placeholder; }, 2500);
+    // 受け付けられたら打った文を消す。断られた（まだ考え中・長すぎる）時は残す。
+    // 待ち中かどうかは Rust 側の renderChat だけで決める（この応答は答えの描き直しより遅く届くことがあり、
+    // ここで busy を立てると待ちのまま固まった。2026-10-21 検証係 2 巡目の指摘）
+    if (reply === "考え中…") {
+      text.value = "";
+    } else if (reply) {
+      text.placeholder = reply;
+    }
+    update();
+  });
+  document.getElementById("new").addEventListener("click", () => {
+    invoke("ui_action", { action: "chat:new" });
+    text.focus();
   });
   // 表示のたびに入力欄へフォーカス（Rust 側が show の後に呼ぶ）
   window.focusInput = () => { text.focus(); };
   window.addEventListener("focus", () => text.focus());
+  invoke("chat_state").then(window.renderChat);
 </script>
 </body>
 </html>

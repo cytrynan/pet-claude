@@ -36,6 +36,13 @@
   .btn:active { opacity: .8; }
   .note { font-size: 11px; color: var(--label-2); }
   .more { font-size: 11px; color: var(--label-2); margin-right: auto; align-self: center; }
+  /* チャットの答え（DESIGN.md 吹き出し）。文は読ませるので不透明の面。行の高さは ui.rs の ANSWER_LINE_HEIGHT と同じ 20px */
+  .answer { border-radius: 16px; padding: 12px 14px; background: var(--surface-solid);
+    display: flex; flex-direction: column; gap: 6px; }
+  .answer .text { line-height: 20px; overflow-wrap: anywhere; }
+  .answer.error .text { color: var(--label-2); }
+  .answer .actions { margin-top: 0; }
+  .answer .btn { height: 28px; padding: 0 12px; }
 </style>
 </head>
 <body>
@@ -49,6 +56,16 @@
     if (!s || !s.mode) { root.innerHTML = ""; return; }
     if (s.mode === "status") {
       root.innerHTML = `<div class="island capsule status" role="status">${esc(s.text)}</div>`;
+      return;
+    }
+    if (s.mode === "answer") {
+      root.innerHTML = `
+        <div class="island answer${s.error ? " error" : ""}" role="status">
+          <div class="text">${esc(s.text)}</div>
+          ${s.more ? '<div class="actions"><button class="btn plain" id="more">続きを見る</button></div>' : ""}
+        </div>`;
+      const more = document.getElementById("more");
+      if (more) more.onclick = () => invoke("ui_action", { action: "chat:more" });
       return;
     }
     const more = s.more > 0 ? `<span class="more">ほかに ${s.more} 件</span>` : "";

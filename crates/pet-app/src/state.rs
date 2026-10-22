@@ -3,6 +3,7 @@
 
 use std::fs;
 
+use pet_core::chat::AuthMode;
 use pet_core::placement::PositionStore;
 use serde_json::{Value, json};
 
@@ -25,6 +26,8 @@ pub struct AppState {
     pub walk: bool,
     /// 表示するペットの id（`pets::discover` の id。None は内蔵の仮キャラ）
     pub pet: Option<String>,
+    /// チャットの接続（K 決定 2026-10-21: 既定はサブスク）。API キーそのものは資格情報マネージャー（cred.rs）
+    pub chat_auth: AuthMode,
 }
 
 impl Default for AppState {
@@ -36,6 +39,7 @@ impl Default for AppState {
             wake: false,
             walk: false,
             pet: None,
+            chat_auth: AuthMode::Subscription,
         }
     }
 }
@@ -63,6 +67,8 @@ impl AppState {
             wake: v["wake"].as_bool().unwrap_or(d.wake),
             walk: v["walk"].as_bool().unwrap_or(d.walk),
             pet: v["pet"].as_str().map(str::to_string),
+            // 無い・知らない値はサブスク（from_state の規則）
+            chat_auth: AuthMode::from_state(v["chat_auth"].as_str()),
         }
     }
 
@@ -77,6 +83,7 @@ impl AppState {
             "wake": self.wake,
             "walk": self.walk,
             "pet": self.pet,
+            "chat_auth": self.chat_auth.as_str(),
         });
         let tmp = dir.join("state.json.tmp");
         let ok = fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())
