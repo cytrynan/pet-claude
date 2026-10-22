@@ -8,9 +8,12 @@
 //! - `--pet <dir>`    `pet.json` と スプライトシートのあるフォルダを使う（既定は内蔵の仮画像）
 //! - `--install-hooks [--settings <path>]`   Claude Code の settings.json に pet-hook を登録して終了
 //! - `--uninstall-hooks [--settings <path>]` 登録を外して終了（既定は `~/.claude/settings.json`）
+//! - `--install-autostart [--task-name <名前>] [--disabled]` ログオンで起こす Windows タスクを登録して終了（Phase 4）
+//! - `--uninstall-autostart [--task-name <名前>]` / `--autostart-status [--task-name <名前>]` 解除・状態を表示して終了
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod chat;
 mod clipstore;
 mod cred;
@@ -218,6 +221,20 @@ fn settings_get() -> serde_json::Value {
 }
 
 #[tauri::command]
+async fn autostart_get() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(autostart::status_json)
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+async fn autostart_set(on: bool) -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(move || autostart::set_json(on))
+        .await
+        .unwrap_or_default()
+}
+
+#[tauri::command]
 fn settings_set(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
     pet_window::set_settings(scale, tts, wake, walk, save);
 }
@@ -246,6 +263,20 @@ fn main() {
         let line = install::run(install, arg_value(&args, "--settings").as_deref())
             .unwrap_or_else(|e| format!("失敗: {e}"));
         log(format!("hooks: {line}"));
+        println!("{line}");
+        return;
+    }
+
+    if [
+        "--install-autostart",
+        "--uninstall-autostart",
+        "--autostart-status",
+    ]
+    .iter()
+    .any(|f| args.iter().any(|a| a == f))
+    {
+        let line = autostart::run_cli(&args);
+        log(format!("autostart: {line}"));
         println!("{line}");
         return;
     }
@@ -289,6 +320,8 @@ fn main() {
             chat_auth_check,
             settings_get,
             settings_set,
+            autostart_get,
+            autostart_set,
             bubble_state,
             permission_decide,
             pet_set
