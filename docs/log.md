@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-22
+* **Update**: [DESIGN.md](../DESIGN.md) — 色付けの例外に「録音中の音声ボタンは記号だけ赤で脈打つ」を足した (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md) — §6.2 読み上げ（SpeechQueue・手書きの HTTP・PlaySoundW・エンジンを起こして暇なら止める）と §6.3 音声入力（waveIn・Endpointer・faster-whisper small の子プロセス・WAV を残さない）、F16・F17 を実装どおりに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ウェイクワードをペットごとに持つ（pet.json の wakeWord・まめドラゴンは「まめちゃん」・設定画面のペットの下に出す・build_pet は手で足した項目を残す）、U2 を決定に (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §3-b チャット欄の閉じ方を「ペットの左クリックだけ」に（フォーカスの喪失・外のクリック・Esc・ドラッグでは閉じず、ペットについて行く）。マウスフックはバーかメニューが出ている間だけ (kuroko/claude-opus-5-5 ← human:K)

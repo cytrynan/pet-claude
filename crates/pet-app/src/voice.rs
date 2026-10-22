@@ -285,6 +285,19 @@ fn record_mic(
         wBitsPerSample: 16,
         cbSize: 0,
     };
+    let hdr_size = size_of::<WAVEHDR>() as u32;
+    // バッファと頭はマイクより先に作る。Rust は後に作った値から落とすので、どの経路で抜けても
+    // マイクの片付け（止める・頭を外す・閉じる）がバッファを捨てるより先に走る（2026-10-22 セキュリティレビューの指摘:
+    // 途中の return でバッファが先に落ち、winmm が解放済みのメモリに書く恐れがあった）
+    let mut data = vec![[0i16; voice::FRAME_SAMPLES]; BUFFERS];
+    let mut headers: Vec<WAVEHDR> = data
+        .iter_mut()
+        .map(|buf| WAVEHDR {
+            lpData: PSTR(buf.as_mut_ptr().cast()),
+            dwBufferLength: (voice::FRAME_SAMPLES * 2) as u32,
+            ..Default::default()
+        })
+        .collect();
     let mut hwi = HWAVEIN::default();
     // SAFETY: format はこの呼び出しの間生きている。CALLBACK_NULL なので終わりは WHDR_DONE を見る
     let rc = unsafe {
@@ -301,29 +314,24 @@ fn record_mic(
         log(format!("voice: waveInOpen = {rc}"));
         return Err(Outcome::Failed("マイクを開けなかったよ"));
     }
-    let mic = Mic::new(hwi);
-    let hdr_size = size_of::<WAVEHDR>() as u32;
-    // バッファと頭はこの関数が終わるまで動かさない（winmm が書き込む）
-    let mut data = vec![[0i16; voice::FRAME_SAMPLES]; BUFFERS];
-    let mut headers: Vec<WAVEHDR> = data
-        .iter_mut()
-        .map(|buf| WAVEHDR {
-            lpData: PSTR(buf.as_mut_ptr().cast()),
-            dwBufferLength: (voice::FRAME_SAMPLES * 2) as u32,
-            ..Default::default()
-        })
-        .collect();
+    // headers の Vec はこの後で伸び縮みさせないので、先頭のポインタは Mic が落ちるまで有効
+    let mic = Mic {
+        handle: hwi,
+        headers: headers.as_mut_ptr(),
+        count: headers.len(),
+    };
     for h in headers.iter_mut() {
         // SAFETY: h と中身のバッファは headers・data が生きている間有効。Mic の drop より後まで生きる
         let ok = unsafe {
-            waveInPrepareHeader(mic.0, h, hdr_size) == 0 && waveInAddBuffer(mic.0, h, hdr_size) == 0
+            waveInPrepareHeader(mic.handle, h, hdr_size) == 0
+                && waveInAddBuffer(mic.handle, h, hdr_size) == 0
         };
         if !ok {
             return Err(Outcome::Failed("マイクを開けなかったよ"));
         }
     }
     // SAFETY: 開いたマイク
-    if unsafe { waveInStart(mic.0) } != 0 {
+    if unsafe { waveInStart(mic.handle) } != 0 {
         return Err(Outcome::Failed("マイクを開けなかったよ"));
     }
     let mut next = 0;
@@ -349,7 +357,7 @@ fn record_mic(
         let ended = on_frame(&frame, all);
         h.dwFlags &= !WHDR_DONE;
         // SAFETY: 準備済みの頭を返す
-        if unsafe { waveInAddBuffer(mic.0, h, hdr_size) } != 0 {
+        if unsafe { waveInAddBuffer(mic.handle, h, hdr_size) } != 0 {
             break Err(Outcome::Failed("マイクが止まったよ"));
         }
         next = (next + 1) % BUFFERS;
@@ -357,15 +365,10 @@ fn record_mic(
             break Ok(Some(r));
         }
     };
-    // 止めて、返ってきた頭を外してから閉じる（Mic の drop）
-    // SAFETY: 開いたマイク。reset で全部の頭が返る
-    unsafe {
-        let _ = waveInReset(mic.0);
-        for h in headers.iter_mut() {
-            let _ = waveInUnprepareHeader(mic.0, h, hdr_size);
-        }
-    }
+    // 止めて、返ってきた頭を外してから閉じる（Mic の drop。data・headers より先）
     drop(mic);
+    drop(headers);
+    drop(data);
     reason
 }
 
@@ -375,21 +378,25 @@ fn data_of(h: &WAVEHDR, n: usize) -> Vec<i16> {
     unsafe { std::slice::from_raw_parts(h.lpData.0.cast::<i16>(), n).to_vec() }
 }
 
-/// 開いたマイク。落とすと閉じる。
-struct Mic(HWAVEIN);
-
-impl Mic {
-    fn new(h: HWAVEIN) -> Self {
-        Self(h)
-    }
+/// 開いたマイク。落とすと、止めて（渡した頭が全部返る）、頭を外してから閉じる。
+/// バッファと頭より後に作ること（先に落ちて、winmm が触らなくなってからバッファが捨てられるように）。
+struct Mic {
+    handle: HWAVEIN,
+    headers: *mut WAVEHDR,
+    count: usize,
 }
 
 impl Drop for Mic {
     fn drop(&mut self) {
-        // SAFETY: waveInOpen が返したハンドルを 1 回だけ閉じる
+        let size = size_of::<WAVEHDR>() as u32;
+        // SAFETY: waveInOpen が返したハンドルを 1 回だけ閉じる。headers は Mic より長く生きる Vec の先頭で、
+        // reset の後は winmm が触らない。準備していない頭を外しても害は無い（エラーが返るだけ）
         unsafe {
-            let _ = waveInReset(self.0);
-            let _ = waveInClose(self.0);
+            let _ = waveInReset(self.handle);
+            for i in 0..self.count {
+                let _ = waveInUnprepareHeader(self.handle, self.headers.add(i), size);
+            }
+            let _ = waveInClose(self.handle);
         }
     }
 }

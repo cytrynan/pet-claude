@@ -185,9 +185,16 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
         &query,
         SYNTH_TIMEOUT,
     )?;
+    let mut wav = wav;
     if voice::parse_wav(&wav).is_none() {
         return Err("エンジンが返した音を読めない".into());
     }
+    // RIFF の長さは parse_wav が見ない欄。PlaySoundW はこの欄を信じて読むので、実際の長さに書き直す
+    // （中のチャンクが収まることは parse_wav が確かめた。2026-10-22 セキュリティレビューの指摘）
+    let Ok(riff_len) = u32::try_from(wav.len() - 8) else {
+        return Err("エンジンが返した音が大きすぎる".into());
+    };
+    wav[4..8].copy_from_slice(&riff_len.to_le_bytes());
     log(format!(
         "tts: {} 字を {:.1}s で合成",
         text.chars().count(),
