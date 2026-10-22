@@ -11,6 +11,7 @@
 -->
 ## 2026-10-22
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ウェイクワードをペットごとに持つ（pet.json の wakeWord・まめドラゴンは「まめちゃん」・設定画面のペットの下に出す・build_pet は手で足した項目を残す）、U2 を決定に (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §3-b チャット欄の閉じ方を「ペットの左クリックだけ」に（フォーカスの喪失・外のクリック・Esc・ドラッグでは閉じず、ペットについて行く）。マウスフックはバーかメニューが出ている間だけ (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — チャット欄をバーと同じ規則で置く（ペットの真下、収まらなければ真上。答えの欄で高くなっても置き直す） (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §6.1 にチャット欄とペットの重なり（チャット欄が出ている間はペットが最前面を取り直さない・開いた直後の前面の喪失を 1 回取り直す）。実機確認で見つかった 2 件の修正に合わせた (kuroko/claude-opus-5-5 ← human:K)
 
