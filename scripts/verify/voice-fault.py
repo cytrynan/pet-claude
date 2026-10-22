@@ -113,6 +113,14 @@ def stt_log(data):
     return p.read_text(encoding="utf-8").splitlines() if p.exists() else []
 
 
+def stt_pids(data):
+    return sorted({int(x.split()[0]) for x in stt_log(data)})
+
+
+def stt_got_path(data):
+    return [x for x in stt_log(data) if " exists=" in x]
+
+
 def run_case(name, steps, *, engine="ok", tts=True, mic=None, stt="ok", stt_exe=None,
              stt_timeout=None, wait_for=None, max_secs=30, kill_after=None, addr=None):
     """pet-app を 1 回起動し、`wait_for` の文がログに出るまで待って止める。(ログ, データのフォルダ, 生きているか)"""
@@ -140,7 +148,7 @@ def run_case(name, steps, *, engine="ok", tts=True, mic=None, stt="ok", stt_exe=
     log = ""
     while time.monotonic() - started < max_secs:
         log = log_path.read_text(encoding="utf-8") if log_path.exists() else ""
-        if kill_after and kill_after in log and len(stt_log(data)) >= 1:
+        if kill_after and kill_after in log and len(stt_pids(data)) >= 2:
             time.sleep(0.8)  # 孫が起きるのを待つ
             subprocess.run(["taskkill", "/F", "/PID", str(app.pid)], capture_output=True)
             app.wait(timeout=10)
@@ -181,7 +189,7 @@ ENGINE_ADDR = f"127.0.0.1:{srv.server_address[1]}"
 
 # --- 読み上げ ---
 log, data, alive_ = run_case("tts-ok", "send:やあ", wait_for=("tts: ", 1))
-check("読み上げ: 答えを合成して鳴らす", alive_ and "字を" in log and "/synthesis" in Engine.hits
+check("読み上げ: 答えを合成して鳴らす", alive_ and "1 文目を" in log and "/synthesis" in Engine.hits
       and "/speakers" in Engine.hits, f"hits={Engine.hits}")
 check("N4 ログに読んだ文が無い", "受け取ったよ" not in log, "ログを grep")
 
@@ -208,8 +216,9 @@ log, data, alive_ = run_case("voice-ok", "ui:voice", mic=SPEECH, wait_for=("chat
 lines = stt_log(data)
 check("S11 録音→文字起こし→チャット→答え", alive_ and "字をチャットへ" in log and "chat send" in log
       and "chat answer in" in log, f"stt={len(lines)}")
-check("V9 文字起こしには WAV が渡り、終わったら消える", bool(lines) and "exists=True" in lines[0]
+check("V9 文字起こしには WAV が渡り、終わったら消える", any("exists=True" in x for x in lines)
       and not wavs_left(data), f"残り={wavs_left(data)}")
+
 check("V5 話し終えて黙ると止まる（2.5 秒前後）", "voice: recorded 2." in log or "voice: recorded 3." in log,
       [x for x in log.splitlines() if "recorded" in x][:1])
 
@@ -220,7 +229,10 @@ check("V5 もう一度押すと止めて送る", "voice: stop requested" in log 
 
 log, data, alive_ = run_case("voice-quiet", "ui:voice", mic=QUIET, wait_for=("voice: failed", 1))
 check("V5 5 秒話さなければ取りやめ", alive_ and "voice: failed: 聞き取れなかったよ" in log
-      and not stt_log(data), f"stt={stt_log(data)}")
+      and not stt_got_path(data), f"stt={stt_log(data)}")
+# 子を録音の前に起こしている証拠: 取りやめた録音でも子は起きていて、パスを受け取らずに終わる（後から起こす作りなら子はいない）
+check("文字起こしの子は録音の前に起き、取りやめならパスを受けずに終わる",
+      any(x.endswith(" no-path") for x in stt_log(data)), f"stt={stt_log(data)}")
 
 log, data, alive_ = run_case("voice-zeros", "ui:voice", mic=ZEROS, wait_for=("voice: failed", 1))
 check("V8 全部 0（マイクを止められている）", "マイクを使えないよ" in log, "")
@@ -245,14 +257,14 @@ check("V8 文字起こしの道具が無い", alive_ and "音声入力の準備�
 log, data, alive_ = run_case("voice-timeout", "ui:voice", mic=SPEECH, stt="slow", stt_timeout=3,
                              wait_for=("voice: failed", 1), max_secs=20)
 time.sleep(1.0)
-pids = [int(x.split()[0]) for x in stt_log(data)]
+pids = stt_pids(data)
 left = [p for p in pids if alive(p)]
 check("V8 時間切れ", alive_ and "文字起こしが終わらなかったよ" in log and not wavs_left(data), "")
 check("V10 時間切れで子と孫が残らない", len(pids) >= 2 and not left, f"pids={pids} 残り={left}")
 
 log, data, alive_ = run_case("voice-crash", "ui:voice", mic=SPEECH, stt="slow", kill_after="voice: recorded")
 time.sleep(2.0)
-pids = [int(x.split()[0]) for x in stt_log(data)]
+pids = stt_pids(data)
 left = [p for p in pids if alive(p)]
 check("V10 アプリが落ちても子と孫が残らない", len(pids) >= 2 and not left, f"pids={pids} 残り={left}")
 

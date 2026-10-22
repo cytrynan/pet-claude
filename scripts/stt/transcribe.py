@@ -1,6 +1,8 @@
 """音声入力の文字起こし（pet-app の voice.rs が録音ごとに 1 回起こす）。
 
-使い方: python -I transcribe.py <16kHz・モノラル・16bit の WAV>
+使い方: python -I transcribe.py [WAV]
+WAV（16kHz・モノラル・16bit）を引数で渡さなければ、モデルを読んでから標準入力の 1 行目を WAV のパスとして読む
+（pet-app は録音を始めた時に起こし、話している間にモデルを読ませる。2026-10-22）。1 行目が空か EOF なら何もせず終わる。
 標準出力に {"text": "...", "secs": 1.23} を 1 行で書く。失敗したら終了コード 1（理由は標準エラー）。
 
 faster-whisper の small を CPU・int8 で使う（2026-10-22 の実測で、6 秒の発話が読み込み 1.7 秒＋認識 1.6 秒。
@@ -17,16 +19,23 @@ MODEL = "small"
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: transcribe.py <wav>", file=sys.stderr)
+    if len(sys.argv) > 2:
+        print("usage: transcribe.py [wav]", file=sys.stderr)
         return 2
-    started = time.perf_counter()
     try:
         from faster_whisper import WhisperModel
 
         model = WhisperModel(MODEL, device="cpu", compute_type="int8")
+    except Exception as e:
+        print(f"model load failed: {type(e).__name__}", file=sys.stderr)
+        return 1
+    wav = sys.argv[1] if len(sys.argv) == 2 else sys.stdin.readline().strip()
+    if not wav:
+        return 0
+    started = time.perf_counter()
+    try:
         segments, _ = model.transcribe(
-            sys.argv[1],
+            wav,
             language="ja",
             beam_size=1,
             vad_filter=False,

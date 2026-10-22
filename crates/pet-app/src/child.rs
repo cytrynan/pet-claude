@@ -50,6 +50,17 @@ pub struct ChildOutput {
     pub stderr: Vec<u8>,
 }
 
+/// 標準入力に渡すもの。
+pub enum Input {
+    /// 空（`Stdio::null`）
+    None,
+    /// 起こしてすぐ書く本文
+    Now(Vec<u8>),
+    /// 後で届いたら書く本文（音声入力: 子を先に起こしてモデルを読ませ、録り終えた WAV のパスを後から渡す）。
+    /// 送り手が落ちたら、書かずに標準入力を閉じる（子は EOF を読んで終わる）
+    Later(std::sync::mpsc::Receiver<Vec<u8>>),
+}
+
 /// 子プロセスの起こし方と、走っている間の見張り方。
 pub struct ChildRun<'a> {
     /// ログの頭に付ける名前（`chat`・`stt`）
@@ -60,8 +71,8 @@ pub struct ChildRun<'a> {
     pub args: Vec<String>,
     pub env: Vec<(String, String)>,
     pub cwd: PathBuf,
-    /// 標準入力に書く本文（`None` なら標準入力は空）
-    pub input: Option<Vec<u8>>,
+    /// 標準入力に書く本文
+    pub input: Input,
     pub timeout: Duration,
     /// Job のハンドルを止める側に知らせる。false なら（もう取り消されていた）起こさずに止める
     pub register: &'a dyn Fn(isize) -> bool,
@@ -120,10 +131,10 @@ pub fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
         .env_clear()
         .envs(r.env.iter().map(|(k, v)| (k, v)))
         .current_dir(&r.cwd)
-        .stdin(if r.input.is_some() {
-            Stdio::piped()
-        } else {
+        .stdin(if matches!(r.input, Input::None) {
             Stdio::null()
+        } else {
+            Stdio::piped()
         })
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -163,10 +174,21 @@ pub fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
     }
 
     // 本文は標準入力で渡す（コマンドラインに載せない＝引用符の罠とプロセス一覧からの露出を避ける）
-    if let (Some(mut stdin), Some(input)) = (child.stdin.take(), r.input) {
+    if let Some(mut stdin) = child.stdin.take() {
+        let input = r.input;
         let writer = std::thread::Builder::new().spawn(move || {
-            // 子が終わる・止められるとパイプが切れて失敗で抜ける
-            let _ = stdin.write_all(&input);
+            // 子が終わる・止められるとパイプが切れて失敗で抜ける。抜けると stdin が落ちて閉じる
+            match input {
+                Input::Now(bytes) => {
+                    let _ = stdin.write_all(&bytes);
+                }
+                Input::Later(rx) => {
+                    if let Ok(bytes) = rx.recv() {
+                        let _ = stdin.write_all(&bytes);
+                    }
+                }
+                Input::None => {}
+            }
         });
         if let Err(e) = writer {
             log(format!("{tag}: 書き込みのスレッドを作れない: {e}"));

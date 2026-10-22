@@ -404,6 +404,8 @@ fn open_bar(pet: Rect, dpi: u32) {
 fn open_chat() {
     // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
     HOVER_BAR.with(|h| h.set(false));
+    // 打っている間に AivisSpeech を起こしておく（答えを話すまでの待ちを隠す）
+    crate::tts::prewarm();
     if PET_AT.with(Cell::get).is_none() {
         return;
     }

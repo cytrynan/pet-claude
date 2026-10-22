@@ -15,7 +15,7 @@ use std::os::windows::io::AsRawHandle;
 use std::os::windows::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -33,6 +33,8 @@ const SPEAKER: &str = "天深シノ";
 const STYLE: &str = "ノーマル";
 /// `/version` の待ち時間（動いていればすぐ返る）。
 const PROBE_TIMEOUT: Duration = Duration::from_secs(2);
+/// つなぐまでの待ち時間（127.0.0.1 なので、動いていれば一瞬）。
+const CONNECT_TIMEOUT: Duration = Duration::from_millis(500);
 /// 合成の待ち時間（140 字で数秒。初回はモデルの読み込みで長い）。
 const SYNTH_TIMEOUT: Duration = Duration::from_secs(30);
 /// エンジンを起こしてから使えるまで待つ上限（ai-news の radio.mjs と同じ 90 秒）。
@@ -51,6 +53,13 @@ static QUEUE: Mutex<Option<SpeechQueue>> = Mutex::new(None);
 static WAKE: Condvar = Condvar::new();
 /// ペットが起こしたエンジンの Job Object（閉じると止まる）。0 は起こしていない。
 static ENGINE_JOB: Mutex<isize> = Mutex::new(0);
+/// 最後に話した・話す準備をした時刻（`now_ms`）。暇になったエンジンを止める判定に使う
+/// （先に起こしたエンジンを、話す前に「暇」として止めないように、先に起こした時も進める）。
+static LAST_ACTIVE_MS: AtomicU64 = AtomicU64::new(0);
+static PREWARMING: AtomicBool = AtomicBool::new(false);
+/// エンジンが声のモデルを読み終えているか（起こし直したら false。1 回合成できたら true）。
+/// 起こした直後の 1 回目の合成は、モデルの読み込みで 4.8 秒かかった（2026-10-22 実測。2 回目からは 1 秒前後）
+static MODEL_WARM: AtomicBool = AtomicBool::new(false);
 
 /// 話す。待たずに戻る。オフなら何もしない。
 pub fn speak(u: Utterance) {
@@ -92,6 +101,37 @@ pub fn set_enabled(on: bool) {
     WAKE.notify_all();
 }
 
+/// 話しそうな時に、エンジンを先に起こしておく（音声入力の録音を始めた時・チャット欄を開いた時に呼ぶ）。待たずに戻る。
+/// オフ・動いている・もう起こしている途中なら何もしない（2026-10-22: 止まったエンジンを話す時に起こすと
+/// 声が出るまで 22 秒かかった。K が話して Claude が考えている間に起こせば、その分を隠せる）。
+pub fn prewarm() {
+    if !ENABLED.load(Ordering::SeqCst) || PREWARMING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
+    let spawned = std::thread::Builder::new()
+        .name("tts-prewarm".into())
+        .spawn(|| {
+            // エンジンを起こし、まだなら短い文を 1 回合成してモデルを読ませる（鳴らさない）
+            let warmed = ensure_engine().and_then(|()| {
+                if !MODEL_WARM.load(Ordering::SeqCst) {
+                    synthesize(resolve_style()?, "こんにちは")?;
+                    MODEL_WARM.store(true, Ordering::SeqCst);
+                }
+                Ok(())
+            });
+            match warmed {
+                Ok(()) => log("tts: prewarmed"),
+                Err(why) => log(format!("tts: 先に起こせなかった（{why}）")),
+            }
+            LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
+            PREWARMING.store(false, Ordering::SeqCst);
+        });
+    if spawned.is_err() {
+        PREWARMING.store(false, Ordering::SeqCst);
+    }
+}
+
 /// 終了: 話すのを止め、ペットが起こしたエンジンを止める。
 pub fn shutdown() {
     ENABLED.store(false, Ordering::SeqCst);
@@ -124,7 +164,6 @@ fn ensure_worker() {
 /// 話す番が来るのを待ち、1 つずつ合成して鳴らす。ペットが起こしたエンジンは暇になったら止める。
 fn worker() {
     let mut style: Option<u32> = None;
-    let mut last_spoke = Instant::now();
     loop {
         let text = {
             let Ok(mut guard) = QUEUE.lock() else { return };
@@ -137,14 +176,19 @@ fn worker() {
                     .wait_timeout(guard, Duration::from_secs(30))
                     .unwrap_or_else(|e| e.into_inner());
                 guard = g;
-                if timeout.timed_out() && last_spoke.elapsed() >= ENGINE_IDLE {
+                let idle_ms = now_ms().saturating_sub(LAST_ACTIVE_MS.load(Ordering::SeqCst));
+                if timeout.timed_out()
+                    && idle_ms >= ENGINE_IDLE.as_millis() as u64
+                    && !PREWARMING.load(Ordering::SeqCst)
+                {
                     stop_engine("idle");
                 }
             }
         };
         let started = Instant::now();
+        LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
         let result = speak_one(&text, &mut style, started);
-        last_spoke = Instant::now();
+        LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
         if let Err(why) = result {
             log(format!("tts: 話せなかった（{why}）"));
         }
@@ -172,20 +216,65 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
             id
         }
     };
-    let synth = Instant::now();
+    // 文ごとに合成し、1 つ目ができたら話し始める。話している間に次の文を別スレッドで作る
+    let chunks = voice::speech_chunks(text);
+    let started = Instant::now();
+    let mut next = chunks.first().map(|c| synthesize(id, c));
+    for (i, _) in chunks.iter().enumerate() {
+        let Some(current) = next.take() else { break };
+        let wav = current?;
+        MODEL_WARM.store(true, Ordering::SeqCst);
+        if i == 0 {
+            log(format!(
+                "tts: {} 字（{} 文）の 1 文目を {:.1}s で合成",
+                text.chars().count(),
+                chunks.len(),
+                started.elapsed().as_secs_f32()
+            ));
+        }
+        let ahead = chunks.get(i + 1).cloned().map(|c| {
+            std::thread::Builder::new()
+                .name("tts-synth".into())
+                .spawn(move || synthesize(id, &c))
+        });
+        if !ENABLED.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        // SAFETY: wav は鳴り終わる（SND_SYNC で戻る）まで生きている。止めるのは別スレッドの PlaySoundW(NULL)
+        let _ = unsafe {
+            PlaySoundW(
+                PCWSTR(wav.as_ptr().cast()),
+                None,
+                SND_MEMORY | SND_SYNC | SND_NODEFAULT,
+            )
+        };
+        next = match ahead {
+            None => None,
+            Some(Ok(handle)) => Some(
+                handle
+                    .join()
+                    .unwrap_or_else(|_| Err("合成のスレッドが落ちた".into())),
+            ),
+            Some(Err(_)) => Some(Err("合成のスレッドを作れない".into())),
+        };
+    }
+    Ok(())
+}
+
+/// 1 文を合成して、鳴らせる形に整えた WAV を返す。
+fn synthesize(id: u32, text: &str) -> Result<Vec<u8>, String> {
     let query = http(
         "POST",
         &format!("/audio_query?speaker={id}&text={}", percent_encode(text)),
         &[],
         SYNTH_TIMEOUT,
     )?;
-    let wav = http(
+    let mut wav = http(
         "POST",
         &format!("/synthesis?speaker={id}"),
         &query,
         SYNTH_TIMEOUT,
     )?;
-    let mut wav = wav;
     if voice::parse_wav(&wav).is_none() {
         return Err("エンジンが返した音を読めない".into());
     }
@@ -195,23 +284,7 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
         return Err("エンジンが返した音が大きすぎる".into());
     };
     wav[4..8].copy_from_slice(&riff_len.to_le_bytes());
-    log(format!(
-        "tts: {} 字を {:.1}s で合成",
-        text.chars().count(),
-        synth.elapsed().as_secs_f32()
-    ));
-    if !ENABLED.load(Ordering::SeqCst) {
-        return Ok(());
-    }
-    // SAFETY: wav は鳴り終わる（SND_SYNC で戻る）まで生きている。止めるのは別スレッドの PlaySoundW(NULL)
-    let _ = unsafe {
-        PlaySoundW(
-            PCWSTR(wav.as_ptr().cast()),
-            None,
-            SND_MEMORY | SND_SYNC | SND_NODEFAULT,
-        )
-    };
-    Ok(())
+    Ok(wav)
 }
 
 fn is_fixed_phrase(text: &str) -> bool {
@@ -306,6 +379,7 @@ fn start_engine(exe: &std::path::Path) -> Result<(), String> {
         return Err("エンジンを Job に入れられない".into());
     }
     *slot = job.0 as isize;
+    MODEL_WARM.store(false, Ordering::SeqCst);
     log("tts: engine started");
     Ok(())
 }
@@ -349,7 +423,9 @@ fn engine_addr() -> SocketAddr {
 /// 2xx の本文を返す。それ以外・時間切れ・壊れた応答は Err。
 fn http(method: &str, path: &str, body: &[u8], timeout: Duration) -> Result<Vec<u8>, String> {
     let addr = engine_addr();
-    let mut s = TcpStream::connect_timeout(&addr, PROBE_TIMEOUT.min(timeout))
+    // つなぐのは 0.5 秒で諦める。Windows は閉じた 127.0.0.1 のポートでも数回やり直して約 2 秒かかり、
+    // エンジンが止まっている時に起こすまでの間が 2 秒延びていた（2026-10-22 実測。動いていれば一瞬でつながる）
+    let mut s = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT.min(timeout))
         .map_err(|_| "エンジンにつながらない".to_string())?;
     let _ = s.set_read_timeout(Some(timeout));
     let _ = s.set_write_timeout(Some(timeout));

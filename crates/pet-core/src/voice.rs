@@ -433,3 +433,41 @@ pub fn looks_muted(samples: &[i16]) -> bool {
             .iter()
             .all(|&s| s.unsigned_abs() <= MUTED_PEAK_MAX.unsigned_abs())
 }
+
+/// 読み上げを文ごとに分ける時、これより短い文は次の文とまとめる（「うん。」だけを合成すると、
+/// 合成の往復が増えるうえに間が空いて不自然になる）。
+pub const MIN_CHUNK_CHARS: usize = 6;
+
+/// 読み上げる 1 行を文に分ける（`。！？!?` の後で切り、区切りの字は前の文に残す）。最初の文ができた時点で
+/// 話し始めるため（2026-10-22: 91 字の合成に 3.5 秒かかり、その間ずっと黙っていた）。
+/// `MIN_CHUNK_CHARS` 字未満の文は次の文とまとめる。最後に残った短い文は前の文に足す。前後の空白は落とし、
+/// 空の文は返さない。つなぐと元の文（前後の空白を除く）と同じ字の並びになる。
+pub fn speech_chunks(text: &str) -> Vec<String> {
+    let mut sentences: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for c in text.chars() {
+        cur.push(c);
+        if matches!(c, '。' | '！' | '？' | '!' | '?') {
+            sentences.push(std::mem::take(&mut cur));
+        }
+    }
+    sentences.push(cur);
+    let mut out: Vec<String> = Vec::new();
+    let mut pending = String::new();
+    for s in sentences {
+        pending.push_str(&s);
+        if pending.trim().chars().count() >= MIN_CHUNK_CHARS {
+            out.push(std::mem::take(&mut pending));
+        }
+    }
+    if !pending.trim().is_empty() {
+        match out.last_mut() {
+            Some(last) => last.push_str(&pending),
+            None => out.push(pending),
+        }
+    }
+    out.into_iter()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}

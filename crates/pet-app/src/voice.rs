@@ -28,11 +28,12 @@ use windows::Win32::System::Com::{
 };
 use windows::core::PSTR;
 
-use crate::child::{ChildRun, Stop, run_child, terminate_job, test_overrides};
+use crate::child::{ChildRun, Input, Stop, run_child, terminate_job, test_overrides};
 use crate::log::{data_dir, log};
 
-/// 文字起こしの時間切れ（6 秒の発話で 3.3 秒。初回はモデルの読み込みで少し長い）。
-const STT_TIMEOUT: Duration = Duration::from_secs(60);
+/// 文字起こしの時間切れ。子は録音を始めた時に起こすので、録音（最長 15 秒）とモデルの読み込みも含む
+/// （6 秒の発話で読み込み 1.7 秒＋認識 1.6 秒。初回はディスクから読むので長い）。
+const STT_TIMEOUT: Duration = Duration::from_secs(90);
 /// 録音のバッファの数（30ms × 8 = 240ms ぶん。取りに行くのが遅れても途切れないように）。
 const BUFFERS: usize = 8;
 /// バッファが埋まったかを見る間隔。
@@ -68,6 +69,13 @@ pub fn toggle(app: AppHandle) {
     if crate::chat::busy() {
         drop(r);
         crate::ui::show_status("まだ考え中だよ");
+        return;
+    }
+    // 文字起こしの道具が無いのに録音させない（話し終えてから「準備が要る」と言われないように）
+    if stt_python().is_none() || !stt_script().is_file() {
+        drop(r);
+        crate::ui::show_status("音声入力の準備が要るよ（設定を見てね）");
+        log("voice: failed: 音声入力の準備が要るよ（設定を見てね）");
         return;
     }
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
@@ -182,18 +190,47 @@ fn finish(app: AppHandle, generation: u64, outcome: Outcome) {
     }
 }
 
-/// 録音 → WAV → 文字起こし（音声入力のスレッドで走る）。
-fn run(generation: u64) -> Outcome {
-    let ours = || {
+/// この世代の音声入力がまだ生きているか（取り消し・終了で false）。
+fn ours_for(generation: u64) -> impl Fn() -> bool + Send + 'static {
+    move || {
         RUNNING
             .lock()
             .map(|r| r.map(|(g, _)| g) == Some(generation))
             .unwrap_or(false)
-    };
+    }
+}
+
+/// 録音 → WAV → 文字起こし（音声入力のスレッドで走る）。
+///
+/// 文字起こしの子は録音を始める前に起こし、K が話している間に Python の起動とモデルの読み込みを済ませる
+/// （2026-10-22 の実測で、話し終えてから文字起こしが返るまで 6.3〜9.8 秒のうち 3〜5 秒がこの準備だった）。
+/// WAV のパスは録り終えてから標準入力で渡す。録音が取りやめになったら渡さずに閉じる（子は何もせず終わる）。
+/// AivisSpeech も同じ時に起こしておく（初回の 20 秒待ちを、話して考えている間に隠す）。
+fn run(generation: u64) -> Outcome {
+    let ours = ours_for(generation);
     let started = Instant::now();
+    let dir = data_dir().join("voice");
+    if std::fs::create_dir_all(&dir).is_err() {
+        return Outcome::Failed("録音を置けなかったよ");
+    }
+    let (send_path, path_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let stt = {
+        let dir = dir.clone();
+        std::thread::Builder::new()
+            .name("stt".into())
+            .spawn(move || transcribe(generation, path_rx, &dir))
+    };
+    let Ok(stt) = stt else {
+        return Outcome::Failed("文字起こしを起こせなかったよ");
+    };
+    crate::tts::prewarm();
     let samples = match record(&ours) {
         Ok(s) => s,
-        Err(o) => return o,
+        Err(o) => {
+            // 子は標準入力が閉じて終わる。結果は待たない（取りやめを早く伝える）
+            drop(send_path);
+            return o;
+        }
     };
     RECORDING.store(false, Ordering::SeqCst);
     log(format!(
@@ -204,16 +241,18 @@ fn run(generation: u64) -> Outcome {
         return Outcome::Cancelled;
     }
     crate::pet_window::chat_thinking(crate::chat::BEHAVIOR_SESSION);
-    let dir = data_dir().join("voice");
-    if std::fs::create_dir_all(&dir).is_err() {
-        return Outcome::Failed("録音を置けなかったよ");
-    }
     let wav = dir.join(format!("rec-{generation}.wav"));
     if std::fs::write(&wav, voice::wav_bytes(&samples, voice::SAMPLE_RATE)).is_err() {
         let _ = std::fs::remove_file(&wav);
         return Outcome::Failed("録音を置けなかったよ");
     }
-    let outcome = transcribe(generation, &wav, &ours);
+    let mut line = wav.to_string_lossy().into_owned().into_bytes();
+    line.push(b'\n');
+    let _ = send_path.send(line);
+    let outcome = stt.join().unwrap_or_else(|_| {
+        log("stt: thread panicked");
+        Outcome::Failed("うまく動かなかったよ")
+    });
     // 成否に関係なく消す（V9）
     let _ = std::fs::remove_file(&wav);
     log(format!(
@@ -440,8 +479,9 @@ impl Drop for Mic {
     }
 }
 
-/// 文字起こしの子を起こして結果を読む。
-fn transcribe(generation: u64, wav: &Path, ours: &dyn Fn() -> bool) -> Outcome {
+/// 文字起こしの子を起こして結果を読む。WAV のパスは `path` に後から届く（届かなければ子は何もせず終わる）。
+fn transcribe(generation: u64, path: std::sync::mpsc::Receiver<Vec<u8>>, cwd: &Path) -> Outcome {
+    let ours = ours_for(generation);
     let (Some(python), script) = (stt_python(), stt_script()) else {
         return Outcome::Failed("音声入力の準備が要るよ（設定を見てね）");
     };
@@ -474,18 +514,14 @@ fn transcribe(generation: u64, wav: &Path, ours: &dyn Fn() -> bool) -> Outcome {
         tag: "stt",
         start_failed: "文字起こしを起こせなかったよ",
         exe: python,
-        args: vec![
-            "-I".into(),
-            script.to_string_lossy().into_owned(),
-            wav.to_string_lossy().into_owned(),
-        ],
+        args: vec!["-I".into(), script.to_string_lossy().into_owned()],
         env,
-        cwd: wav.parent().map(Path::to_path_buf).unwrap_or_else(data_dir),
-        input: None,
+        cwd: cwd.to_path_buf(),
+        input: Input::Later(path),
         timeout: stt_timeout(),
         register: &register,
         unregister: &unregister,
-        wanted: ours,
+        wanted: &ours,
     });
     match result {
         Ok(out) => {

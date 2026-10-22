@@ -17,7 +17,7 @@ use std::time::{Duration, Instant};
 use pet_core::chat::{self as core_chat, AuthMode, ChatOutcome};
 use tauri::AppHandle;
 
-use crate::child::{ChildOutput, ChildRun, Stop, run_child, terminate_job, test_overrides};
+use crate::child::{ChildOutput, ChildRun, Input, Stop, run_child, terminate_job, test_overrides};
 use crate::log::{data_dir, log};
 
 /// 子を起こせなかった時の一言。
@@ -244,7 +244,7 @@ fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> Cha
         args: core_chat::child_args(&prompt_file.to_string_lossy(), resume),
         env,
         cwd: work,
-        input: Some(text.as_bytes().to_vec()),
+        input: Input::Now(text.as_bytes().to_vec()),
         timeout: timeout(),
         register: &register,
         unregister: &unregister,
@@ -345,7 +345,7 @@ pub fn auth_status(auth: AuthMode) -> String {
         args: vec!["auth".into(), "status".into()],
         env,
         cwd: work,
-        input: None,
+        input: Input::None,
         timeout: AUTH_STATUS_TIMEOUT,
         register: &|_| true,
         unregister: &|| {},

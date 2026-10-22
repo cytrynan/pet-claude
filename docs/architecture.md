@@ -245,16 +245,28 @@ Grabbed（ドラッグ中）
 - **アプリ側**（`crates/pet-app/src/tts.rs`）: 専用スレッド 1 本。HTTP は `TcpStream` で手書き（新しい crate を足さない。chunked も読む）。style id は `/speakers` から名前で引く（先頭のスタイルに逃げない）。音は `parse_wav` で頭を確かめてから `PlaySoundW(SND_MEMORY|SND_SYNC)`。「声で知らせる」をオフにすると `PlaySoundW(NULL)` で止める
 - **エンジンの起動**: `/version` が返らなければ `%USERPROFILE%\dev\voice\_engines\AivisSpeech\AivisSpeech-Engine\run.exe` を窓なしで起こし、閉じると止まる Job に入れる（pet-app が落ちても残らない）。最大 90 秒待つ。起こすのに 5 秒以上かかったら、待たせていた固定文言は捨てる。ペットが起こした時だけ、最後に話してから 10 分で止める。既に動いていたエンジンには触らない
 - **呼ぶ所**: チャットの答え・失敗（「うまくいかなかったよ」）、hooks の固定文言（できたよ・失敗しちゃった・入力を待ってるよ）、承認のカード（「確認してほしいことがあるよ」）
-- **実測**（2026-10-22）: 4 字 0.36 秒、48 字 2.2 秒。エンジンは約 3.4GB
+- **話し出すまでを縮める**（2026-10-22 K「話し出すまでの時間を短縮することはできないの？」）: 答えは `speech_chunks` で文ごとに分け（6 字未満の文は隣とまとめる）、1 文目ができたら鳴らし、鳴らしている間に次の文を別スレッドで合成する。音声入力の録音を始めた時とチャット欄を開いた時に `prewarm` でエンジンを起こし、起こした直後は短い文を 1 回合成して声のモデルを読ませる（鳴らさない）。先に起こした時も「最後に動いた時刻」を進め、話す前に暇として止めない。つなぐのは 0.5 秒で諦める（Windows は閉じた 127.0.0.1 のポートでも約 2 秒やり直す）
+- **実測**（2026-10-22）: 4 字 0.36 秒、48 字 2.2 秒。エンジンは約 3.4GB。起こしてから使えるまで約 21 秒、起こした直後の 1 回目の合成はモデルの読み込みで約 5 秒
 
 ### 6.3 音声入力（Phase 3 後半・2026-10-22 実装）
 
 - **録音**（`crates/pet-app/src/voice.rs`）: winmm の `waveIn*` で 16kHz・モノラル・16bit を 30ms ずつ 8 枚のバッファで受ける。区切りは `pet_core::voice::Endpointer`（最初の 300ms の最小音量の 3 倍か 300 の大きい方を超えたら話している。話して 300ms 以上の後に 1 秒黙れば止める・5 秒話さなければ取りやめ・最長 15 秒）。もう一度押すと止めて送る。全部 0 の録音は Windows のプライバシー設定で止められている形として「マイクを使えないよ」
-- **文字起こし**: `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、`%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I scripts\stt\transcribe.py <wav>` を子で起こす（`child.rs`＝チャットと同じ起こし方・60 秒で時間切れ・`HF_HUB_OFFLINE=1`）。WAV は成否に関係なく消し、起動時にも残りを消す。出力は ASCII の JSON 1 行（`-I` では `PYTHONIOENCODING` が効かず、パイプが CP932 になるため）
+- **文字起こし**: 子（`%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I scripts\stt\transcribe.py`）は**録音を始める前に**起こし、K が話している間に Python の起動とモデルの読み込みを済ませる。録り終えたら `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、そのパスを標準入力で渡す（`child.rs` の `Input::Later`。取りやめならパスを渡さずに閉じ、子は何もせず終わる）。チャットと同じ起こし方・90 秒で時間切れ（録音とモデルの読み込みを含む）・`HF_HUB_OFFLINE=1`。WAV は成否に関係なく消し、起動時にも残りを消す。出力は ASCII の JSON 1 行（`-I` では `PYTHONIOENCODING` が効かず、パイプが CP932 になるため）
 - **送る**: `transcript_text`（幻聴の決まり文句・句読点だけ・空は捨てる）を通った文をチャット欄に K の発言として出してから `chat::submit`。チャットの返答待ちの間は録音を始めない
+- **ミュート**: 録る前に既定の録音デバイスを `IAudioEndpointVolume::GetMute` で見て、ミュートなら「マイクがミュートになっているよ」。録った後も最大振幅 8 以下（`looks_muted`）はミュートか Windows の設定と見なす（ミュートのマイクは完全な 0 でなく最大振幅 1 を返した。2026-10-22 K の実機）
 - **見た目**: 録音中はバーの音声ボタンが赤く脈打ち（`prefers-reduced-motion` では止まる）、バーは固定される。ペットは承認待ちと同じこちらを見る動き、文字起こし中は作業中の動き
 - **準備**: `scripts/setup-stt.ps1`（venv を作り `faster-whisper==1.2.1` を入れ、small を用意して無音で 1 回試す）
 - **実測**（2026-10-22・Ryzen 7 8845HS・CUDA なし）: 6 秒の発話で small が読み込み 1.7 秒＋認識 1.6 秒。large-v3 は 7.5＋7.4 秒で、どちらも「まめちゃん」を「もめちゃん」と聞いた
+- **話し終えてから声が出るまで**（本物の文字起こし・Claude・AivisSpeech、合成した 7.3 秒の発話。2026-10-22）:
+
+  | | 文字起こし | Claude の答え | 1 文目の合成 | 合計 |
+  |---|---|---|---|---|
+  | 縮める前（エンジンは動いている） | 6.3 秒 | 6.5 秒 | 3.5 秒（全文） | 約 16 秒 |
+  | 縮めた後（エンジンは動いている） | 2.1 秒 | 4.3 秒 | 2.2 秒 | 約 8.6 秒 |
+  | 縮める前（エンジンが止まっている） | 9.8 秒 | 6.1 秒 | 起こす 22 秒＋5.5 秒 | 約 46 秒 |
+  | 縮めた後（エンジンが止まっている） | 2.6 秒 | 6.2 秒 | 起こす待ち＋5.0 秒 | 約 21 秒 |
+
+  残りの大半は Claude（`claude -p` の起動が約 3 秒）と、止まっていたエンジンを起こす約 21 秒
 - **検証**: 単体 `crates/pet-core/tests/voice.rs`（テスト先行 93 本）、故障注入 `scripts/verify/voice-fault.py`（偽のエンジン・偽の文字起こし `fake_stt.py`・マイクの代わりの WAV。21 項目）。試験用の差し替え（`PET_TEST_AIVIS_ADDR`・`PET_TEST_AIVIS_EXE`・`PET_TEST_STT_EXE`・`PET_TEST_STT_SCRIPT`・`PET_TEST_VOICE_WAV`・`PET_STT_TIMEOUT_SECS`）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
 
 ## 7. 設定・ログ・保存先

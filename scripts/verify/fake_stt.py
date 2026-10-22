@@ -8,7 +8,8 @@
 - fail          : 終了コード 1
 - slow          : 孫（同じスクリプトを FAKE_STT=sleep で）を起こしてから 600 秒眠る（時間切れ・道連れ V10）
 - sleep         : 600 秒眠るだけ（孫の役）
-起こされた時の pid と、受け取った WAV のパスと有無を、WAV と同じフォルダの fake-stt.txt に追記する。
+起こされた時に pid を、WAV のパスを受け取ったらパスと有無を、作業フォルダ（pet-app の voice フォルダ）の
+fake-stt.txt に追記する。WAV は本物と同じく引数か、標準入力の 1 行目で受ける。
 """
 
 import json
@@ -18,15 +19,26 @@ import sys
 import time
 
 mode = os.environ.get("FAKE_STT", "ok")
-wav = sys.argv[-1]
-with open(os.path.join(os.path.dirname(wav), "fake-stt.txt"), "a", encoding="utf-8") as f:
-    f.write(f"{os.getpid()} {mode} exists={os.path.exists(wav)} {wav}\n")
 
+
+def note(text):
+    with open("fake-stt.txt", "a", encoding="utf-8") as f:
+        f.write(f"{os.getpid()} {mode} {text}\n")
+
+
+note("start")
 if mode == "sleep":
     time.sleep(600)
-elif mode == "slow":
+    sys.exit(0)
+wav = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.readline().strip()
+if not wav:
+    note("no-path")
+    sys.exit(0)
+note(f"exists={os.path.exists(wav)} {wav}")
+
+if mode == "slow":
     env = dict(os.environ, FAKE_STT="sleep")
-    subprocess.Popen([sys.executable, __file__, wav], env=env)
+    subprocess.Popen([sys.executable, __file__], env=env)
     time.sleep(600)
 elif mode == "fail":
     sys.exit(1)
