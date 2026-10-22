@@ -42,9 +42,9 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-22T09:45:00+09:00 }
 
 - バーの右のボタン（`ui_action("voice")`）で始める。もう一度押すと止める（送る）。録音中はボタンが赤く脈打ち、ペットは「呼びかけ」のポーズ（承認待ちと同じ見た目）
 - 録音は `waveIn*`（winmm）で 16kHz・モノラル・16bit を直接受ける（Windows が変換する。新しい crate を足さない）。30ms のバッファを回し、`Endpointer` に渡す
-- 止まったら `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、文字起こしの子を起こす。**終わったら成否に関係なく消す**（V9）。起動時に残っていれば消す
-- 文字起こしの子: `%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I <repo>\scripts\stt\transcribe.py <wav>`。環境は `HF_HUB_OFFLINE=1`（実行中にダウンロードしない）。中身は faster-whisper small・`device="cpu"`・`compute_type="int8"`・`language="ja"`・`beam_size=1`・`vad_filter=False`（区切りはこちらで済んでいる）・`condition_on_previous_text=False`。標準出力に `{"text": ..., "secs": ...}` を 1 行
-- 子の起こし方はチャットと同じ（止めて起こして Job に入れる・出力の上限・60 秒で時間切れ・取り消し・世代番号）。`chat.rs` の `run_child`・`JobGuard`・`new_kill_on_close_job`・`read_capped` を `child.rs` に移して両方から使う（振る舞いは変えない。チャットの故障注入 18 項目で確かめる）
+- 止まったら `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、録音の前に起こしておいた文字起こしの子にパスを渡す（2026-10-22 に変更。下の「話し出すまで」）。**終わったら成否に関係なく消す**（V9）。起動時に残っていれば消す
+- 文字起こしの子: `%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I <repo>\scripts\stt\transcribe.py`（録音を始める前に起こしてモデルを読ませ、WAV のパスは録り終えてから標準入力の 1 行目で渡す。取りやめならパスを渡さずに閉じる）。環境は `HF_HUB_OFFLINE=1`（実行中にダウンロードしない）。中身は faster-whisper small・`device="cpu"`・`compute_type="int8"`・`language="ja"`・`beam_size=1`・`vad_filter=False`（区切りはこちらで済んでいる）・`condition_on_previous_text=False`。標準出力に `{"text": ..., "secs": ...}` を 1 行
+- 子の起こし方はチャットと同じ（止めて起こして Job に入れる・出力の上限・90 秒で時間切れ（録音とモデルの読み込みを含む）・取り消し・世代番号）。`chat.rs` の `run_child`・`JobGuard`・`new_kill_on_close_job`・`read_capped` を `child.rs` に移して両方から使う（振る舞いは変えない。チャットの故障注入 18 項目で確かめる）
 - 結果を `transcript_text` に通し、`Some` なら **チャット欄に K の発言として出してから** `chat::submit` に渡す（Q3 の推奨）。`None` なら吹き出しに「聞き取れなかったよ」
 - 失敗の吹き出し: マイクが無い「マイクが見つからないよ」、拒否「マイクを使えないよ（Windows の設定）」、道具が無い「音声入力の準備が要るよ（設定を見てね）」、時間切れ「文字起こしが終わらなかったよ」
 - 同時に 1 本だけ。チャットの返答待ちの間は始めない（「まだ考え中だよ」）
