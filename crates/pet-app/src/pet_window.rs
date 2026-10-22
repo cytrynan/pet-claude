@@ -763,8 +763,9 @@ impl Pet {
             }
             drag.moved = true;
             log("drag start");
-            // 借用中なので後回しにする（UI の窓に触る処理はすべて defer を通す）
-            ui::defer(ui::hide_all);
+            // 借用中なので後回しにする（UI の窓に触る処理はすべて defer を通す）。
+            // チャット欄は閉じず、ペットについて行く（ui::closes_on）
+            ui::defer(|| ui::close(ui::Close::Drag));
             let now = now_ms(self.epoch);
             self.behavior.on_user(UserEvent::DragStart, now);
             let pose = self.behavior.tick(now).pose;
