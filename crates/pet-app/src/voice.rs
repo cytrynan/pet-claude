@@ -16,10 +16,15 @@ use std::time::{Duration, Instant};
 
 use pet_core::voice::{self, EndReason, EndpointState, Endpointer};
 use tauri::AppHandle;
+use windows::Win32::Media::Audio::Endpoints::IAudioEndpointVolume;
 use windows::Win32::Media::Audio::{
     CALLBACK_NULL, HWAVEIN, WAVE_FORMAT_PCM, WAVE_MAPPER, WAVEFORMATEX, WAVEHDR, WHDR_DONE,
     waveInAddBuffer, waveInClose, waveInGetNumDevs, waveInOpen, waveInPrepareHeader, waveInReset,
     waveInStart, waveInUnprepareHeader,
+};
+use windows::Win32::Media::Audio::{IMMDeviceEnumerator, MMDeviceEnumerator, eCapture, eConsole};
+use windows::Win32::System::Com::{
+    CLSCTX_ALL, COINIT_MULTITHREADED, CoCreateInstance, CoInitializeEx, CoUninitialize,
 };
 use windows::core::PSTR;
 
@@ -135,6 +140,8 @@ pub fn status() -> &'static str {
     } else if !test_overrides() && unsafe { waveInGetNumDevs() } == 0 {
         // SAFETY: 引数なしの問い合わせ
         "マイクが見つかりません"
+    } else if !test_overrides() && default_mic_muted() == Some(true) {
+        "マイクがミュートになっています（Windows のサウンドの設定）"
     } else {
         "使えます"
     }
@@ -250,11 +257,18 @@ fn record(ours: &dyn Fn() -> bool) -> Result<Vec<i16>, Outcome> {
     } else {
         record_mic(ours, &mut |f, a| on_frame(f, a), &mut all)?
     };
-    // None は押して止めた（か、試験の WAV が終わった）
-    log(format!("voice: end {reason:?}"));
-    // 全部 0 は、Windows のプライバシー設定でマイクが止められている時の形（本物のマイクは静かでも 0 にならない）
-    if !ep.heard_speech() && !all.is_empty() && all.iter().all(|&s| s == 0) {
-        return Err(Outcome::Failed("マイクを使えないよ（Windows の設定）"));
+    // None は押して止めた（か、試験の WAV が終わった）。音量は数字だけ（聞き取れない時の切り分け用。N4）
+    let peak = all.iter().map(|s| s.unsigned_abs()).max().unwrap_or(0);
+    log(format!(
+        "voice: end {reason:?} peak={peak} heard={}",
+        ep.heard_speech()
+    ));
+    // ほぼ無音は、ミュートや Windows のプライバシー設定でマイクが止められている時の形
+    // （2026-10-22 K の PC: ミュートで最大振幅 1。完全な 0 ではなかったので 0 だけを見る判定では漏れた）
+    if !ep.heard_speech() && voice::looks_muted(&all) {
+        return Err(Outcome::Failed(
+            "マイクを使えないよ（ミュートか Windows の設定）",
+        ));
     }
     // 話し終えた・押して止めた・最長になった・5 秒黙っていた: 話していれば送る
     if ep.heard_speech() {
@@ -275,6 +289,11 @@ fn record_mic(
     // SAFETY: 引数なしの問い合わせ
     if unsafe { waveInGetNumDevs() } == 0 {
         return Err(Outcome::Failed("マイクが見つからないよ"));
+    }
+    // ミュートなら録る前に言う（ミュートのマイクは無音を返し続け、5 秒待ってから「聞き取れない」になっていた）
+    if default_mic_muted() == Some(true) {
+        log("voice: default capture device is muted");
+        return Err(Outcome::Failed("マイクがミュートになっているよ"));
     }
     let format = WAVEFORMATEX {
         wFormatTag: WAVE_FORMAT_PCM as u16,
@@ -370,6 +389,26 @@ fn record_mic(
     drop(headers);
     drop(data);
     reason
+}
+
+/// 既定の録音デバイス（WAVE_MAPPER が使うもの）がミュートか。読めなければ None（録音は続ける）。
+fn default_mic_muted() -> Option<bool> {
+    // SAFETY: このスレッドで COM を使う間だけ初期化し、初期化できた時だけ戻す。インターフェイスは
+    // CoUninitialize より前にこのブロックの中で落ちる
+    unsafe {
+        let init = CoInitializeEx(None, COINIT_MULTITHREADED);
+        let muted = (|| {
+            let e: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL).ok()?;
+            let dev = e.GetDefaultAudioEndpoint(eCapture, eConsole).ok()?;
+            let vol: IAudioEndpointVolume = dev.Activate(CLSCTX_ALL, None).ok()?;
+            vol.GetMute().ok().map(|b| b.as_bool())
+        })();
+        if init.is_ok() {
+            CoUninitialize();
+        }
+        muted
+    }
 }
 
 /// 頭が指すバッファから n サンプルを写す。

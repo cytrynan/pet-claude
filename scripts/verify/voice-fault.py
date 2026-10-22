@@ -52,6 +52,7 @@ SPEECH = work / "speech.wav"     # 静か 0.4 秒 → 話す 1.2 秒 → 静か 
 LONG = work / "long.wav"         # 話し続ける 10 秒（もう一度押して止める）
 QUIET = work / "quiet.wav"       # 静か 6 秒（NoSpeech）
 ZEROS = work / "zeros.wav"       # 全部 0 の 6 秒（マイクを止められている）
+MUTED = work / "muted.wav"       # -1〜1 だけの 6 秒（2026-10-22 K の PC のミュートのマイクと同じ形）
 
 
 class Engine(http.server.BaseHTTPRequestHandler):
@@ -174,6 +175,7 @@ SPEECH.write_bytes(wav(noise_floor(400) + tone(1200) + noise_floor(1500)))
 LONG.write_bytes(wav(noise_floor(400) + tone(10000)))
 QUIET.write_bytes(wav(noise_floor(6000)))
 ZEROS.write_bytes(wav(silence(6000)))
+MUTED.write_bytes(wav([(i % 3) - 1 for i in range(96000)]))
 srv = start_engine()
 ENGINE_ADDR = f"127.0.0.1:{srv.server_address[1]}"
 
@@ -222,6 +224,9 @@ check("V5 5 秒話さなければ取りやめ", alive_ and "voice: failed: 聞�
 
 log, data, alive_ = run_case("voice-zeros", "ui:voice", mic=ZEROS, wait_for=("voice: failed", 1))
 check("V8 全部 0（マイクを止められている）", "マイクを使えないよ" in log, "")
+
+log, data, alive_ = run_case("voice-muted", "ui:voice", mic=MUTED, wait_for=("voice: failed", 1))
+check("V8 ほぼ無音（ミュートのマイクの形・最大振幅 1）", "マイクを使えないよ" in log and "peak=1" in log, "")
 
 log, data, alive_ = run_case("voice-halluc", "ui:voice", mic=SPEECH, stt="hallucination",
                              wait_for=("voice: failed", 1))

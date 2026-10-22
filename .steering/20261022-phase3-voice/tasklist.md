@@ -16,7 +16,7 @@ tracking: #20
 - [x] 準備のスクリプト `scripts/setup-stt.ps1` と `scripts/stt/transcribe.py`
 - [x] 設定画面に読み上げと音声入力の状態
 - [x] 故障注入（V2・V8・V9・V10）と、チャットの故障注入 18 項目の再走
-- [ ] 準備のスクリプトを走らせる（`pip install faster-whisper`。K の了承が要る） (#22)
+- [x] 準備のスクリプトを走らせる（`pip install faster-whisper`。K の了承 2026-10-22「入れていいよ」） (#22)
 - [ ] 実機の確認（S11 を K の声で・声のオフで止まる・N1） (#23)
 - [x] docs: PRD F16・F17、architecture §6、roadmap、log.md
 - [ ] 検証係（Codex）の確認 (#24)

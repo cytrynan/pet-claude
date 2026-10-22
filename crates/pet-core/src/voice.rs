@@ -41,6 +41,10 @@ pub const SPEECH_RMS_MIN: f32 = 300.0;
 
 /// 静かさの何倍で「話している」か。背景音が大きい部屋でも、それより目立つ音だけを話し声にする。
 pub const SPEECH_RMS_FACTOR: f32 = 3.0;
+/// 録音の最大振幅（絶対値）がこれ以下なら、マイクが止められている（ミュート・プライバシー設定）と見なす。
+/// 2026-10-22 K の PC でミュートの「マイク配列」から 6 秒録ると最大振幅 1・RMS 0.5 だった（完全な 0 ではない）。
+/// 生きているマイクは静かな部屋でも数十はある
+pub const MUTED_PEAK_MAX: i16 = 8;
 
 /// 作業が終わった時の一言。
 pub const PHRASE_DONE: &str = "できたよ";
@@ -420,4 +424,12 @@ pub fn parse_wav(bytes: &[u8]) -> Option<WavInfo> {
         pos = body.saturating_add(size).saturating_add(size & 1);
     }
     None
+}
+
+/// 録音がマイクを止められた時の形か（話していないうえに、最大振幅が `MUTED_PEAK_MAX` 以下）。空なら false。
+pub fn looks_muted(samples: &[i16]) -> bool {
+    !samples.is_empty()
+        && samples
+            .iter()
+            .all(|&s| s.unsigned_abs() <= MUTED_PEAK_MAX.unsigned_abs())
 }
