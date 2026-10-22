@@ -201,13 +201,22 @@ fn main() -> Result<(), String> {
             image::ExtendedColorType::Rgba8,
         )
         .map_err(|e| e.to_string())?;
-    let manifest = serde_json::json!({
-        "id": id,
-        "displayName": name,
-        "spritesheetPath": "spritesheet.webp",
-        "cellScale": cell_scale,
-        "breathe": BREATHE,
-    });
+    // 作り直しても、手で足した項目（`clips`・`wakeWord` など）は残す。シートに関わる項目だけ上書きする
+    // （上書きで消すと、作り直すたびにまめドラゴンのウェイクワードや動画クリップが外れる）
+    let mut manifest = std::fs::read_to_string(out.join("pet.json"))
+        .ok()
+        .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+        .filter(serde_json::Value::is_object)
+        .unwrap_or_else(|| serde_json::json!({}));
+    for (key, value) in [
+        ("id", serde_json::json!(id)),
+        ("displayName", serde_json::json!(name)),
+        ("spritesheetPath", serde_json::json!("spritesheet.webp")),
+        ("cellScale", serde_json::json!(cell_scale)),
+        ("breathe", serde_json::json!(BREATHE)),
+    ] {
+        manifest[key] = value;
+    }
     let mut text = serde_json::to_string_pretty(&manifest).map_err(|e| e.to_string())?;
     text.push('\n');
     std::fs::write(out.join("pet.json"), text).map_err(|e| e.to_string())?;

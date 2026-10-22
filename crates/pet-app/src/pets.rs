@@ -28,6 +28,8 @@ pub struct PetEntry {
     pub name: String,
     /// ペットのフォルダ。None は内蔵の仮キャラ
     pub dir: Option<PathBuf>,
+    /// 呼びかけの言葉（pet.json の `wakeWord`。無いペットと内蔵の仮キャラは None）
+    pub wake_word: Option<String>,
 }
 
 /// 中身のあるコマだけを、不透明な範囲で切り抜いて持つ。シートを丸ごと持つと、空のコマ（まめドラゴンは
@@ -153,6 +155,7 @@ pub fn discover_in(roots: &[PathBuf]) -> Vec<PetEntry> {
         id: BUILTIN_ID.into(),
         name: BUILTIN_NAME.into(),
         dir: None,
+        wake_word: None,
     }];
     for root in roots {
         let Ok(read) = std::fs::read_dir(root) else {
@@ -167,11 +170,7 @@ pub fn discover_in(roots: &[PathBuf]) -> Vec<PetEntry> {
         for dir in dirs {
             match read_manifest(&dir) {
                 Ok(m) if pets.iter().any(|p| p.id == m.id) => {}
-                Ok(m) => pets.push(PetEntry {
-                    id: m.id,
-                    name: m.display_name,
-                    dir: Some(dir),
-                }),
+                Ok(m) => pets.push(entry_from(m, dir)),
                 Err(e) if dir.join("pet.json").exists() => log(format!("{}: {e}", dir.display())),
                 Err(_) => {}
             }
@@ -203,12 +202,16 @@ pub fn startup_order<'a>(pets: &'a [PetEntry], chosen: Option<&str>) -> Vec<&'a 
 
 /// フォルダを直接指定して開く（起動引数 `--pet <dir>`）。
 pub fn entry_for_dir(dir: &Path) -> Result<PetEntry, String> {
-    let m = read_manifest(dir)?;
-    Ok(PetEntry {
+    Ok(entry_from(read_manifest(dir)?, dir.to_path_buf()))
+}
+
+fn entry_from(m: PetManifest, dir: PathBuf) -> PetEntry {
+    PetEntry {
+        wake_word: m.wake_word().map(str::to_owned),
         id: m.id,
         name: m.display_name,
-        dir: Some(dir.to_path_buf()),
-    })
+        dir: Some(dir),
+    }
 }
 
 /// 持つコマの解像度の上限。動画のあるペットは元のコマの 3/4（それより大きい窓には描く瞬間に引き伸ばす）。
@@ -409,6 +412,35 @@ mod tests {
             ["mame", "neko", "placeholder"]
         );
         assert_eq!(ids(startup_order(&discover_in(&[]), None)), ["placeholder"]);
+    }
+
+    #[test]
+    fn wake_word_comes_from_pet_json() {
+        let root = temp_root("wake");
+        write_pet(&root, "mame", "mame", "まめ", 1, 1);
+        write_pet(&root, "neko", "neko", "ねこ", 1, 1);
+        let m = r#"{"id":"mame","displayName":"まめ","spritesheetPath":"sheet.png","wakeWord":" まめちゃん "}"#;
+        std::fs::write(root.join("mame").join("pet.json"), m).unwrap();
+        let pets = discover_in(std::slice::from_ref(&root));
+        let words: Vec<_> = pets
+            .iter()
+            .map(|p| (p.id.as_str(), p.wake_word.as_deref()))
+            .collect();
+        assert_eq!(
+            words,
+            [
+                ("placeholder", None),
+                ("mame", Some("まめちゃん")),
+                ("neko", None)
+            ]
+        );
+        assert_eq!(
+            entry_for_dir(&root.join("mame"))
+                .unwrap()
+                .wake_word
+                .as_deref(),
+            Some("まめちゃん")
+        );
     }
 
     #[test]

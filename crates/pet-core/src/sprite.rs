@@ -259,6 +259,10 @@ pub struct PetManifest {
     /// pet-claude 独自の追加素材で、Codex 互換のシートはそのまま残す（2026-10-21 K 指示）
     #[serde(default)]
     pub clips: Option<String>,
+    /// 呼びかけて音声入力を始める言葉（ペットごとに決める。まめドラゴンは「まめちゃん」。2026-10-22 K 指示）。
+    /// pet-claude 独自の項目。いまは設定画面に出すだけで、聞き取りは Phase 4（F20）で使う
+    #[serde(default)]
+    pub wake_word: Option<String>,
 }
 
 /// pet.json に書かれたパス（`spritesheetPath`・`clips`）が、ペットのフォルダの中を指す相対パスか。
@@ -288,7 +292,21 @@ impl PetManifest {
             .unwrap_or(0.0)
             .clamp(0.0, MAX_BREATHE)
     }
+
+    /// ウェイクワード（前後の空白を除く。空・`MAX_WAKE_WORD_CHARS` 字を超える・改行や制御文字を含むものは
+    /// 無いものとする）。他人が作ったペットの pet.json でも設定画面の 1 行に収まる言葉だけを通す
+    pub fn wake_word(&self) -> Option<&str> {
+        self.wake_word
+            .as_deref()
+            .map(str::trim)
+            .filter(|w| !w.is_empty())
+            .filter(|w| w.chars().count() <= MAX_WAKE_WORD_CHARS)
+            .filter(|w| !w.chars().any(char::is_control))
+    }
 }
+
+/// ウェイクワードの字数の上限（呼びかけの言葉なので短い。「まめちゃん」は 5 字）。
+pub const MAX_WAKE_WORD_CHARS: usize = 16;
 
 /// 呼吸の大きさの上限（8%。これ以上はキャラが伸び縮みして見える）。
 pub const MAX_BREATHE: f32 = 0.08;
@@ -569,5 +587,37 @@ mod tests {
             with("99").cell_size(),
             (CELL_W * MAX_CELL_SCALE, CELL_H * MAX_CELL_SCALE)
         );
+    }
+
+    #[test]
+    fn manifest_wake_word_is_trimmed_and_checked() {
+        let with = |w: &str| -> PetManifest {
+            serde_json::from_str(&format!(
+                r#"{{"id":"a","displayName":"A","spritesheetPath":"s.webp","wakeWord":{w}}}"#
+            ))
+            .unwrap()
+        };
+        assert_eq!(with(r#""まめちゃん""#).wake_word(), Some("まめちゃん"));
+        assert_eq!(with(r#""  まめちゃん　""#).wake_word(), Some("まめちゃん"));
+        assert_eq!(with(r#""""#).wake_word(), None);
+        assert_eq!(with(r#""   ""#).wake_word(), None);
+        assert_eq!(with(r#""まめ\nちゃん""#).wake_word(), None);
+        // 上限ちょうどは通り、1 字超えたら無いものとする
+        let max = "あ".repeat(MAX_WAKE_WORD_CHARS);
+        assert_eq!(with(&format!(r#""{max}""#)).wake_word(), Some(max.as_str()));
+        assert_eq!(with(&format!(r#""{max}あ""#)).wake_word(), None);
+        assert_eq!(with("null").wake_word(), None);
+        let none: PetManifest =
+            serde_json::from_str(r#"{"id":"a","displayName":"A","spritesheetPath":"s.webp"}"#)
+                .unwrap();
+        assert_eq!(none.wake_word(), None);
+    }
+
+    /// 同梱のまめドラゴンの pet.json に「まめちゃん」が入っている（2026-10-22 K 指示）
+    #[test]
+    fn mame_dragon_wake_word_is_mamechan() {
+        let text = include_str!("../../../assets/pets/mame-dragon/pet.json");
+        let m: PetManifest = serde_json::from_str(text).unwrap();
+        assert_eq!(m.wake_word(), Some("まめちゃん"));
     }
 }
