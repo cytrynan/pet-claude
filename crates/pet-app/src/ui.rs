@@ -2,7 +2,8 @@
 //!
 //! - バーとメニューは `focusable(false)`＝作業中の窓からフォーカスを奪わない。
 //!   フォーカスが無いので「外をクリックしたら閉じる」は低レベルのマウスフック（開いている間だけ）で拾う
-//! - チャット入力は文字を打つので、フォーカスを取る（利用者が自分でチャットを選んだとき）
+//! - チャット入力は文字を打つので、フォーカスを取る（利用者が自分でチャットを選んだとき）。
+//!   一度開いたら、ペットを左クリックするまで閉じない（`closes_on`。K 指示 2026-10-22）
 //! - **窓は使うときに作り、全部が隠れて `IDLE_CLOSE` たったら破棄する**。WebView2 は 1 枚でもあると
 //!   ブラウザ本体などのプロセスが常駐し、4 枚を常に持つと専有メモリが 335MB になった（2026-10-21 実測）。
 //!   普段はペット本体だけにする
@@ -64,8 +65,8 @@ const ANSWER_MAX_MS: u64 = 20_000;
 /// チャット欄の上に出す答えの欄の高さ（論理ピクセル。中はスクロール）と、入力欄との間。
 const CHAT_ANSWER_HEIGHT: f64 = 188.0;
 const CHAT_GAP: f64 = 8.0;
-/// チャット欄を出してから、前面を失っても閉じずに取り直す間（実機では出して 7ms で失った）。
-/// 人が外を押すにはこれより長くかかる（ダブルクリックの間隔 500ms 程度）ので、その操作は閉じる側に入る。
+/// チャット欄を出してから、前面を失ったら取り直す間（実機では出して 7ms で失い、入力欄に打てなかった）。
+/// 人が外を押すにはこれより長くかかる（ダブルクリックの間隔 500ms 程度）ので、その操作とは取り合わない。
 const CHAT_FOCUS_GRACE: Duration = Duration::from_millis(600);
 /// 失敗の理由が吹き出しの検査に掛かった（パスなどを含む）ときの吹き出しの文。理由はチャット欄に出す。
 const FAILURE_HIDDEN: &str = "うまくいきませんでした。理由はチャット欄に";
@@ -122,10 +123,10 @@ thread_local! {
     static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
     /// チャットの最後の答え（チャット欄に出す全文, 失敗か）。「新しいチャット」で消す
     static CHAT_LAST: RefCell<Option<(String, bool)>> = const { RefCell::new(None) };
-    /// チャット欄を開いた時のペットの矩形（物理座標）と DPI。チャット欄はこれに重ならないよう置く
-    static CHAT_PET: Cell<Option<(Rect, u32)>> = const { Cell::new(None) };
     /// チャット欄を開いた時刻。開いた直後の前面の喪失を 1 回だけ取り直すのに使う（使ったら消す）
     static CHAT_OPENED_AT: Cell<Option<Instant>> = const { Cell::new(None) };
+    /// ペットが動いたあとのチャット欄の置き直しを予約済みか（ドラッグ中の描画ごとにスレッドを作らない）
+    static CHAT_PLACE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
 
 fn app() -> Option<AppHandle> {
@@ -197,9 +198,9 @@ fn island(label: &str) -> Option<WebviewWindow> {
         }
     };
     if label == CHAT {
-        // 入力欄からフォーカスが外れたら閉じる。ただし出した直後（CHAT_FOCUS_GRACE 以内）の 1 回は、
-        // 閉じずに前面を取り直す。窓を作った直後の 1 回目は 7ms で前面を失って閉じ、K がもう一度
-        // 押す必要があった（2026-10-21 K の実機確認）。取り直しは 1 回だけ（本当に外を押した時と取り合わない）
+        // フォーカスが外れても閉じない（ペットの左クリックでだけ閉じる＝`closes_on`）。ただし出した直後
+        // （CHAT_FOCUS_GRACE 以内）の 1 回は前面を取り直す。窓を作った直後の 1 回目は 7ms で前面を失い、
+        // 入力欄に打てなかった（2026-10-21 K の実機確認）。取り直しは 1 回だけ（外を押した時と取り合わない）
         w.on_window_event(|e| {
             if let WindowEvent::Focused(false) = e {
                 defer(|| {
@@ -213,11 +214,7 @@ fn island(label: &str) -> Option<WebviewWindow> {
                         log("chat lost focus right after show -> refocus");
                         let _ = w.set_focus();
                         let _ = w.eval("window.focusInput && window.focusInput()");
-                        return;
                     }
-                    // 閉じた理由を残す（前面を取れずに開いた直後に閉じたのか、を見分けるため）
-                    log("chat hidden: focus lost");
-                    hide(CHAT);
                 });
             }
         });
@@ -334,7 +331,44 @@ fn set_inside(rects: Vec<Rect>) {
     install_hook();
 }
 
+/// 島を閉じるきっかけ。どれで何が閉じるかは `closes_on` だけで決める。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Close {
+    /// ペットの左クリック（ドラッグせずに離した）
+    PetClick,
+    /// 島とペットの外を押した（マウスフック）
+    Outside,
+    /// ペットをドラッグし始めた
+    Drag,
+    /// Esc・メニューの「バーを隠す」「位置をリセット」
+    Dismiss,
+}
+
+/// `label` の島が `why` で閉じるか。チャット欄はペットの左クリックでだけ閉じる（K 指示 2026-10-22
+/// 「一度開いたら pet を左クリックするまで閉じないようにして」）。外を押す・ドラッグ・Esc では閉じない
+/// （Esc は日本語入力の変換の取り消しにも使うので、閉じると打っている途中の文が消える）。
+/// バーとメニューは今までどおり、どのきっかけでも閉じる。
+fn closes_on(label: &str, why: Close) -> bool {
+    label != CHAT || why == Close::PetClick
+}
+
+/// `why` で閉じる島を全部隠す。
+pub fn close(why: Close) {
+    log(format!("popups hidden ({why:?})"));
+    for l in POPUPS {
+        if !closes_on(l, why) {
+            continue;
+        }
+        if let Some(w) = window(l) {
+            let _ = w.hide();
+        }
+        mark_shown(l, false);
+    }
+    after_hide();
+}
+
 /// ペットのクリックでバーを出す／もう一度で隠す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
+/// チャット欄が出ていれば閉じる（チャット欄を閉じるのはこのクリックだけ）。
 pub fn toggle_bar(pet: Rect, dpi: u32) {
     defer(move || {
         // カーソルが乗って出たバーをクリックしたら、閉じずにそのまま固定する（乗った直後のクリックで
@@ -345,7 +379,7 @@ pub fn toggle_bar(pet: Rect, dpi: u32) {
             return;
         }
         if bar_visible() || visible(CHAT) {
-            hide_all();
+            close(Close::PetClick);
             return;
         }
         HOVER_BAR.with(|h| h.set(false));
@@ -368,11 +402,9 @@ fn open_bar(pet: Rect, dpi: u32) {
 fn open_chat() {
     // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
     HOVER_BAR.with(|h| h.set(false));
-    let Some(pet) = PET_AT.with(Cell::get) else {
+    if PET_AT.with(Cell::get).is_none() {
         return;
-    };
-    CHAT_PET.with(|a| a.set(Some(pet)));
-    let anchor = pet;
+    }
     let Some(chat) = island(CHAT) else { return };
     let rect = chat_rect();
     if let Some(bar) = window(BAR) {
@@ -386,17 +418,9 @@ fn open_chat() {
         chat_state()
     ));
     let _ = chat.eval("window.focusInput && window.focusInput()");
-    set_chat_inside(rect, anchor.1);
+    // バーを隠したので、外を押した時の見張り（マウスフック）も外す。チャット欄は外を押しても閉じない
+    after_hide();
     log("chat shown");
-}
-
-/// 外側クリックの判定に、チャット欄とペットを入れる。
-fn set_chat_inside(rect: Rect, dpi: u32) {
-    let mut inside = vec![island_rect(rect, dpi)];
-    if let Some((pet, _)) = PET_AT.with(Cell::get) {
-        inside.push(pet);
-    }
-    set_inside(inside);
 }
 
 /// チャット欄の島の大きさ。答えがあれば入力欄の上に答えの欄を足す。
@@ -413,8 +437,9 @@ fn chat_island() -> (f64, f64) {
 /// チャット欄の窓の矩形。バーと同じく、ペットの真下に置き、作業領域の下に収まらなければ真上に置く。
 /// 答えの欄が足されて高くなったときも同じ規則で置き直す（入力欄の位置を保つ置き方だと、画面の下の方では
 /// 答えの欄がペットに重なり、ペットに隠れた。2026-10-22 K の指示「端っこでチャットを開くと重なる問題も直して」）。
+/// ペットの今の位置を使う（チャット欄は開いたままペットをドラッグできるので、ペットについて行く）。
 fn chat_rect() -> Rect {
-    let Some((pet, dpi)) = CHAT_PET.with(Cell::get) else {
+    let Some((pet, dpi)) = PET_AT.with(Cell::get) else {
         return Rect::from_xywh(0, 0, 1, 1);
     };
     below_pet(&pet, chat_island(), dpi)
@@ -438,13 +463,25 @@ pub fn refresh_chat() {
         return;
     }
     let Some(w) = window(CHAT) else { return };
-    let rect = chat_rect();
-    place_and_show(CHAT, &w, rect, false);
+    place_and_show(CHAT, &w, chat_rect(), false);
     let _ = w.eval(format!(
         "window.renderChat && window.renderChat({})",
         chat_state()
     ));
-    set_chat_inside(rect, CHAT_PET.with(Cell::get).map_or(96, |a| a.1));
+}
+
+/// ペットが動いたら（ドラッグ・位置のリセット・画面の変更）、開いているチャット欄をペットの真下へ置き直す。
+/// 中身は描き直さず（答えの欄のスクロールを保つ）、出し直しもしない（`show()` で前面を取らない）。
+fn place_chat() {
+    CHAT_PLACE_PENDING.with(|p| p.set(false));
+    if !visible(CHAT) {
+        return;
+    }
+    if let Some(w) = window(CHAT) {
+        let rect = chat_rect();
+        let _ = w.set_position(PhysicalPosition::new(rect.left, rect.top));
+        let _ = w.set_size(PhysicalSize::new(rect.width() as u32, rect.height() as u32));
+    }
 }
 
 /// チャットの答え（チャットのスレッドから run_on_main_thread で呼ばれる）。
@@ -613,12 +650,13 @@ fn open_menu(at: Point, pet: Rect, dpi: u32) {
     });
 }
 
+/// 隠した後の片付け。外を押した時の見張り（マウスフック）は、バーかメニューが出ている間だけ要る
+/// （チャット欄は外を押しても閉じないので、チャット欄だけの間は全マウス操作を見張らない）。
 fn after_hide() {
-    if popups_visible() {
-        return;
+    if !visible(BAR) && !visible(MENU) {
+        uninstall_hook();
     }
-    uninstall_hook();
-    if !visible(SETTINGS) {
+    if !popups_visible() && !visible(SETTINGS) {
         schedule_close();
     }
 }
@@ -628,17 +666,6 @@ pub fn hide(label: &'static str) {
         let _ = w.hide();
     }
     mark_shown(label, false);
-    after_hide();
-}
-
-pub fn hide_all() {
-    log("popups hidden (all)");
-    for l in POPUPS {
-        if let Some(w) = window(l) {
-            let _ = w.hide();
-        }
-        mark_shown(l, false);
-    }
     after_hide();
 }
 
@@ -724,14 +751,14 @@ pub fn action(action: String) {
         "chat:new" => new_chat(),
         // 音声入力は Phase 3。いまはバーを閉じるだけ
         "voice" => hide(BAR),
-        "close" => hide_all(),
+        "close" => close(Close::Dismiss),
         "menu:settings" => {
             hide(MENU);
             open_settings();
         }
-        "menu:hide-bar" => hide_all(),
+        "menu:hide-bar" => close(Close::Dismiss),
         "menu:reset" => {
-            hide_all();
+            close(Close::Dismiss);
             crate::pet_window::reset_position();
         }
         "menu:quit" => {
@@ -758,6 +785,9 @@ pub fn note_pet(rect: Rect, dpi: u32) {
     });
     if moved && visible(BUBBLE) {
         defer(place_bubble);
+    }
+    if moved && visible(CHAT) && !CHAT_PLACE_PENDING.with(|p| p.replace(true)) {
+        defer(place_chat);
     }
 }
 
@@ -1084,7 +1114,7 @@ unsafe extern "system" fn mouse_hook(code: i32, wp: WPARAM, lp: LPARAM) -> LRESU
             if outside {
                 log(format!("outside click at ({},{}) -> close", p.x, p.y));
                 // フックの中では重い処理をしない。閉じるのはイベントループに回す
-                defer(hide_all);
+                defer(|| close(Close::Outside));
             }
         }
     }
@@ -1143,6 +1173,21 @@ mod tests {
         assert!(can_allow(&ev(Some(&"a".repeat(120)), true)));
         assert!(can_allow(&ev(Some(&"あ".repeat(72)), true)));
         assert!(!can_allow(&ev(Some(&"あ".repeat(73)), true)));
+    }
+
+    #[test]
+    fn chat_closes_only_on_a_pet_click() {
+        // チャット欄: ペットの左クリックでだけ閉じる（K 指示 2026-10-22）
+        assert!(closes_on(CHAT, Close::PetClick));
+        for why in [Close::Outside, Close::Drag, Close::Dismiss] {
+            assert!(!closes_on(CHAT, why), "{why:?}");
+        }
+        // バーとメニューは今までどおり、どのきっかけでも閉じる
+        for label in [BAR, MENU] {
+            for why in [Close::PetClick, Close::Outside, Close::Drag, Close::Dismiss] {
+                assert!(closes_on(label, why), "{label} {why:?}");
+            }
+        }
     }
 
     #[test]
