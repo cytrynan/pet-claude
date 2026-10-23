@@ -564,14 +564,31 @@ fn stt_python() -> Option<PathBuf> {
     exe.is_file().then_some(exe)
 }
 
-/// 文字起こしのスクリプト（リポジトリの `scripts/stt/transcribe.py`。ペットの素材と同じ見つけ方）。
+/// 文字起こしのスクリプトの中身（ビルドの時に exe へ埋め込む）。
+const STT_SCRIPT: &str = include_str!("../../../scripts/stt/transcribe.py");
+
+/// 文字起こしのスクリプト。exe に埋め込んだ中身を `%LOCALAPPDATA%\pet-claude\stt\transcribe.py` に書き出して使う。
+///
+/// ビルドした時のリポジトリのパス（`CARGO_MANIFEST_DIR`）を指すと、exe を動かした後にその場所へ置かれた
+/// 別のファイルを実行してしまう（2026-10-23 セキュリティレビューの指摘）。書き出す先は自分のユーザーだけの
+/// データフォルダで、毎回中身を埋め込みのものに揃える。書き出せなければ、無いものとして扱う。
 fn stt_script() -> PathBuf {
     if test_overrides()
         && let Some(p) = std::env::var_os("PET_TEST_STT_SCRIPT")
     {
         return PathBuf::from(p);
     }
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/stt/transcribe.py")
+    let path = data_dir().join("stt").join("transcribe.py");
+    let current = std::fs::read_to_string(&path).ok();
+    if current.as_deref() != Some(STT_SCRIPT) {
+        let written = std::fs::create_dir_all(path.parent().unwrap_or(&path))
+            .and_then(|()| std::fs::write(&path, STT_SCRIPT));
+        if let Err(e) = written {
+            log(format!("stt: スクリプトを書き出せない: {e}"));
+            return PathBuf::new();
+        }
+    }
+    path
 }
 
 fn stt_timeout() -> Duration {

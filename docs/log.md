@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-22
+* **Update**: [技術仕様書](architecture.md) — §6.3 文字起こしのスクリプトは exe に埋め込んでデータフォルダへ書き出す（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)
 * **Update**: [プロダクト要求定義書](product-requirements.md) — F16・F17 を K の決定（Q1〜Q3 すべて A）に (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §6.2・§6.3 に話し出すまでを縮める工夫（文ごとの合成・エンジンとモデルを先に起こす・文字起こしの子を録音の前に起こす）と前後の実測、ミュートの見分け方 (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [DESIGN.md](../DESIGN.md) — 色付けの例外に「録音中の音声ボタンは記号だけ赤で脈打つ」を足した (kuroko/claude-opus-5-5)

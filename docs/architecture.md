@@ -251,7 +251,7 @@ Grabbed（ドラッグ中）
 ### 6.3 音声入力（Phase 3 後半・2026-10-22 実装）
 
 - **録音**（`crates/pet-app/src/voice.rs`）: winmm の `waveIn*` で 16kHz・モノラル・16bit を 30ms ずつ 8 枚のバッファで受ける。区切りは `pet_core::voice::Endpointer`（最初の 300ms の最小音量の 3 倍か 300 の大きい方を超えたら話している。話して 300ms 以上の後に 1 秒黙れば止める・5 秒話さなければ取りやめ・最長 15 秒）。もう一度押すと止めて送る。全部 0 の録音は Windows のプライバシー設定で止められている形として「マイクを使えないよ」
-- **文字起こし**: 子（`%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I scripts\stt\transcribe.py`）は**録音を始める前に**起こし、K が話している間に Python の起動とモデルの読み込みを済ませる。録り終えたら `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、そのパスを標準入力で渡す（`child.rs` の `Input::Later`。取りやめならパスを渡さずに閉じ、子は何もせず終わる）。チャットと同じ起こし方・90 秒で時間切れ（録音とモデルの読み込みを含む）・`HF_HUB_OFFLINE=1`。WAV は成否に関係なく消し、起動時にも残りを消す。出力は ASCII の JSON 1 行（`-I` では `PYTHONIOENCODING` が効かず、パイプが CP932 になるため）
+- **文字起こし**: 子（`%LOCALAPPDATA%\pet-claude\stt\venv\Scripts\python.exe -I %LOCALAPPDATA%\pet-claude\stt\transcribe.py`。スクリプトは `scripts/stt/transcribe.py` を exe に埋め込み、使う時にデータフォルダへ書き出す＝ビルドしたリポジトリのパスを実行しない）は**録音を始める前に**起こし、K が話している間に Python の起動とモデルの読み込みを済ませる。録り終えたら `%LOCALAPPDATA%\pet-claude\voice\rec-<世代>.wav` に書き、そのパスを標準入力で渡す（`child.rs` の `Input::Later`。取りやめならパスを渡さずに閉じ、子は何もせず終わる）。チャットと同じ起こし方・90 秒で時間切れ（録音とモデルの読み込みを含む）・`HF_HUB_OFFLINE=1`。WAV は成否に関係なく消し、起動時にも残りを消す。出力は ASCII の JSON 1 行（`-I` では `PYTHONIOENCODING` が効かず、パイプが CP932 になるため）
 - **送る**: `transcript_text`（幻聴の決まり文句・句読点だけ・空は捨てる）を通った文をチャット欄に K の発言として出してから `chat::submit`。チャットの返答待ちの間は録音を始めない
 - **ミュート**: 録る前に既定の録音デバイスを `IAudioEndpointVolume::GetMute` で見て、ミュートなら「マイクがミュートになっているよ」。録った後も最大振幅 8 以下（`looks_muted`）はミュートか Windows の設定と見なす（ミュートのマイクは完全な 0 でなく最大振幅 1 を返した。2026-10-22 K の実機）
 - **見た目**: 録音中はバーの音声ボタンが赤く脈打ち（`prefers-reduced-motion` では止まる）、バーは固定される。ペットは承認待ちと同じこちらを見る動き、文字起こし中は作業中の動き
