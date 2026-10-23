@@ -18,9 +18,10 @@ for (const name of readdirSync(dir).sort()) {
     blocks.push({ code: readFileSync(path, "utf8"), line: 1 });
   } else if (name.endsWith(".html")) {
     const html = readFileSync(path, "utf8");
-    // 属性の無い・src の無い <script> だけ（src 付きは別ファイルとして見る）
+    // src 属性の無い <script> だけ（src 付きは別ファイルとして見る）。属性は名前で見る
+    // （/\bsrc=/ だと data-src= や title="src=x" も外部と見なし、壊れたインラインを見逃した。2026-10-23 検証係の指摘）
     for (const m of html.matchAll(/<script(\s[^>]*)?>([\s\S]*?)<\/script>/g)) {
-      if (m[1] && /\bsrc\s*=/.test(m[1])) continue;
+      if (m[1] && hasSrcAttribute(m[1])) continue;
       const line = html.slice(0, m.index).split("\n").length;
       blocks.push({ code: m[2], line });
     }
@@ -38,6 +39,14 @@ for (const name of readdirSync(dir).sort()) {
     }
   }
 }
+/** 開きタグの属性の並びに、名前がちょうど src の属性があるか（値の中の文字は見ない）。 */
+function hasSrcAttribute(attrs) {
+  for (const a of attrs.matchAll(/([^\s"'=<>\/]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?/g)) {
+    if (a[1].toLowerCase() === "src") return true;
+  }
+  return false;
+}
+
 if (checked === 0) {
   console.error(`検査する script が 1 つも無い: ${dir}`);
   process.exit(1);

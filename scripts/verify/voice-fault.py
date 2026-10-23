@@ -103,7 +103,11 @@ class Engine(http.server.BaseHTTPRequestHandler):
                         return
                     time.sleep(5)
                 return
-            body = b"RIFF garbage" if Engine.mode == "broken" else wav(silence(200), 24000)
+            if Engine.mode == "rate0":
+                # 頭は PCM16 だがサンプルレートが 0（検証係 2 巡目の例）
+                body = wav(silence(200), 0)
+            else:
+                body = b"RIFF garbage" if Engine.mode == "broken" else wav(silence(200), 24000)
             self.reply(200, body, "audio/wav")
         else:
             self.reply(404, b"")
@@ -214,6 +218,9 @@ check("V2 エンジンが無い（落ちず黙る）", alive_ and "話せなか�
 
 log, data, alive_ = run_case("tts-broken", "send:やあ", engine="broken", wait_for=("tts: 話せなかった", 1))
 check("V2 壊れた WAV は鳴らさない", alive_ and "エンジンが返した音を読めない" in log, f"hits={Engine.hits}")
+
+log, data, alive_ = run_case("tts-rate0", "send:やあ", engine="rate0", wait_for=("tts: 話せなかった", 1))
+check("V2 サンプルレート 0 の WAV は鳴らさず、待ち続けない", alive_ and "サンプルレートがおかしい" in log, "")
 
 log, data, alive_ = run_case("tts-slow", "send:一|wait:3000|send:二", engine="slow",
                              wait_for=("chat answer in", 2), max_secs=20)

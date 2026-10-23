@@ -43,6 +43,8 @@ const ENGINE_START_TIMEOUT: Duration = Duration::from_secs(90);
 const STALE_PHRASE: Duration = Duration::from_secs(5);
 /// ペットが起こしたエンジンを止めるまでの、話さなかった時間（エンジンは約 3.4GB を使う。2026-10-22 実測）。
 const ENGINE_IDLE: Duration = Duration::from_secs(600);
+/// 1 文の音を待つ上限（鳴らした音の長さをこれ以上は待たない）。
+const MAX_CLIP: Duration = Duration::from_secs(60);
 /// 受け取る音の上限（140 字で 1MB 前後）。
 const MAX_RESPONSE_BYTES: usize = 32 << 20;
 
@@ -279,20 +281,27 @@ fn play(wav: &[u8], info: voice::WavInfo) -> bool {
             return false;
         }
         // SAFETY: wav はこの関数が戻るまで生きていて、戻る前に下の停止で鳴りやむ
-        let _ = unsafe {
+        let started = unsafe {
             PlaySoundW(
                 PCWSTR(wav.as_ptr().cast()),
                 None,
                 SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
             )
         };
+        if !started.as_bool() {
+            // 鳴らせなかった音の長さぶん待たない（2026-10-23 検証係 2 巡目の指摘）
+            log("tts: 鳴らせなかった");
+            return ENABLED.load(Ordering::SeqCst);
+        }
     }
     let bytes_per_sec = (info.sample_rate as u64)
         .saturating_mul(info.channels as u64)
         .saturating_mul(info.bits_per_sample as u64 / 8)
         .max(1);
     // 長さは data の大きさから。少し余らせて、鳴り終わる前に止めて最後が欠けないようにする
-    let length = Duration::from_millis(info.data_len as u64 * 1000 / bytes_per_sec + 150);
+    // 上限 MAX_CLIP。1 文の音がこれより長いことは無い（140 字でも 30 秒ほど）。壊れた頭で何日も待たないように
+    let length =
+        Duration::from_millis(info.data_len as u64 * 1000 / bytes_per_sec + 150).min(MAX_CLIP);
     let started = Instant::now();
     while started.elapsed() < length && ENABLED.load(Ordering::SeqCst) {
         std::thread::sleep(Duration::from_millis(20));
@@ -319,6 +328,11 @@ fn synthesize(id: u32, text: &str) -> Result<(Vec<u8>, voice::WavInfo), String> 
     let Some(info) = voice::parse_wav(&wav) else {
         return Err("エンジンが返した音を読めない".into());
     };
+    // parse_wav はサンプルレートの値を見ない。0 や桁違いの値は、鳴らす長さの計算を壊すので鳴らさない
+    // （2026-10-23 検証係 2 巡目の指摘: sample_rate=0 で約 12 日待った。AivisSpeech は 24kHz・44.1kHz を返す）
+    if !(8_000..=192_000).contains(&info.sample_rate) {
+        return Err("エンジンが返した音のサンプルレートがおかしい".into());
+    }
     // RIFF の長さは parse_wav が見ない欄。PlaySoundW はこの欄を信じて読むので、実際の長さに書き直す
     // （中のチャンクが収まることは parse_wav が確かめた。2026-10-22 セキュリティレビューの指摘）
     let Ok(riff_len) = u32::try_from(wav.len() - 8) else {
