@@ -41,7 +41,10 @@ for (const name of readdirSync(dir).sort()) {
 }
 /** 開きタグの属性の並びに、名前がちょうど src の属性があるか（値の中の文字は見ない）。 */
 function hasSrcAttribute(attrs) {
-  for (const a of attrs.matchAll(/([^\s"'=<>\/]+)(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'=<>`]+))?/g)) {
+  // 区切りは HTML の空白だけ（\s は NBSP にも当たり、引用符なしの値の途中で切れて src と読んだ。3 巡目の指摘）
+  const ws = "\t\n\f\r ";
+  const re = new RegExp(`([^${ws}"'=<>/]+)(?:[${ws}]*=[${ws}]*(?:"[^"]*"|'[^']*'|[^${ws}"'=<>\`]+))?`, "g");
+  for (const a of attrs.matchAll(re)) {
     if (a[1].toLowerCase() === "src") return true;
   }
   return false;
