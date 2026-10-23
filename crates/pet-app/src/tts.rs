@@ -22,8 +22,11 @@ use std::time::{Duration, Instant};
 use pet_core::voice::{self, SpeechQueue, Utterance};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
 use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
-use windows::Win32::System::JobObjects::AssignProcessToJobObject;
-use windows::Win32::System::Threading::CREATE_NO_WINDOW;
+use windows::Win32::System::JobObjects::{
+    AssignProcessToJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+    JobObjectBasicAccountingInformation, QueryInformationJobObject,
+};
+use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 use windows::core::PCWSTR;
 
 use crate::log::log;
@@ -62,6 +65,10 @@ static PREWARMING: AtomicBool = AtomicBool::new(false);
 /// 「鳴らし始める」と「止める」を順に並べる鍵。オンを確かめてから鳴らし始めるまでの間にオフにされると、
 /// 止める呼び出しが空振りした後に鳴り始めていた（2026-10-23 検証係の指摘）。鳴らし始めと止めるは必ずこの鍵の中で行う
 static PLAY: Mutex<()> = Mutex::new(());
+/// 取り消しの世代。オフにするたびに進める。話し始めた時の世代と違えば、合成し終えていても鳴らさない
+/// （キューを消すだけでは、worker が取り出し済みの文や合成中の文は残り、オフ→オンで後から鳴った。
+/// 2026-10-24 検証係の指摘）
+static SPEAK_GEN: AtomicU64 = AtomicU64::new(0);
 /// エンジンが声のモデルを読み終えているか（起こし直したら false。1 回合成できたら true）。
 /// 起こした直後の 1 回目の合成は、モデルの読み込みで 4.8 秒かかった（2026-10-22 実測。2 回目からは 1 秒前後）
 static MODEL_WARM: AtomicBool = AtomicBool::new(false);
@@ -94,6 +101,9 @@ pub fn answer(text: &str) {
 /// 設定の「声で知らせる」。オフにしたら待っている文を捨て、話している途中でも止める（V4）。
 pub fn set_enabled(on: bool) {
     let was = ENABLED.swap(on, Ordering::SeqCst);
+    if !on {
+        SPEAK_GEN.fetch_add(1, Ordering::SeqCst);
+    }
     if was && !on {
         if let Ok(mut q) = QUEUE.lock()
             && let Some(q) = q.as_mut()
@@ -211,6 +221,7 @@ fn worker() {
 }
 
 fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<(), String> {
+    let generation = SPEAK_GEN.load(Ordering::SeqCst);
     ensure_engine()?;
     if is_fixed_phrase(text) && started.elapsed() > STALE_PHRASE {
         return Err("エンジンを起こすのに時間がかかったので固定文言を捨てた".into());
@@ -247,7 +258,7 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
                 .name("tts-synth".into())
                 .spawn(move || synthesize(id, &c))
         });
-        if !play(&wav, info) {
+        if !play(&wav, info, generation) {
             log(format!(
                 "tts: 途中で止めた（{:.1}s）",
                 started.elapsed().as_secs_f32()
@@ -278,10 +289,12 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
 /// 非同期（`SND_ASYNC`）で鳴らし始めるのは `PLAY` の鍵の中だけ。オフにする側も同じ鍵の中で止めるので、
 /// 「オンを見た → オフにされて空振りの停止 → 鳴り始める」の順にはならない。`SND_MEMORY` の音は鳴っている間
 /// バッファが生きている必要があるので、戻る前に必ず鍵の中で止めてから（鳴り終わっていても）バッファを手放す。
-fn play(wav: &[u8], info: voice::WavInfo) -> bool {
+fn play(wav: &[u8], info: voice::WavInfo, generation: u64) -> bool {
+    let wanted =
+        || ENABLED.load(Ordering::SeqCst) && SPEAK_GEN.load(Ordering::SeqCst) == generation;
     {
         let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
-        if !ENABLED.load(Ordering::SeqCst) {
+        if !wanted() {
             return false;
         }
         // SAFETY: wav はこの関数が戻るまで生きていて、戻る前に下の停止で鳴りやむ
@@ -295,7 +308,7 @@ fn play(wav: &[u8], info: voice::WavInfo) -> bool {
         if !started.as_bool() {
             // 鳴らせなかった音の長さぶん待たない（2026-10-23 検証係 2 巡目の指摘）
             log("tts: 鳴らせなかった");
-            return ENABLED.load(Ordering::SeqCst);
+            return wanted();
         }
     }
     let bytes_per_sec = (info.sample_rate as u64)
@@ -307,12 +320,12 @@ fn play(wav: &[u8], info: voice::WavInfo) -> bool {
     let length =
         Duration::from_millis(info.data_len as u64 * 1000 / bytes_per_sec + 150).min(MAX_CLIP);
     let started = Instant::now();
-    while started.elapsed() < length && ENABLED.load(Ordering::SeqCst) {
+    while started.elapsed() < length && wanted() {
         std::thread::sleep(Duration::from_millis(20));
     }
     let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
     stop_playback();
-    ENABLED.load(Ordering::SeqCst)
+    wanted()
 }
 
 /// 1 文を合成して、鳴らせる形に整えた WAV と、その長さを読むための頭の情報を返す。
@@ -407,8 +420,16 @@ fn start_engine(exe: &std::path::Path) -> Result<(), String> {
         return Err("内部の鍵".into());
     };
     if *slot != 0 {
-        // 起こしてまだ応答していないだけ（前の待ちが時間切れになる前に来た）
-        return Ok(());
+        if job_has_processes(*slot) {
+            // 起こしてまだ応答していないだけ（前の待ちが時間切れになる前に来た）
+            return Ok(());
+        }
+        // ペットが起こしたエンジンが落ちていた。ハンドルを捨てて起こし直す（2026-10-24 検証係の指摘:
+        // 残ったハンドルを「起こしている途中」と見て、90 秒待って答えを捨てていた）
+        // SAFETY: start_engine が作り、この鍵の中でしか触らないハンドル
+        let _ = unsafe { CloseHandle(HANDLE(*slot as *mut _)) };
+        *slot = 0;
+        log("tts: engine had exited; restarting");
     }
     let job = crate::child::new_kill_on_close_job().map_err(|e| format!("Job Object: {e}"))?;
     let spawned = Command::new(exe)
@@ -416,7 +437,9 @@ fn start_engine(exe: &std::path::Path) -> Result<(), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .creation_flags(CREATE_NO_WINDOW.0)
+        // 止めた状態で起こし、Job に入れてから動かす（動いてから入れると、その間に起こした孫が Job の外に
+        // 逃げる。チャットの子と同じ作法。2026-10-24 検証係の指摘）
+        .creation_flags((CREATE_NO_WINDOW | CREATE_SUSPENDED).0)
         .spawn();
     let child = match spawned {
         Ok(c) => c,
@@ -429,18 +452,37 @@ fn start_engine(exe: &std::path::Path) -> Result<(), String> {
     // SAFETY: child のハンドルは child が生きている間有効。job はいま作ったもの
     let assigned =
         unsafe { AssignProcessToJobObject(job, HANDLE(child.as_raw_handle() as *mut _)) };
-    if assigned.is_err() {
-        // Job に入れられないなら、残る恐れがあるので止める（エンジンは大きい）
+    let resumed = assigned.is_ok() && crate::child::resume_process(child.id()).is_ok();
+    if !resumed {
+        // Job に入れられない・動かせないなら止める（止めたまま残すとエンジンは大きい）
         let mut child = child;
         let _ = child.kill();
+        let _ = child.wait();
         // SAFETY: いま作ったハンドル
         let _ = unsafe { CloseHandle(job) };
-        return Err("エンジンを Job に入れられない".into());
+        return Err("エンジンを Job に入れて動かせない".into());
     }
     *slot = job.0 as isize;
     MODEL_WARM.store(false, Ordering::SeqCst);
     log("tts: engine started");
     Ok(())
+}
+
+/// Job の中にまだ動いているプロセスがあるか（読めなければ「ある」とみなして起こし直さない）。
+fn job_has_processes(job: isize) -> bool {
+    let mut info = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+    // SAFETY: job は start_engine が作った有効なハンドル（呼び出し側が ENGINE_JOB の鍵を持っている）。
+    // 構造体はこの関数の中で生きている
+    let read = unsafe {
+        QueryInformationJobObject(
+            Some(HANDLE(job as *mut _)),
+            JobObjectBasicAccountingInformation,
+            (&raw mut info).cast(),
+            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+            None,
+        )
+    };
+    read.is_err() || info.ActiveProcesses > 0
 }
 
 /// ペットが起こしたエンジンだけ止める（Job を閉じると中身ごと止まる）。
@@ -486,18 +528,29 @@ fn http(method: &str, path: &str, body: &[u8], timeout: Duration) -> Result<Vec<
     // エンジンが止まっている時に起こすまでの間が 2 秒延びていた（2026-10-22 実測。動いていれば一瞬でつながる）
     let mut s = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT.min(timeout))
         .map_err(|_| "エンジンにつながらない".to_string())?;
-    let _ = s.set_read_timeout(Some(timeout));
-    let _ = s.set_write_timeout(Some(timeout));
+    // 送ってから受け取り終わるまで全体に期限を付ける。書くたび・読むたびの時間切れだけだと、少しずつ
+    // 受け取る／返すエンジンに読み上げのスレッドをいつまでも占められる（2026-10-23・10-24 検証係の指摘）
+    let deadline = Instant::now() + timeout;
     let head = format!(
         "{method} {path} HTTP/1.1\r\nHost: {addr}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
         body.len()
     );
-    s.write_all(head.as_bytes())
-        .and_then(|_| s.write_all(body))
-        .map_err(|_| "送れない".to_string())?;
-    // 応答全体に期限を付ける。読むたびの時間切れだけだと、少しずつ返すエンジンに読み上げのスレッドを
-    // いつまでも占められる（2026-10-23 検証係の指摘）
-    let deadline = Instant::now() + timeout;
+    let mut out = head.into_bytes();
+    out.extend_from_slice(body);
+    let mut sent = 0;
+    while sent < out.len() {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err("送るのが遅すぎる".into());
+        }
+        let _ = s.set_write_timeout(Some(left));
+        match s.write(&out[sent..]) {
+            Ok(0) => return Err("送れない".into()),
+            Ok(n) => sent += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err("送れない".into()),
+        }
+    }
     let mut buf = Vec::new();
     let mut chunk = vec![0u8; 64 * 1024];
     loop {

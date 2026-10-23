@@ -89,7 +89,11 @@ pub fn toggle(app: AppHandle) {
     let spawned = std::thread::Builder::new()
         .name("voice".into())
         .spawn(move || {
-            let outcome = std::panic::catch_unwind(|| run(generation)).unwrap_or_else(|_| {
+            let run_app = app.clone();
+            let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                run(&run_app, generation)
+            }))
+            .unwrap_or_else(|_| {
                 log("voice: worker panicked");
                 Outcome::Failed("うまく動かなかったよ")
             });
@@ -171,8 +175,13 @@ fn finish(app: AppHandle, generation: u64, outcome: Outcome) {
             crate::ui::show_voice_text(&text);
             let reply = crate::chat::submit(app, text, crate::pet_window::chat_auth());
             if reply != "考え中…" {
-                // 送れなかった（考え中・長すぎる）。理由は吹き出しに
+                // 送れなかった（打ったチャットの返事を待っている・長すぎる）。聞き取った文は「送った」ように
+                // 見えないよう消し、吹き出しで知らせる（2026-10-24 検証係の指摘: 黙って送らず、文だけ出ていた）
+                crate::ui::clear_voice_text();
+                crate::ui::refresh_chat();
                 crate::pet_window::chat_finished(crate::chat::BEHAVIOR_SESSION, false);
+                crate::ui::show_status("話した文を送れなかったよ");
+                crate::tts::phrase("話した文を送れなかったよ");
                 log("voice: chat refused the transcript");
             }
         }
@@ -206,7 +215,7 @@ fn ours_for(generation: u64) -> impl Fn() -> bool + Send + 'static {
 /// （2026-10-22 の実測で、話し終えてから文字起こしが返るまで 6.3〜9.8 秒のうち 3〜5 秒がこの準備だった）。
 /// WAV のパスは録り終えてから標準入力で渡す。録音が取りやめになったら渡さずに閉じる（子は何もせず終わる）。
 /// AivisSpeech も同じ時に起こしておく（初回の 20 秒待ちを、話して考えている間に隠す）。
-fn run(generation: u64) -> Outcome {
+fn run(app: &AppHandle, generation: u64) -> Outcome {
     let ours = ours_for(generation);
     let started = Instant::now();
     let dir = data_dir().join("voice");
@@ -233,6 +242,8 @@ fn run(generation: u64) -> Outcome {
         }
     };
     RECORDING.store(false, Ordering::SeqCst);
+    // 録り終えたらバーのボタンを戻す（文字起こしの間も赤いまま「止めて送る」と出ていた。2026-10-24 検証係の指摘）
+    let _ = app.run_on_main_thread(crate::ui::refresh_bar);
     log(format!(
         "voice: recorded {:.1}s",
         samples.len() as f32 / voice::SAMPLE_RATE as f32
@@ -393,6 +404,8 @@ fn record_mic(
         return Err(Outcome::Failed("マイクを開けなかったよ"));
     }
     let mut next = 0;
+    // 実時間の期限。区切りの時間は届いた音で進むので、マイクが音を返さなくなると止まらない（2026-10-24 検証係の指摘）
+    let deadline = Instant::now() + Duration::from_millis(voice::MAX_RECORD_MS + 3_000);
     let reason = loop {
         if !ours() {
             break Err(Outcome::Cancelled);
@@ -407,6 +420,9 @@ fn record_mic(
         // SAFETY: h は有効な WAVEHDR。位置が揃っていない読みなので read_unaligned
         let flags = unsafe { std::ptr::addr_of!(h.dwFlags).read_unaligned() };
         if flags & WHDR_DONE == 0 {
+            if Instant::now() >= deadline {
+                break Err(Outcome::Failed("マイクが止まったよ"));
+            }
             std::thread::sleep(POLL);
             continue;
         }

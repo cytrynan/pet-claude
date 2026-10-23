@@ -237,7 +237,7 @@ pub fn run_child(r: ChildRun) -> Result<ChildOutput, Stop> {
 }
 
 /// 止めた状態で起こしたプロセスのスレッドを動かす（新しいプロセスのスレッドは 1 本）。
-fn resume_process(pid: u32) -> windows::core::Result<()> {
+pub fn resume_process(pid: u32) -> windows::core::Result<()> {
     // SAFETY: スナップショットのハンドルはこの関数の中で閉じる。構造体の大きさを先に入れる（API の約束）
     unsafe {
         let snap = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0)?;

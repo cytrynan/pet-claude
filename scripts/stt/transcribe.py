@@ -29,7 +29,9 @@ def main() -> int:
     except Exception as e:
         print(f"model load failed: {type(e).__name__}", file=sys.stderr)
         return 1
-    wav = sys.argv[1] if len(sys.argv) == 2 else sys.stdin.readline().strip()
+    # pet-app は UTF-8 で書く。-I では PYTHONIOENCODING が効かず標準入力は CP932 になるので、バイトで読んで
+    # UTF-8 として解く（日本語のユーザー名のフォルダで、パスが化けて開けなかった。2026-10-24 検証係の指摘）
+    wav = sys.argv[1] if len(sys.argv) == 2 else sys.stdin.buffer.readline().decode("utf-8").strip()
     if not wav:
         return 0
     started = time.perf_counter()

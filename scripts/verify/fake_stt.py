@@ -30,7 +30,7 @@ note("start")
 if mode == "sleep":
     time.sleep(600)
     sys.exit(0)
-wav = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.readline().strip()
+wav = sys.argv[1] if len(sys.argv) > 1 else sys.stdin.buffer.readline().decode("utf-8").strip()
 if not wav:
     note("no-path")
     sys.exit(0)

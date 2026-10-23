@@ -25,6 +25,7 @@ only = set(sys.argv[4].split(",")) if len(sys.argv) > 4 else None
 FAKE_STT = Path(__file__).with_name("fake_stt.py")
 results = []
 skipping = False
+stt_alive_before_kill = []
 
 
 def wav(samples, rate=16000):
@@ -143,7 +144,7 @@ def stt_got_path(data):
 
 
 def run_case(name, steps, *, engine="ok", tts=True, mic=None, stt="ok", stt_exe=None,
-             stt_timeout=None, wait_for=None, max_secs=30, kill_after=None, addr=None):
+             stt_timeout=None, wait_for=None, max_secs=30, kill_after=None, addr=None, extra=None):
     """pet-app を 1 回起動し、`wait_for` の文がログに出るまで待って止める。(ログ, データのフォルダ, 生きているか)"""
     global skipping
     data = work / name
@@ -163,6 +164,7 @@ def run_case(name, steps, *, engine="ok", tts=True, mic=None, stt="ok", stt_exe=
         env["PET_TEST_VOICE_WAV"] = str(mic)
     if stt_timeout:
         env["PET_STT_TIMEOUT_SECS"] = str(stt_timeout)
+    env.update(extra or {})
     app = subprocess.Popen([app_exe], env=env)
     log_path = data / "logs" / "pet.log"
     started = time.monotonic()
@@ -180,6 +182,10 @@ def run_case(name, steps, *, engine="ok", tts=True, mic=None, stt="ok", stt_exe=
             break
         time.sleep(0.2)
     app_alive = app.poll() is None
+    # アプリを落とす前に子・孫が残っていないかを見る（落とすと Job が閉じて消えるので、後で見ると
+    # 時間切れで止められなかった退行を見逃す。2026-10-24 検証係の指摘）
+    global stt_alive_before_kill
+    stt_alive_before_kill = [p for p in stt_pids(data) if alive(p)]
     if app_alive:
         app.kill()
         app.wait(timeout=10)
@@ -210,7 +216,8 @@ ENGINE_ADDR = f"127.0.0.1:{srv.server_address[1]}"
 
 # --- 読み上げ ---
 log, data, alive_ = run_case("tts-ok", "send:やあ", wait_for=("tts: ", 1))
-check("読み上げ: 答えを合成して鳴らす", alive_ and "1 文目を" in log and "/synthesis" in Engine.hits
+check("読み上げ: 答えを合成して鳴らす", alive_ and "1 文目を" in log and "話し終えた" in log
+      and "鳴らせなかった" not in log and "/synthesis" in Engine.hits
       and "/speakers" in Engine.hits, f"hits={Engine.hits}")
 check("N4 ログに読んだ文が無い", "受け取ったよ" not in log, "ログを grep")
 
@@ -242,6 +249,21 @@ stopped = [x for x in log.splitlines() if "途中で止めた" in x]
 secs = float(stopped[-1].split("（")[-1].rstrip("s）")) if stopped else None
 check("V4 話している途中でオフにすると止まる", alive_ and "tts: off" in log and secs is not None and secs < 3.5
       and "話し終えた" not in log, f"止めた={secs}s（音は 4 秒）")
+
+# エンジンを起こす時に、その孫まで Job に入る（止めて起こしてから Job に入れる）。偽のエンジン＝偽の claude の
+# slow（孫を起こして眠る）を run.exe という名前で置き、チャット欄を開いて先に起こさせ、アプリを落とす
+eng_dir = work / "fake-engine"
+eng_dir.mkdir(parents=True, exist_ok=True)
+(eng_dir / "run.exe").write_bytes(Path(fake_claude).read_bytes())
+(eng_dir / "fake-pids.txt").unlink(missing_ok=True)
+log, data, alive_ = run_case("tts-engine-job", "ui:chat|wait:4000", addr="127.0.0.1:9",
+                             extra={"PET_TEST_AIVIS_EXE": str(eng_dir / "run.exe"), "FAKE_MODE": "slow"},
+                             wait_for=("test chat: never", 1), max_secs=7)
+time.sleep(1.5)
+eng_pids = [int(x.split()[0]) for x in (eng_dir / "fake-pids.txt").read_text().splitlines()] \
+    if (eng_dir / "fake-pids.txt").exists() else []
+check("エンジンとその孫は Job に入り、アプリが落ちると残らない", "tts: engine started" in log
+      and len(eng_pids) >= 2 and not [p for p in eng_pids if alive(p)], f"pids={eng_pids}")
 
 log, data, alive_ = run_case("tts-off", "send:やあ", tts=False, wait_for=("chat answer in", 1))
 time.sleep(1.0)
@@ -297,7 +319,8 @@ time.sleep(1.0)
 pids = stt_pids(data)
 left = [p for p in pids if alive(p)]
 check("V8 時間切れ", alive_ and "文字起こしが終わらなかったよ" in log and not wavs_left(data), "")
-check("V10 時間切れで子と孫が残らない", len(pids) >= 2 and not left, f"pids={pids} 残り={left}")
+check("V10 時間切れで子と孫が残らない（アプリを落とす前に）", len(pids) >= 2 and not left
+      and not stt_alive_before_kill, f"pids={pids} 残り={left} 落とす前に生きていた={stt_alive_before_kill}")
 
 log, data, alive_ = run_case("voice-crash", "ui:voice", mic=SPEECH, stt="slow", kill_after="voice: recorded")
 time.sleep(2.0)
@@ -309,6 +332,11 @@ check("V10 アプリが落ちても子と孫が残らない", len(pids) >= 2 and
 (work / "voice-leftover" / "voice" / "rec-99.wav").write_bytes(b"x")
 log, data, alive_ = run_case("voice-leftover", "wait:500", wait_for=("start ", 1))
 check("V9 起動時に前回の WAV を消す", not wavs_left(data), f"残り={wavs_left(data)}")
+
+# 日本語の名前のフォルダでも、文字起こしに WAV のパスが化けずに届く（標準入力は UTF-8 で読む）
+log, data, alive_ = run_case("voice-日本語", "ui:voice", mic=SPEECH, wait_for=("chat answer in", 1))
+check("日本語のフォルダ名でも WAV のパスが届く", any("exists=True" in x for x in stt_log(data))
+      and "chat answer in" in log, stt_got_path(data)[:1])
 
 log, data, alive_ = run_case("voice-busy", "send:やあ|ui:voice", mic=SPEECH, wait_for=("chat answer in", 1))
 check("チャットの返答待ちの間は録音を始めない", "voice: start" not in log, "")
