@@ -79,9 +79,7 @@
     // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）
     answer.hidden = !has && !busy;
     answer.classList.toggle("error", !!(s && s.error));
-    const said = s && typeof s.heard === "string" ? "「" + s.heard + "」
-
-" : "";
+    const said = s && typeof s.heard === "string" ? "「" + s.heard + "」\n\n" : "";
     answerText.textContent = said + (busy ? "考え中…" : (has ? s.answer : ""));
     answer.classList.toggle("busy", busy);
     answerText.scrollTop = 0;

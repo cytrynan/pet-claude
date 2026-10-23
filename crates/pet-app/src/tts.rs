@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 
 use pet_core::voice::{self, SpeechQueue, Utterance};
 use windows::Win32::Foundation::{CloseHandle, HANDLE};
-use windows::Win32::Media::Audio::{PlaySoundW, SND_MEMORY, SND_NODEFAULT, SND_SYNC};
+use windows::Win32::Media::Audio::{PlaySoundW, SND_ASYNC, SND_MEMORY, SND_NODEFAULT};
 use windows::Win32::System::JobObjects::AssignProcessToJobObject;
 use windows::Win32::System::Threading::CREATE_NO_WINDOW;
 use windows::core::PCWSTR;
@@ -57,6 +57,9 @@ static ENGINE_JOB: Mutex<isize> = Mutex::new(0);
 /// （先に起こしたエンジンを、話す前に「暇」として止めないように、先に起こした時も進める）。
 static LAST_ACTIVE_MS: AtomicU64 = AtomicU64::new(0);
 static PREWARMING: AtomicBool = AtomicBool::new(false);
+/// 「鳴らし始める」と「止める」を順に並べる鍵。オンを確かめてから鳴らし始めるまでの間にオフにされると、
+/// 止める呼び出しが空振りした後に鳴り始めていた（2026-10-23 検証係の指摘）。鳴らし始めと止めるは必ずこの鍵の中で行う
+static PLAY: Mutex<()> = Mutex::new(());
 /// エンジンが声のモデルを読み終えているか（起こし直したら false。1 回合成できたら true）。
 /// 起こした直後の 1 回目の合成は、モデルの読み込みで 4.8 秒かかった（2026-10-22 実測。2 回目からは 1 秒前後）
 static MODEL_WARM: AtomicBool = AtomicBool::new(false);
@@ -95,6 +98,8 @@ pub fn set_enabled(on: bool) {
         {
             q.clear();
         }
+        // 鳴らし始めの最中なら、それが終わってから止める（後から鳴り始めない）
+        let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
         stop_playback();
         log("tts: off");
     }
@@ -109,6 +114,9 @@ pub fn prewarm() {
         return;
     }
     LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
+    // 暇になったエンジンを止めるのは worker の見張り。先に起こしただけで一度も話さなくても止まるように、
+    // ここでも worker を起こしておく（2026-10-23 検証係の指摘: 話さないと worker が無く、エンジンが残り続けた）
+    ensure_worker();
     let spawned = std::thread::Builder::new()
         .name("tts-prewarm".into())
         .spawn(|| {
@@ -222,7 +230,7 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
     let mut next = chunks.first().map(|c| synthesize(id, c));
     for (i, _) in chunks.iter().enumerate() {
         let Some(current) = next.take() else { break };
-        let wav = current?;
+        let (wav, info) = current?;
         MODEL_WARM.store(true, Ordering::SeqCst);
         if i == 0 {
             log(format!(
@@ -237,17 +245,9 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
                 .name("tts-synth".into())
                 .spawn(move || synthesize(id, &c))
         });
-        if !ENABLED.load(Ordering::SeqCst) {
+        if !play(&wav, info) {
             return Ok(());
         }
-        // SAFETY: wav は鳴り終わる（SND_SYNC で戻る）まで生きている。止めるのは別スレッドの PlaySoundW(NULL)
-        let _ = unsafe {
-            PlaySoundW(
-                PCWSTR(wav.as_ptr().cast()),
-                None,
-                SND_MEMORY | SND_SYNC | SND_NODEFAULT,
-            )
-        };
         next = match ahead {
             None => None,
             Some(Ok(handle)) => Some(
@@ -258,11 +258,52 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
             Some(Err(_)) => Some(Err("合成のスレッドを作れない".into())),
         };
     }
+    // 文の数と秒数だけ（読み上げが途中で切れていないかの切り分け用。文そのものは書かない＝N4）
+    log(format!(
+        "tts: {} 文を話し終えた（{:.1}s）",
+        chunks.len(),
+        started.elapsed().as_secs_f32()
+    ));
     Ok(())
 }
 
-/// 1 文を合成して、鳴らせる形に整えた WAV を返す。
-fn synthesize(id: u32, text: &str) -> Result<Vec<u8>, String> {
+/// WAV を鳴らし、鳴り終わるか「声で知らせる」がオフになるまで待つ。オフで鳴らさなかった・止めたら false。
+///
+/// 非同期（`SND_ASYNC`）で鳴らし始めるのは `PLAY` の鍵の中だけ。オフにする側も同じ鍵の中で止めるので、
+/// 「オンを見た → オフにされて空振りの停止 → 鳴り始める」の順にはならない。`SND_MEMORY` の音は鳴っている間
+/// バッファが生きている必要があるので、戻る前に必ず鍵の中で止めてから（鳴り終わっていても）バッファを手放す。
+fn play(wav: &[u8], info: voice::WavInfo) -> bool {
+    {
+        let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
+        if !ENABLED.load(Ordering::SeqCst) {
+            return false;
+        }
+        // SAFETY: wav はこの関数が戻るまで生きていて、戻る前に下の停止で鳴りやむ
+        let _ = unsafe {
+            PlaySoundW(
+                PCWSTR(wav.as_ptr().cast()),
+                None,
+                SND_MEMORY | SND_ASYNC | SND_NODEFAULT,
+            )
+        };
+    }
+    let bytes_per_sec = (info.sample_rate as u64)
+        .saturating_mul(info.channels as u64)
+        .saturating_mul(info.bits_per_sample as u64 / 8)
+        .max(1);
+    // 長さは data の大きさから。少し余らせて、鳴り終わる前に止めて最後が欠けないようにする
+    let length = Duration::from_millis(info.data_len as u64 * 1000 / bytes_per_sec + 150);
+    let started = Instant::now();
+    while started.elapsed() < length && ENABLED.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
+    stop_playback();
+    ENABLED.load(Ordering::SeqCst)
+}
+
+/// 1 文を合成して、鳴らせる形に整えた WAV と、その長さを読むための頭の情報を返す。
+fn synthesize(id: u32, text: &str) -> Result<(Vec<u8>, voice::WavInfo), String> {
     let query = http(
         "POST",
         &format!("/audio_query?speaker={id}&text={}", percent_encode(text)),
@@ -275,16 +316,16 @@ fn synthesize(id: u32, text: &str) -> Result<Vec<u8>, String> {
         &query,
         SYNTH_TIMEOUT,
     )?;
-    if voice::parse_wav(&wav).is_none() {
+    let Some(info) = voice::parse_wav(&wav) else {
         return Err("エンジンが返した音を読めない".into());
-    }
+    };
     // RIFF の長さは parse_wav が見ない欄。PlaySoundW はこの欄を信じて読むので、実際の長さに書き直す
     // （中のチャンクが収まることは parse_wav が確かめた。2026-10-22 セキュリティレビューの指摘）
     let Ok(riff_len) = u32::try_from(wav.len() - 8) else {
         return Err("エンジンが返した音が大きすぎる".into());
     };
     wav[4..8].copy_from_slice(&riff_len.to_le_bytes());
-    Ok(wav)
+    Ok((wav, info))
 }
 
 fn is_fixed_phrase(text: &str) -> bool {
@@ -436,12 +477,36 @@ fn http(method: &str, path: &str, body: &[u8], timeout: Duration) -> Result<Vec<
     s.write_all(head.as_bytes())
         .and_then(|_| s.write_all(body))
         .map_err(|_| "送れない".to_string())?;
+    // 応答全体に期限を付ける。読むたびの時間切れだけだと、少しずつ返すエンジンに読み上げのスレッドを
+    // いつまでも占められる（2026-10-23 検証係の指摘）
+    let deadline = Instant::now() + timeout;
     let mut buf = Vec::new();
-    s.take(MAX_RESPONSE_BYTES as u64 + 1)
-        .read_to_end(&mut buf)
-        .map_err(|_| "応答が来ない".to_string())?;
-    if buf.len() > MAX_RESPONSE_BYTES {
-        return Err("応答が大きすぎる".into());
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        if left.is_zero() {
+            return Err("応答が遅すぎる".into());
+        }
+        let _ = s.set_read_timeout(Some(left));
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if buf.len() > MAX_RESPONSE_BYTES {
+                    return Err("応答が大きすぎる".into());
+                }
+            }
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+                ) =>
+            {
+                return Err("応答が遅すぎる".into());
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(_) => return Err("応答が来ない".into()),
+        }
     }
     match parse_response(&buf) {
         Some((code, body)) if (200..300).contains(&code) => Ok(body),

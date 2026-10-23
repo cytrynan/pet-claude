@@ -89,6 +89,20 @@ class Engine(http.server.BaseHTTPRequestHandler):
         elif self.path.startswith("/synthesis"):
             if Engine.mode == "slow":
                 time.sleep(40)
+            if Engine.mode == "drip":
+                # 頭だけ返し、本文を 5 秒ごとに 1 バイト（読むたびの時間切れには当たらない）
+                self.send_response(200)
+                self.send_header("Content-Type", "audio/wav")
+                self.send_header("Content-Length", "100000")
+                self.end_headers()
+                for _ in range(20):
+                    try:
+                        self.wfile.write(b"R")
+                        self.wfile.flush()
+                    except OSError:
+                        return
+                    time.sleep(5)
+                return
             body = b"RIFF garbage" if Engine.mode == "broken" else wav(silence(200), 24000)
             self.reply(200, body, "audio/wav")
         else:
@@ -205,6 +219,11 @@ log, data, alive_ = run_case("tts-slow", "send:一|wait:3000|send:二", engine="
                              wait_for=("chat answer in", 2), max_secs=20)
 check("V2 エンジンが遅くてもチャットは進む", alive_ and log.count("chat answer in") == 2,
       f"answers={log.count('chat answer in')}")
+
+log, data, alive_ = run_case("tts-drip", "send:やあ", engine="drip", wait_for=("tts: 話せなかった", 1),
+                             max_secs=60)
+check("V2 少しずつ返すエンジンでも期限（30 秒）で諦める", alive_ and "応答が遅すぎる" in log,
+      [x[24:] for x in log.splitlines() if "tts:" in x][-1:])
 
 log, data, alive_ = run_case("tts-off", "send:やあ", tts=False, wait_for=("chat answer in", 1))
 time.sleep(1.0)
