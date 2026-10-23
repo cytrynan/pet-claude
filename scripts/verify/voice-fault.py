@@ -104,9 +104,14 @@ class Engine(http.server.BaseHTTPRequestHandler):
                         return
                     time.sleep(5)
                 return
-            if Engine.mode == "long":
-                # 4 秒の無音（話している途中でオフにする試験。V4）
-                body = wav(silence(4000), 24000)
+            if Engine.mode == "slowsynth":
+                # 合成に 3 秒かかる（合成の最中にオフ→オンにする試験）
+                time.sleep(3)
+                body = wav(silence(200), 24000)
+            elif Engine.mode == "long":
+                # 24kHz で 4 秒の無音（話している途中でオフにする試験。V4）。silence() は 16kHz で数えるので
+                # 24kHz の 4 秒ぶん（96000 サンプル）を直接作る（2026-10-24 検証係の指摘: 2.67 秒しか無かった）
+                body = wav([0] * 96000, 24000)
             elif Engine.mode == "rate0":
                 # 頭は PCM16 だがサンプルレートが 0（検証係 2 巡目の例）
                 body = wav(silence(200), 0)
@@ -245,10 +250,25 @@ check("V2 少しずつ返すエンジンでも期限（30 秒）で諦める", a
 # V4: 話している途中で「声で知らせる」をオフにすると止まる（4 秒の音を 1 秒ほどで止める）
 log, data, alive_ = run_case("tts-off-mid", "send:やあ|wait:2500|tts:off|wait:1500", engine="long",
                              wait_for=("test chat: never", 1), max_secs=12)
+def stamp(line):
+    # ログの頭の時刻（"2026-10-24 00:12:26.031"）を秒に
+    t = line[11:23]
+    h, m, s_ = t.split(":")
+    return int(h) * 3600 + int(m) * 60 + float(s_)
+
+
+off = [x for x in log.splitlines() if "tts: off" in x]
 stopped = [x for x in log.splitlines() if "途中で止めた" in x]
-secs = float(stopped[-1].split("（")[-1].rstrip("s）")) if stopped else None
-check("V4 話している途中でオフにすると止まる", alive_ and "tts: off" in log and secs is not None and secs < 3.5
-      and "話し終えた" not in log, f"止めた={secs}s（音は 4 秒）")
+gap = stamp(stopped[-1]) - stamp(off[-1]) if off and stopped else None
+# オフにしてから止まるまでが短いこと（止まらない退行なら、残りの音の長さ＝約 1.5 秒かかる）
+check("V4 話している途中でオフにすると止まる", alive_ and gap is not None and gap < 0.3
+      and "話し終えた" not in log, f"オフ→止めた={gap}s（音は 4 秒・オフは 2.5 秒目）")
+
+# オフ→オンで、合成の最中だった答えが後から鳴らない（取り消しの世代）
+log, data, alive_ = run_case("tts-off-on", "send:やあ|wait:1200|tts:off|tts:on|wait:4000", engine="slowsynth",
+                             wait_for=("test chat: never", 1), max_secs=10)
+check("V4 オフ→オンで取り消した答えが後から鳴らない", alive_ and "tts: off" in log and "途中で止めた" in log
+      and "話し終えた" not in log, [x[24:] for x in log.splitlines() if "tts:" in x][-2:])
 
 # エンジンを起こす時に、その孫まで Job に入る（止めて起こしてから Job に入れる）。偽のエンジン＝偽の claude の
 # slow（孫を起こして眠る）を run.exe という名前で置き、チャット欄を開いて先に起こさせ、アプリを落とす
@@ -337,6 +357,12 @@ check("V9 起動時に前回の WAV を消す", not wavs_left(data), f"残り={w
 log, data, alive_ = run_case("voice-日本語", "ui:voice", mic=SPEECH, wait_for=("chat answer in", 1))
 check("日本語のフォルダ名でも WAV のパスが届く", any("exists=True" in x for x in stt_log(data))
       and "chat answer in" in log, stt_got_path(data)[:1])
+
+# 録音の最中に打ったチャットを送り、その返事を待っている間に文字起こしが終わる → 送れなかったと知らせる
+log, data, alive_ = run_case("voice-typed-meanwhile", "ui:voice|wait:600|send:やあ", mic=SPEECH,
+                             extra={"FAKE_MODE": "slow"}, wait_for=("voice: chat refused", 1), max_secs=20)
+check("打ったチャットと重なった文字起こしは送らず知らせる", "voice: chat refused the transcript; told the user" in log
+      and log.count("chat send") == 1, f"chat send={log.count('chat send')}")
 
 log, data, alive_ = run_case("voice-busy", "send:やあ|ui:voice", mic=SPEECH, wait_for=("chat answer in", 1))
 check("チャットの返答待ちの間は録音を始めない", "voice: start" not in log, "")

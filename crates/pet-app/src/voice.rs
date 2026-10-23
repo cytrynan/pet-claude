@@ -179,10 +179,13 @@ fn finish(app: AppHandle, generation: u64, outcome: Outcome) {
                 // 見えないよう消し、吹き出しで知らせる（2026-10-24 検証係の指摘: 黙って送らず、文だけ出ていた）
                 crate::ui::clear_voice_text();
                 crate::ui::refresh_chat();
-                crate::pet_window::chat_finished(crate::chat::BEHAVIOR_SESSION, false);
+                // 打ったチャットがまだ考え中なら、その「考え中」の動きを失敗で終わらせない（同じセッション名）
+                if !crate::chat::busy() {
+                    crate::pet_window::chat_finished(crate::chat::BEHAVIOR_SESSION, false);
+                }
                 crate::ui::show_status("話した文を送れなかったよ");
                 crate::tts::phrase("話した文を送れなかったよ");
-                log("voice: chat refused the transcript");
+                log("voice: chat refused the transcript; told the user");
             }
         }
         Outcome::Failed(why) => {
