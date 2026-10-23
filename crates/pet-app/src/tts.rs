@@ -248,6 +248,10 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
                 .spawn(move || synthesize(id, &c))
         });
         if !play(&wav, info) {
+            log(format!(
+                "tts: 途中で止めた（{:.1}s）",
+                started.elapsed().as_secs_f32()
+            ));
             return Ok(());
         }
         next = match ahead {

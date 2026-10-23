@@ -112,6 +112,10 @@ fn chat_for_tests(app: tauri::AppHandle) {
                     let reply = chat::submit(handle, text, pet_window::chat_auth());
                     log(format!("test chat: submit -> {reply}"));
                 });
+            } else if let Some(on) = step.strip_prefix("tts:") {
+                // 設定画面の「声で知らせる」と同じ関数（話している途中でオフにして止まるかの試験。V4）
+                tts::set_enabled(on == "on");
+                log(format!("test chat: tts -> {on}"));
             } else if step == "new" {
                 let _ = app.run_on_main_thread(ui::new_chat);
             } else if step == "auth" {

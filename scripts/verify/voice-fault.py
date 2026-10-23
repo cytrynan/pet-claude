@@ -103,7 +103,10 @@ class Engine(http.server.BaseHTTPRequestHandler):
                         return
                     time.sleep(5)
                 return
-            if Engine.mode == "rate0":
+            if Engine.mode == "long":
+                # 4 秒の無音（話している途中でオフにする試験。V4）
+                body = wav(silence(4000), 24000)
+            elif Engine.mode == "rate0":
                 # 頭は PCM16 だがサンプルレートが 0（検証係 2 巡目の例）
                 body = wav(silence(200), 0)
             else:
@@ -231,6 +234,14 @@ log, data, alive_ = run_case("tts-drip", "send:やあ", engine="drip", wait_for=
                              max_secs=60)
 check("V2 少しずつ返すエンジンでも期限（30 秒）で諦める", alive_ and "応答が遅すぎる" in log,
       [x[24:] for x in log.splitlines() if "tts:" in x][-1:])
+
+# V4: 話している途中で「声で知らせる」をオフにすると止まる（4 秒の音を 1 秒ほどで止める）
+log, data, alive_ = run_case("tts-off-mid", "send:やあ|wait:2500|tts:off|wait:1500", engine="long",
+                             wait_for=("test chat: never", 1), max_secs=12)
+stopped = [x for x in log.splitlines() if "途中で止めた" in x]
+secs = float(stopped[-1].split("（")[-1].rstrip("s）")) if stopped else None
+check("V4 話している途中でオフにすると止まる", alive_ and "tts: off" in log and secs is not None and secs < 3.5
+      and "話し終えた" not in log, f"止めた={secs}s（音は 4 秒）")
 
 log, data, alive_ = run_case("tts-off", "send:やあ", tts=False, wait_for=("chat answer in", 1))
 time.sleep(1.0)
