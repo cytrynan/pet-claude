@@ -39,6 +39,7 @@ build/
 
 # ↓ /init-stack 実行で言語固有のエントリがここに追記されます
 target/
+__pycache__/
 
 # Tauri が生成するスキーマ
 crates/pet-app/gen/

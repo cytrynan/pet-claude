@@ -9,6 +9,15 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-24
+* **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md) — U3 を決定に（まめドラゴンを本番素材にする）。roadmap の Phase 4 の本番素材を決定済みに (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §6 のウェイクワードを実装どおりに（Python の子・openWakeWord の特徴抽出＋ペットごとの頭・学習と判定の道具・置き場所・ライセンス CC BY-NC-SA 4.0） (kuroko/claude-opus-5-5)
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 のウェイクワードを「学習と判定の道具まで。数字はダウンロードと K の録音待ち」に (kuroko/claude-opus-5-5)
+
+## 2026-10-23
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 の自動起動（実装済み）とウェイクワード（道具まで）の進み具合 (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md) — §7 に自動起動（Windows タスク・run-hidden.vbs・schtasks の XML・CLI）を実装どおりに (kuroko/claude-opus-5-5)
+
 ## 2026-10-22
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ウェイクワードをペットごとに持つ（pet.json の wakeWord・まめドラゴンは「まめちゃん」・設定画面のペットの下に出す・build_pet は手で足した項目を残す）、U2 を決定に (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §3-b チャット欄の閉じ方を「ペットの左クリックだけ」に（フォーカスの喪失・外のクリック・Esc・ドラッグでは閉じず、ペットについて行く）。マウスフックはバーかメニューが出ている間だけ (kuroko/claude-opus-5-5 ← human:K)

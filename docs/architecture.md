@@ -215,7 +215,7 @@ Grabbed（ドラッグ中）
 |---|---|---|
 | TTS | AivisSpeech `POST /audio_query` → `POST /synthesis`（`127.0.0.1:10101`、天深シノ・ノーマル。ai-news の `dev\ai-news-routine\lib\radio.mjs` と同じエンジンと話者） | 起動していなければ黙って無効 |
 | STT | whisper.cpp（whisper-rs）か faster-whisper（サイドカー）。日本語・ローカル | 設定画面で案内 |
-| ウェイクワード | openWakeWord（`ort` かサイドカー）。K の録音で独自モデル | 既定 OFF |
+| ウェイクワード | Python の子（`scripts/wake/listen.py`。声の環境の numpy・onnxruntime で動かし、openwakeword のパッケージは入れない）。openWakeWord の特徴抽出（`melspectrogram.onnx`→`embedding_model.onnx`、80ms ごとに 96 次元）の上に、ペットごとの小さな頭（直近 1.28 秒を見る 1536→32→1）を載せる。頭は AivisSpeech の合成（`synth.py`）と K の録音（`record-wake.ps1`）から `train.py` で学習し、しきい値は `evaluate.py` が誤反応の上限から決める。モデル・録音・頭は `%LOCALAPPDATA%\pet-claude\wake\` に置き、リポジトリに入れない。特徴抽出と公開の否定データは CC BY-NC-SA 4.0（非営利の個人利用）。2026-10-24 時点で学習の道具まで。マイクにつなぐのは声の PR #25 のマージ後（詳細は `.steering/20261023-phase4/design.md` §2） | 既定 OFF。頭が無い・子が落ちても pet-app は動き続ける（W5） |
 | チャット | `claude -p` を送信ごとに子プロセスで起こす（§6.1。PRD U1 決定 2026-10-21） | 見つからない・未ログイン・時間切れは吹き出しに短い理由 |
 
 話す文言は固定文言＋検証済みの短文のみ（1〜140 字・単一行・コード/URL/パス/秘密らしい文字列は拒否）。
@@ -243,7 +243,7 @@ Grabbed（ドラッグ中）
 - チャットの API キー: Windows の資格情報マネージャー（自分のユーザーだけが読める。§6.1）。`state.json` には書かない
 - `%LOCALAPPDATA%\pet-claude\chat\`: チャットの作業フォルダと話し方の指示（§6.1）
 - `%LOCALAPPDATA%\pet-claude\logs\pet.log`: 起動・配置・クリック・ドラッグ・DPI 変化。`PET_TRACE=1` でドラッグ中の座標も書く
-- 自動起動は Windows タスク（`run-hidden.vbs` 経由）。Phase 4
+- 自動起動（Phase 4・2026-10-23 実装）: 設定の「サインインしたらペットを出す」で Windows タスク `pet-claude` を登録・解除する。実物はタスク スケジューラで、`state.json` には持たない（設定画面は開くたびに読む）。中身は `pet_core::autostart::task_xml`（`%SystemRoot%\System32\wscript.exe //B //Nologo "%USERPROFILE%\.claude\scripts\run-hidden.vbs" pet-claude "<いまの pet-app.exe>"`、このユーザーのサインインから 10 秒後・時間の上限なし（既定の 72 時間で止まらないように）・電池でも動く・優先度 4（既定 7 は通常未満）・二重に起こさない）。登録は `crates/pet-app/src/autostart.rs` が `schtasks /Create /XML`（UTF-16LE＋BOM の一時ファイル）で行う。`run-hidden.vbs` が無ければ登録しない。CLI: `--install-autostart [--task-name <名前>] [--disabled]`・`--uninstall-autostart`・`--autostart-status`（試験は無効のタスクを別名で作ってすぐ消す）。記録 `.steering/20261023-phase4/`
 
 ## 8. 検証
 
