@@ -1,0 +1,46 @@
+2026-10-24 15:56:00.710 chat: exit=0 is_error=false
+2026-10-24 15:56:05.208 chat: exit=0 is_error=false
+2026-10-24 15:56:09.583 chat: exit=0 is_error=false
+2026-10-24 15:56:13.544 chat: exit=0 is_error=false
+2026-10-24 15:56:17.431 chat: exit=0 is_error=false
+2026-10-24 15:56:20.282 chat: exit=0 is_error=false
+2026-10-24 15:56:24.766 chat: exit=0 is_error=false
+2026-10-24 15:56:59.306 chat: exit=0 is_error=false
+2026-10-24 15:57:11.356 chat: exit=0 is_error=false
+2026-10-24 15:57:31.532 chat: exit=0 is_error=false
+2026-10-24 15:57:39.115 chat: exit=0 is_error=false
+2026-10-24 15:57:45.057 chat: exit=0 is_error=false
+2026-10-24 15:59:09.960 chat: exit=0 is_error=false
+2026-10-24 15:59:21.674 chat: exit=0 is_error=false
+PASS 読み上げ: 答えを合成して鳴らす: hits=['/version', '/speakers', '/audio_query', '/synthesis']
+PASS N4 ログに読んだ文が無い: ログを grep
+PASS V2 エンジンが無い（落ちず黙る）: 2026-10-24 15:56:05.882 clip working loaded in 978 ms: 5125 KB (cache 12996 KB)
+PASS V2 壊れた WAV は鳴らさない: hits=['/version', '/speakers', '/audio_query', '/synthesis']
+PASS V2 サンプルレート 0 の WAV は鳴らさず、待ち続けない: 
+PASS V2 エンジンが遅くてもチャットは進む: answers=2
+PASS V2 少しずつ返すエンジンでも期限（30 秒）で諦める: ['tts: 話せなかった（応答が遅すぎる）']
+PASS V4 話している途中でオフにすると止まる: オフ→止めた=0.0010000000038417056s（音は 4 秒・オフは 2.5 秒目）
+PASS V4 オフ→オンで取り消した答えが後から鳴らない: ['tts: 11 字（1 文）の 1 文目を 3.0s で合成', 'tts: 途中で止めた（3.0s）']
+PASS エンジンとその孫は Job に入り、アプリが落ちると残らない: pids=[29192, 79976]
+PASS V4 声がオフなら話さない: hits=[]
+PASS S11 録音→文字起こし→チャット→答え: stt=2
+PASS V9 文字起こしには WAV が渡り、終わったら消える: 残り=[]
+PASS V5 話し終えて黙ると止まる（2.5 秒前後）: ['2026-10-24 15:57:38.775 voice: recorded 2.6s']
+PASS V5 もう一度押すと止めて送る: ['2026-10-24 15:57:44.753 voice: recorded 1.5s']
+PASS V5 5 秒話さなければ取りやめ: stt=['57704 ok start', '57704 ok no-path']
+PASS 文字起こしの子は録音の前に起き、取りやめならパスを受けずに終わる: stt=['57704 ok start', '57704 ok no-path']
+PASS V8 全部 0（マイクを止められている）: 
+PASS V8 ほぼ無音（ミュートのマイクの形・最大振幅 1）: 
+PASS V7 幻聴は送らない: 
+PASS V7 空の結果は送らない: 
+PASS V8 壊れた出力: 
+PASS V8 文字起こしの道具が無い: 
+PASS V8 時間切れ: 
+PASS V10 時間切れで子と孫が残らない（アプリを落とす前に）: pids=[35408, 46992] 残り=[] 落とす前に生きていた=[]
+PASS V10 アプリが落ちても子と孫が残らない: pids=[98760, 114432] 残り=[]
+PASS V9 起動時に前回の WAV を消す: 残り=[]
+PASS 日本語のフォルダ名でも WAV のパスが届く: ['44632 ok exists=True C:\\Users\\meer0\\AppData\\Local\\Temp\\claude\\C--Users-meer0-dev-pet-claude-pet-claude-feat-phase3-voice\\5c28dcda-20bf-4baf-b43c-0c3cc876ded2\\scratchpad\\vf3\\voice-日本語\\voice\\rec-1.wav']
+PASS 打ったチャットと重なった文字起こしは送らず知らせる: chat send=1
+PASS チャットの返答待ちの間は録音を始めない: 
+30/30 PASS
+voice-fault exit=0

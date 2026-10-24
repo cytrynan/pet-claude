@@ -72,14 +72,15 @@
   let busy = false;
   const update = () => { send.disabled = busy || text.value.trim() === ""; };
   text.addEventListener("input", update);
-  // Rust 側（ui.rs の chat_state）から: { answer, error, busy }
+  // Rust 側（ui.rs の chat_state）から: { answer, error, busy, heard }（heard は音声入力で聞き取った文）
   window.renderChat = (s) => {
     busy = !!(s && s.busy);
     const has = s && typeof s.answer === "string";
     // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）
     answer.hidden = !has && !busy;
     answer.classList.toggle("error", !!(s && s.error));
-    answerText.textContent = busy ? "考え中…" : (has ? s.answer : "");
+    const said = s && typeof s.heard === "string" ? "「" + s.heard + "」\n\n" : "";
+    answerText.textContent = said + (busy ? "考え中…" : (has ? s.answer : ""));
     answer.classList.toggle("busy", busy);
     answerText.scrollTop = 0;
     text.placeholder = busy ? "考え中…" : (has && !s.error ? followUp : idle);
