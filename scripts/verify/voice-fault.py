@@ -220,7 +220,9 @@ srv = start_engine()
 ENGINE_ADDR = f"127.0.0.1:{srv.server_address[1]}"
 
 # --- 読み上げ ---
-log, data, alive_ = run_case("tts-ok", "send:やあ", wait_for=("tts: ", 1))
+# 「話し終えた」まで待つ。最初の「tts: 」の行（1 文目を合成）で止めると、鳴らす 0.4 秒と止める前の 0.5 秒が
+# ほぼ同じで、混んだ時に「話し終えた」の前にアプリを止めて FAIL になった（2026-10-24 受入検証で 1/4 回）
+log, data, alive_ = run_case("tts-ok", "send:やあ", wait_for=("話し終えた", 1))
 check("読み上げ: 答えを合成して鳴らす", alive_ and "1 文目を" in log and "話し終えた" in log
       and "鳴らせなかった" not in log and "/synthesis" in Engine.hits
       and "/speakers" in Engine.hits, f"hits={Engine.hits}")

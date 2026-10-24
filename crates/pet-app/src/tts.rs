@@ -67,7 +67,7 @@ static PREWARMING: AtomicBool = AtomicBool::new(false);
 static PLAY: Mutex<()> = Mutex::new(());
 /// 取り消しの世代。オフにするたびに進める。話し始めた時の世代と違えば、合成し終えていても鳴らさない
 /// （キューを消すだけでは、worker が取り出し済みの文や合成中の文は残り、オフ→オンで後から鳴った。
-/// 2026-10-24 検証係の指摘）
+/// 2026-10-24 検証係の指摘）。進めるのも、取り出した文の世代を読むのも `QUEUE` の鍵の中（`cancel_pending`・`take_next`）
 static SPEAK_GEN: AtomicU64 = AtomicU64::new(0);
 /// エンジンが声のモデルを読み終えているか（起こし直したら false。1 回合成できたら true）。
 /// 起こした直後の 1 回目の合成は、モデルの読み込みで 4.8 秒かかった（2026-10-22 実測。2 回目からは 1 秒前後）
@@ -102,14 +102,9 @@ pub fn answer(text: &str) {
 pub fn set_enabled(on: bool) {
     let was = ENABLED.swap(on, Ordering::SeqCst);
     if !on {
-        SPEAK_GEN.fetch_add(1, Ordering::SeqCst);
+        cancel_pending(&mut QUEUE.lock().unwrap_or_else(|e| e.into_inner()));
     }
     if was && !on {
-        if let Ok(mut q) = QUEUE.lock()
-            && let Some(q) = q.as_mut()
-        {
-            q.clear();
-        }
         // 鳴らし始めの最中なら、それが終わってから止める（後から鳴り始めない）
         let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
         stop_playback();
@@ -185,11 +180,11 @@ fn ensure_worker() {
 fn worker() {
     let mut style: Option<u32> = None;
     loop {
-        let text = {
+        let (text, generation) = {
             let Ok(mut guard) = QUEUE.lock() else { return };
             loop {
                 let q = guard.get_or_insert_with(SpeechQueue::new);
-                if let Some(t) = q.next(now_ms()) {
+                if let Some(t) = take_next(q, now_ms()) {
                     break t;
                 }
                 let (g, timeout) = WAKE
@@ -207,7 +202,7 @@ fn worker() {
         };
         let started = Instant::now();
         LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
-        let result = speak_one(&text, &mut style, started);
+        let result = speak_one(&text, generation, &mut style, started);
         LAST_ACTIVE_MS.store(now_ms(), Ordering::SeqCst);
         if let Err(why) = result {
             log(format!("tts: 話せなかった（{why}）"));
@@ -220,8 +215,33 @@ fn worker() {
     }
 }
 
-fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<(), String> {
-    let generation = SPEAK_GEN.load(Ordering::SeqCst);
+/// 次に話す文を、取り出した時の取り消しの世代と一緒に返す。キューの鍵の中で呼ぶこと
+/// （取り消す側の `cancel_pending` も同じ鍵の中で世代を進めるので、取り出しと取り消しは必ずどちらかが先になる。
+/// 鍵を出てから世代を読むと、その間に割り込んだオフ→オンで、取り出し済みの文が新しい世代を読んで鳴った。
+/// 2026-10-24 Codex の指摘）。
+fn take_next(q: &mut SpeechQueue, now: u64) -> Option<(String, u64)> {
+    q.next(now).map(|t| (t, SPEAK_GEN.load(Ordering::SeqCst)))
+}
+
+/// オフ: 取り消しの世代を進め、待っている文を捨てる。キューの鍵の中で呼ぶこと（`take_next` と並べるため）。
+fn cancel_pending(slot: &mut Option<SpeechQueue>) {
+    SPEAK_GEN.fetch_add(1, Ordering::SeqCst);
+    if let Some(q) = slot.as_mut() {
+        q.clear();
+    }
+}
+
+/// 取り出した時の世代が、まだ取り消されていないか。
+fn is_current(generation: u64) -> bool {
+    SPEAK_GEN.load(Ordering::SeqCst) == generation
+}
+
+fn speak_one(
+    text: &str,
+    generation: u64,
+    style: &mut Option<u32>,
+    started: Instant,
+) -> Result<(), String> {
     ensure_engine()?;
     if is_fixed_phrase(text) && started.elapsed() > STALE_PHRASE {
         return Err("エンジンを起こすのに時間がかかったので固定文言を捨てた".into());
@@ -290,8 +310,7 @@ fn speak_one(text: &str, style: &mut Option<u32>, started: Instant) -> Result<()
 /// 「オンを見た → オフにされて空振りの停止 → 鳴り始める」の順にはならない。`SND_MEMORY` の音は鳴っている間
 /// バッファが生きている必要があるので、戻る前に必ず鍵の中で止めてから（鳴り終わっていても）バッファを手放す。
 fn play(wav: &[u8], info: voice::WavInfo, generation: u64) -> bool {
-    let wanted =
-        || ENABLED.load(Ordering::SeqCst) && SPEAK_GEN.load(Ordering::SeqCst) == generation;
+    let wanted = || ENABLED.load(Ordering::SeqCst) && is_current(generation);
     {
         let _guard = PLAY.lock().unwrap_or_else(|e| e.into_inner());
         if !wanted() {
@@ -692,6 +711,32 @@ mod tests {
     fn rejects_non_http() {
         assert_eq!(parse_response(b"garbage\r\n\r\n"), None);
         assert_eq!(parse_response(b"HTTP/1.1 200 OK"), None);
+    }
+
+    /// 取り出しと取り消しはキューの鍵の中で順に並ぶ（2026-10-24 Codex の指摘: 取り出した直後にオフ→オンが
+    /// 割り込むと、取り出した文が新しい世代を読んで鳴った）。どちらの順でも、取り消しより前の文は鳴らない
+    #[test]
+    fn cancel_makes_taken_text_stale_and_drops_waiting() {
+        let mut slot = Some(SpeechQueue::new());
+        // 取り出した後に取り消す（オフ→オン）: 取り出した文の世代は古い
+        slot.as_mut()
+            .unwrap()
+            .push(Utterance::Answer("一".into()), 0);
+        let (text, generation) = take_next(slot.as_mut().unwrap(), 0).unwrap();
+        assert_eq!(text, "一");
+        assert!(is_current(generation));
+        cancel_pending(&mut slot);
+        assert!(!is_current(generation));
+        // 取り消した後に取り出す: 待っていた文はもう無い
+        slot.as_mut()
+            .unwrap()
+            .push(Utterance::Answer("二".into()), 0);
+        cancel_pending(&mut slot);
+        assert_eq!(take_next(slot.as_mut().unwrap(), 0), None);
+        // キューがまだ無くても世代は進む
+        let before = SPEAK_GEN.load(Ordering::SeqCst);
+        cancel_pending(&mut None);
+        assert!(SPEAK_GEN.load(Ordering::SeqCst) > before);
     }
 
     #[test]
