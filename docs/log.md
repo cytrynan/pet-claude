@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-24
+* **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md) — U3 を決定に（まめドラゴンを本番素材にする）。roadmap の Phase 4 の本番素材を決定済みに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §6 のウェイクワードを実装どおりに（Python の子・openWakeWord の特徴抽出＋ペットごとの頭・学習と判定の道具・置き場所・ライセンス CC BY-NC-SA 4.0） (kuroko/claude-opus-5-5)
 * **Update**: [ロードマップ](roadmap.md) — Phase 4 のウェイクワードを「学習と判定の道具まで。数字はダウンロードと K の録音待ち」に (kuroko/claude-opus-5-5)
 

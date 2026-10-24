@@ -46,3 +46,5 @@ openWakeWord と同じ形: 共通の特徴抽出（`melspectrogram.onnx` → `em
 ## 3. 本番素材
 
 K の Q2 次第。「はい」なら PRD U3 を決定にし、roadmap の Phase 4 から外す。
+
+2026-10-24 K が「はい」（「#33: まめドラゴンを本番素材にする。」）。PRD U3 を決定にし、roadmap の Phase 4 の本番素材を決定済みにした。
