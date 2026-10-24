@@ -9,7 +9,12 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-24
+* **Update**: [技術仕様書](architecture.md) — §6 のウェイクワードを実装どおりに（Python の子・openWakeWord の特徴抽出＋ペットごとの頭・学習と判定の道具・置き場所・ライセンス CC BY-NC-SA 4.0） (kuroko/claude-opus-5-5)
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 のウェイクワードを「学習と判定の道具まで。数字はダウンロードと K の録音待ち」に (kuroko/claude-opus-5-5)
+
 ## 2026-10-23
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 の自動起動（実装済み）とウェイクワード（道具まで）の進み具合 (kuroko/claude-opus-5-5)
 * **Update**: [技術仕様書](architecture.md) — §7 に自動起動（Windows タスク・run-hidden.vbs・schtasks の XML・CLI）を実装どおりに (kuroko/claude-opus-5-5)
 
 ## 2026-10-22
