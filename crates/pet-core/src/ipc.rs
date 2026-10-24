@@ -38,6 +38,10 @@ pub struct WireEvent {
     /// notification の種類（`"permission_prompt"` など）や stop_failure の error、other のイベント名。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail: Option<String>,
+    /// 承認の要求の来た先（`pet_core::origin::Origin::as_str`）。環境変数を読む pet-hook が承認の時だけ
+    /// 付ける。古い pet-hook は付けないので、無ければ「分からない」として扱う。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
 }
 
 /// 承認の状態（`GET /permission/<id>` の応答の JSON）。
@@ -83,6 +87,7 @@ impl From<&HookInput> for WireEvent {
             tool: None,
             summary: None,
             detail: None,
+            origin: None,
         };
         match input {
             HookInput::Prompt { session } => mk("prompt", session),

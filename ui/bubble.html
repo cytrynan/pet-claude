@@ -22,6 +22,13 @@
   }
   .summary:empty { display: none; }
   .actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 2px; }
+  /* ボタンと「ほかに N 件」は折り返さない。「〜で」の文言は来た先で長さが変わる（最長「Claude アプリで」）。
+     最長の組み合わせ（ほかに N 件＋Claude アプリで＋拒否＋許可）が幅 292px に 9px 余して収まるよう（2026-10-24 Edge で実測）、
+     ボタンの左右の余白を詰める（面の無いボタンは 6px にしても見た目が変わらない）。
+     確認は scripts/verify/render-ui.js の perm-* の wide が 0 */
+  .actions > * { white-space: nowrap; flex-shrink: 0; }
+  .card .btn { padding: 0 12px; }
+  .card .btn.plain { padding: 0 6px; }
   .btn {
     height: 32px; padding: 0 14px; border: 0; border-radius: 999px;
     font: inherit; font-feature-settings: "palt";
@@ -69,15 +76,18 @@
       return;
     }
     const more = s.more > 0 ? `<span class="more">ほかに ${s.more} 件</span>` : "";
+    // 「〜で」の文言は要求の来た先で変わる（ui.rs の askLabel・note。状態に無ければ中立の言い方）
+    const note = s.note || "全文が見えないので、許可は Claude Code で";
+    window.__note = note;
     root.innerHTML = `
       <div class="island card" role="alertdialog" aria-label="許可しますか？">
         <div class="title">許可しますか？</div>
         <div class="tool">${esc(s.tool)}</div>
         <div class="summary">${esc(s.summary)}</div>
-        ${s.canAllow ? "" : '<div class="note">全文が見えないので、許可はターミナルで</div>'}
+        ${s.canAllow ? "" : `<div class="note">${esc(note)}</div>`}
         <div class="actions">
           ${more}
-          <button class="btn plain" data-d="ask" title="Claude Code の画面で答える">ターミナルで</button>
+          <button class="btn plain" data-d="ask" title="Claude Code の画面で答える">${esc(s.askLabel || "Claude Code で")}</button>
           <button class="btn" data-d="deny">拒否</button>
           ${s.canAllow ? '<button class="btn primary" data-d="allow">許可</button>' : ""}
         </div>
@@ -109,7 +119,7 @@
       const note = document.createElement("div");
       note.className = "note";
       note.dataset.guard = "1";
-      note.textContent = "全文が見えないので、許可はターミナルで";
+      note.textContent = window.__note || "全文が見えないので、許可は Claude Code で";
       root.querySelector(".summary").after(note);
     }
   }

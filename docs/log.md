@@ -9,6 +9,9 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-24
+* **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — 承認のカードの「ターミナルで」を要求の来た先で変える（アプリは「Claude アプリで」・分からない時は「Claude Code で」）。§5.2 に判定の規則（CLAUDE_CODE_ENTRYPOINT と、EXECPATH と CLAUDE_PID の実行ファイルの照合）と根拠、DESIGN.md にボタン行の余白と折り返さない規則 (kuroko/claude-opus-5-5)
+
 ## 2026-10-22
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ウェイクワードをペットごとに持つ（pet.json の wakeWord・まめドラゴンは「まめちゃん」・設定画面のペットの下に出す・build_pet は手で足した項目を残す）、U2 を決定に (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §3-b チャット欄の閉じ方を「ペットの左クリックだけ」に（フォーカスの喪失・外のクリック・Esc・ドラッグでは閉じず、ペットについて行く）。マウスフックはバーかメニューが出ている間だけ (kuroko/claude-opus-5-5 ← human:K)

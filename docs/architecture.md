@@ -188,16 +188,21 @@ Grabbed（ドラッグ中）
 ### 5.2 承認の往復
 
 1. hook が `POST /permission` で登録して id を受け取り、`GET /permission/<id>` を 300ms ごとに最大 55 秒（`PET_PERMISSION_WAIT_SECS`）ポーリング
-2. アプリは吹き出しに承認のカード（「ターミナルで」「拒否」「許可」）を出す。複数あれば古い順に 1 枚ずつ（「ほかに N 件」）
+2. アプリは吹き出しに承認のカード（「ターミナルで」「拒否」「許可」）を出す。複数あれば古い順に 1 枚ずつ（「ほかに N 件」）。「ターミナルで」と注記の「〜で」は要求の来た先で変える（7）
 3. hook の出力: 許可 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`、拒否は `behavior: "deny"` と `message`（「ペット（pet-claude）の吹き出しで拒否されました」。Claude に届くことを E2E で確認）
-4. 「ターミナルで」・時間切れ・アプリが居ない・失敗は `{}`（いつもの流れに戻す。`-p` では拒否扱いになることを E2E で確認）。hook は**どんな失敗でも終了コード 0**
+4. 「ターミナルで」（来た先により「Claude アプリで」「Claude Code で」）・時間切れ・アプリが居ない・失敗は `{}`（いつもの流れに戻す。`-p` では拒否扱いになることを E2E で確認）。hook は**どんな失敗でも終了コード 0**
 5. 「許可」は、見えている要約が操作の全部のときだけ出す（全文の見えない操作を一押しで通させない。2026-10-21 セキュリティレビューと検証係の指摘）。条件は次の 3 つ。アプリ側の `ui::permission_decide` でも同じ条件で許可を受け付けず ask にする
    - hook が「要約が操作の全部をそのまま見せている」の印（`detail: "exact"`。`pet_core::hook::summary_is_exact`）を付けた。付くのは、要約が操作の全部になるツール（Bash・PowerShell の command、Read の file_path、WebSearch の query）で、`tool_input` に実行の中身を変えない項目（description・timeout・offset・limit）しか無く、要約の元が加工されていない（改行・タブ・空白の並び・前後の空白・切り詰めが無い）ときだけ。Agent の prompt・Write／Edit の本文・Bash の `dangerouslyDisableSandbox` などは要約に出ないので付かない
    - 要約が見た目どおりに読める文字だけ（`pet_core::hook::is_plain_char` の許可リスト: ASCII の印字可能文字・Latin-1・かな・漢字・全角英数・CJK の句読点。空白に見える文字・見えない文字・結合文字・絵文字は不可）
    - 要約を折り返して 4 行に収まる（半角 36 桁/行・全角は 2 桁の見積もり。カードは行数に合わせて高くする）。見積もりが外れてカードからはみ出したら、ページ側も「許可」を隠す
    - 出たばかりのカード（先頭になって 600ms 以内）への「許可」「拒否」は捨てる。前のカードへの二度押しの 2 回目が、読んでいない次のカードに入らないように（ページ側も同じ時間押せない）
 6. 同じセッションで次の依頼・応答の終わりが来たら、残っているカードを下げ、その hook には「決めない」（ask）を返す（ターミナルで答え済み）。並行のツール呼び出しがあるので `PreToolUse` では下げない。hook が 5 秒問い合わせない（あきらめた・ターミナルで答えて終わった）・120 秒を過ぎた承認も、1 秒ごとの見回りで下げる
-7. 試験用: デバッグビルドだけ `PET_AUTO_DECIDE=allow|deny|ask` で、ボタンと同じ関数を 1.5 秒後に呼ぶ（`scripts/verify/e2e-hooks.sh`）。`PET_CLAUDE_DATA_DIR` を差し替えた時だけ効く（普段使いのデバッグビルドで環境変数が残っていても、承認が自動で通らないように）
+7. 来た先の判定（2026-10-24。`pet_core::origin`）: K は CLI とデスクトップアプリの両方を使い、アプリから来た要求に「ターミナルで」は誤り。hook（pet-hook）が環境変数から決めて `WireEvent.origin` に付ける
+   - `CLAUDE_CODE_ENTRYPOINT=cli` → ターミナル（「ターミナルで」）
+   - `claude-desktop`・`claude-desktop-3p`・`local-agent` で、アプリが付ける `CLAUDE_CODE_EXECPATH` と `CLAUDE_PID`（hook を起こした Claude Code）の実行ファイルが同じ → アプリ（「Claude アプリで」）。Claude Code はこの変数が既にあれば上書きしないので、アプリのセッションの中から起こした `claude` も `claude-desktop` を引き継ぐ。実行ファイルの照合でそれを弾く
+   - それ以外（入れ子・`-p` の `sdk-cli`・VS Code・`origin` の無い古い pet-hook）→ 中立の「Claude Code で」。外れた場所を指すより、どこでも正しい言い方にする
+   - 根拠は実測（`.steering/20261024-permission-origin/brief.md`）。値の一覧は公式の監視ドキュメントの `app.entrypoint` にあるが、`CLAUDE_CODE_ENTRYPOINT` と `CLAUDE_CODE_EXECPATH` が環境変数で渡ることは公式に書かれていない（`CLAUDE_PID` は書かれている）。Claude Code の更新で変わったら「Claude Code で」に落ちる（誤った場所は指さない）
+8. 試験用: デバッグビルドだけ `PET_AUTO_DECIDE=allow|deny|ask` で、ボタンと同じ関数を 1.5 秒後に呼ぶ（`scripts/verify/e2e-hooks.sh`）。`PET_CLAUDE_DATA_DIR` を差し替えた時だけ効く（普段使いのデバッグビルドで環境変数が残っていても、承認が自動で通らないように）
 
 ### 5.3 IPC
 

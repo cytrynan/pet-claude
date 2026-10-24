@@ -11,6 +11,7 @@ pub mod compose;
 pub mod geometry;
 pub mod hook;
 pub mod ipc;
+pub mod origin;
 pub mod pixels;
 pub mod placeholder;
 pub mod placement;

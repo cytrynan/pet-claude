@@ -945,12 +945,20 @@ fn show_front_permission() {
             "id": id,
             "tool": pet_core::hook::sanitize_line(ev.tool.as_deref().unwrap_or(""), 60),
             "canAllow": can_allow(&ev),
+            // 「決めない」ボタンと注記の文言は来た先で変える（アプリから来たのに「ターミナルで」と出さない）
+            "askLabel": origin_of(&ev).ask_label(),
+            "note": origin_of(&ev).note(),
             "lines": summary_lines(ev.summary.as_deref().unwrap_or("")),
             "summary": ev.summary.unwrap_or_default(),
             "more": more,
         })),
         None => render_bubble(serde_json::Value::Null),
     }
+}
+
+/// 承認の要求の来た先。古い pet-hook（`origin` を付けない）からの要求は「分からない」。
+fn origin_of(ev: &WireEvent) -> pet_core::origin::Origin {
+    pet_core::origin::Origin::from_wire(ev.origin.as_deref())
 }
 
 /// 受け口から（メインスレッドで）呼ばれる。承認のカードを出す。
@@ -1155,7 +1163,19 @@ mod tests {
             tool: Some("Bash".into()),
             summary: summary.map(Into::into),
             detail: exact.then(|| EXACT.into()),
+            origin: None,
         }
+    }
+
+    #[test]
+    fn card_wording_follows_origin() {
+        use pet_core::origin::Origin;
+        let mut e = ev(Some("ls"), true);
+        assert_eq!(origin_of(&e), Origin::Unknown);
+        e.origin = Some(Origin::DesktopApp.as_str().into());
+        assert_eq!(origin_of(&e).ask_label(), "Claude アプリで");
+        e.origin = Some(Origin::Terminal.as_str().into());
+        assert_eq!(origin_of(&e).ask_label(), "ターミナルで");
     }
 
     #[test]
