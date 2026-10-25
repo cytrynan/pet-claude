@@ -215,7 +215,7 @@ Grabbed（ドラッグ中）
 |---|---|---|
 | TTS | AivisSpeech `POST /audio_query` → `POST /synthesis`（`127.0.0.1:10101`、天深シノ・ノーマル。ai-news の `dev\ai-news-routine\lib\radio.mjs` と同じエンジンと話者） | 起動していなければ黙って無効 |
 | STT | whisper.cpp（whisper-rs）か faster-whisper（サイドカー）。日本語・ローカル | 設定画面で案内 |
-| ウェイクワード | Python の子（`scripts/wake/listen.py`。声の環境の numpy・onnxruntime で動かし、openwakeword のパッケージは入れない）。openWakeWord の特徴抽出（`melspectrogram.onnx`→`embedding_model.onnx`、80ms ごとに 96 次元）の上に、ペットごとの小さな頭（直近 1.28 秒を見る 1536→32→1）を載せる。頭は AivisSpeech の合成（`synth.py`）と K の録音（`record-wake.ps1`）から `train.py` で学習し、しきい値は `evaluate.py` が誤反応の上限から決める。モデル・録音・頭は `%LOCALAPPDATA%\pet-claude\wake\` に置き、リポジトリに入れない。特徴抽出と公開の否定データは CC BY-NC-SA 4.0（非営利の個人利用）。2026-10-24 時点で学習の道具まで。マイクにつなぐのは声の PR #25 のマージ後（詳細は `.steering/20261023-phase4/design.md` §2） | 既定 OFF。頭が無い・子が落ちても pet-app は動き続ける（W5） |
+| ウェイクワード | Python の子（`scripts/wake/listen.py`。声の環境の numpy・onnxruntime で動かし、openwakeword のパッケージは入れない）。openWakeWord の特徴抽出（`melspectrogram.onnx`→`embedding_model.onnx`、80ms ごとに 96 次元）の上に、ペットごとの小さな頭（直近 1.28 秒を見る 1536→32→1）を載せる。頭は AivisSpeech の合成（`synth.py`）と K の録音（`record-wake.ps1`）から `train.py` で学習し、しきい値は `evaluate.py` が誤反応の上限から決める。モデル・録音・頭は `%LOCALAPPDATA%\pet-claude\wake\` に置き、リポジトリに入れない。特徴抽出と公開の否定データは CC BY-NC-SA 4.0（非営利の個人利用）。学習の道具まで作って保留（K 2026-10-26・PRD F20）。再開したら、マイクには声の PR #25 の後につなぐ（詳細は `.steering/20261023-phase4/design.md` §2） | 既定 OFF。頭が無い・子が落ちても pet-app は動き続ける（W5） |
 | チャット | `claude -p` を送信ごとに子プロセスで起こす（§6.1。PRD U1 決定 2026-10-21） | 見つからない・未ログイン・時間切れは吹き出しに短い理由 |
 
 話す文言は固定文言＋検証済みの短文のみ（1〜140 字・単一行・コード/URL/パス/秘密らしい文字列は拒否）。

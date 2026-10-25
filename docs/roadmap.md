@@ -43,6 +43,6 @@ stale_after: 2027-01-21
 
 ## Phase 4: ウェイクワードと本番素材
 
-- openWakeWord の独自モデル（K の録音）。誤反応率を実測: 2026-10-23 着手。openWakeWord の特徴抽出の上に小さな頭を、AivisSpeech の合成（全話者）と K の録音で学習する（`.steering/20261023-phase4/design.md` §2）。合成と録音の道具に続き、学習・判定・聞き続ける子（`train.py`・`evaluate.py`・`listen.py`）まで入った（2026-10-24）。W1・W2 の数字は、特徴抽出と公開の否定データのダウンロード（K の了承待ち）と K の録音の後に出す。マイクにつなぐのは声の PR #25 のマージ後
+- openWakeWord の独自モデル（K の録音）。誤反応率を実測: **保留（K 2026-10-26。PRD F20）**。2026-10-23 着手。openWakeWord の特徴抽出の上に小さな頭を、AivisSpeech の合成（全話者）と K の録音で学習する（`.steering/20261023-phase4/design.md` §2）。合成と録音の道具に続き、学習・判定・聞き続ける子（`train.py`・`evaluate.py`・`listen.py`）まで入った（2026-10-24）。再開する時は、特徴抽出と公開の否定データのダウンロード（K の了承）と K の録音で W1・W2 の数字を出し、声の PR #25 の後にマイクへつなぐ
 - Windows タスクで自動起動（`run-hidden.vbs`）: 2026-10-23 実装（architecture §7）。残りは K のサインインでの実機確認
 - 本番素材: 決定（K 2026-10-24・PRD U3）。まめドラゴン（`assets/pets/mame-dragon/`）を本番素材とし、差し替えはしない
