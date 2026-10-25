@@ -26,15 +26,6 @@ jobs:
       - name: Lone CR check
         run: python scripts/check-lone-cr.py
 
-      - name: Wake word tools (Python, no numpy)
-        run: python -I -m unittest discover -s scripts/wake -p "test_wake.py"
-
-      # numpy の要る部分。onnxruntime と openWakeWord のモデルは要らない（特徴抽出は偽物に差し替える）
-      - name: Wake word tools (Python, numpy)
-        run: |
-          python -m pip install --disable-pip-version-check numpy==2.2.6
-          python -I -m unittest discover -s scripts/wake -p "test_wake_np.py"
-
       - name: Format check
         run: cargo fmt --all --check
 

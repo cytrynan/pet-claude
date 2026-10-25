@@ -39,7 +39,13 @@ build/
 
 # ↓ /init-stack 実行で言語固有のエントリがここに追記されます
 target/
+# 別の CARGO_TARGET_DIR（target-p4 など。常駐しているペットの exe を上書きしないためのビルド先）
+/target-*/
 __pycache__/
+
+# ウェイクワードの道具（F20 は保留。K 2026-10-26「ウェイクワード関連のフォルダ、ファイルは gitignore にして」）。
+# 中身は commit 25f7b23・f2bac67 の履歴に残る。再開する時はここを外して git add し直す
+/scripts/wake/
 
 # Tauri が生成するスキーマ
 crates/pet-app/gen/
