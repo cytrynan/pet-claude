@@ -281,6 +281,7 @@ Grabbed（ドラッグ中）
 - `%LOCALAPPDATA%\pet-claude\chat\`: チャットの作業フォルダと話し方の指示（§6.1）
 - `%LOCALAPPDATA%\pet-claude\logs\pet.log`: 起動・配置・クリック・ドラッグ・DPI 変化。`PET_TRACE=1` でドラッグ中の座標も書く
 - 自動起動（Phase 4・2026-10-23 実装）: 設定の「サインインしたらペットを出す」で Windows タスク `pet-claude` を登録・解除する。実物はタスク スケジューラで、`state.json` には持たない（設定画面は開くたびに読む）。中身は `pet_core::autostart::task_xml`（`%SystemRoot%\System32\wscript.exe //B //Nologo "%USERPROFILE%\.claude\scripts\run-hidden.vbs" pet-claude "<いまの pet-app.exe>"`、このユーザーのサインインから 10 秒後・時間の上限なし（既定の 72 時間で止まらないように）・電池でも動く・優先度 4（既定 7 は通常未満）・二重に起こさない）。登録は `crates/pet-app/src/autostart.rs` が `schtasks /Create /XML`（UTF-16LE＋BOM の一時ファイル）で行う。`run-hidden.vbs` が無ければ登録しない。CLI: `--install-autostart [--task-name <名前>] [--disabled]`・`--uninstall-autostart`・`--autostart-status`（試験は無効のタスクを別名で作ってすぐ消す）。記録 `.steering/20261023-phase4/`
+- 端末の窓を出さない（2026-10-26 K 指示）: `pet-app` はデバッグビルドでも GUI サブシステム（`#![windows_subsystem = "windows"]`）。`--probe` などの CLI の引数の時だけ、`crates/pet-app/src/console.rs` が親の端末に `AttachConsole` でつなぎ直して出力する。標準出力が既にある（`> file`・パイプ）時はつながない（つなぐとリダイレクト先に届かない）。端末から CLI を起こすとプロンプトが先に戻ってから出力が出る（GUI のプロセスをシェルが待たないため）。`pet-hook` は hook から標準入出力のパイプで起こされるので変えていない
 
 ## 8. 検証
 

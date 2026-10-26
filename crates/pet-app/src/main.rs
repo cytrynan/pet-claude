@@ -11,12 +11,16 @@
 //! - `--install-autostart [--task-name <名前>] [--disabled]` ログオンで起こす Windows タスクを登録して終了（Phase 4）
 //! - `--uninstall-autostart [--task-name <名前>]` / `--autostart-status [--task-name <名前>]` 解除・状態を表示して終了
 
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// デバッグビルドでも端末の窓を出さない（K 2026-10-26「実行時ターミナルを出さずバックグラウンドにしてほしい」。
+// それまではリリースだけが GUI サブシステムで、手で起こすデバッグ版は黒い窓が付いてきた）。
+// `--probe` などの CLI は `console::attach_parent_if_cli` が親の端末につなぎ直すので、出力は今までどおり見える
+#![windows_subsystem = "windows"]
 
 mod autostart;
 mod chat;
 mod child;
 mod clipstore;
+mod console;
 mod cred;
 mod install;
 mod ipc_server;
@@ -268,6 +272,7 @@ fn main() {
     // SAFETY: プロセス開始直後に 1 回だけ呼ぶ。Tauri が後で同じ設定をしても害はない
     let _ = unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) };
     let args: Vec<String> = std::env::args().collect();
+    console::attach_parent_if_cli(&args);
 
     if args.iter().any(|a| a == "--probe") {
         let line = pet_window::describe_monitors(&monitors::enumerate());
