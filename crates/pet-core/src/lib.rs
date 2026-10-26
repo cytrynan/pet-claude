@@ -7,6 +7,7 @@
 pub mod ask;
 pub mod autostart;
 pub mod behavior;
+pub mod bubble;
 pub mod chat;
 pub mod clips;
 pub mod compose;

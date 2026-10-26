@@ -73,6 +73,7 @@ Claude Code ──hook(stdin JSON)──▶ pet-hook.exe（Phase 2）──HTTP(
 
 - フォーカスを取らない窓は Esc もフォーカスの喪失も来ないので、**バーかメニューが開いている間だけ低レベルのマウスフック（`WH_MOUSE_LL`）を入れ**、島とペットの外でボタンが押されたら閉じる（チャット欄は外を押しても閉じないので、チャット欄だけの間はフックを入れない）。閉じる処理はフックの中でせず、イベントループに回す
 - 窓は島より四方 12px 大きく取り、その中に影を描く（透過窓の外に影は出せない）
+- **吹き出しの固定文言の大きさは文字から決める**（`pet_core::bubble::status_island`。2026-10-27 K の報告「長い文言が切れる」）: 字幅の見積もり（全角 13.25・英大文字 10・m/w 10.5・数字 7.5・その他の半角 7.0px。Edge で 13px を実測した値より広い側）で `pre-wrap; overflow-wrap: anywhere` と同じ折り返しを数え、幅は文字の幅＋左右 16px（180〜320。320 は承認のカードと同じ）、折り返したら 320 で高さを 10＋20×行数＋10 に取る（上限なし・省略しない）。見積もりが外れて中身がはみ出したら、ページが描画後に測って `ui_action("bubble:fit:<seq>:<w>:<h>")` で伝え、窓を広げる（縮めない。承認のカードは対象外）。見た目は `render-ui.js` の `status-*` で明暗ともはみ出し 0。根拠と実測は `.steering/20261027-fix-bubble-size/brief.md`
 - ペットは毎 tick `ui::popups_visible()` を読み、出ている間は `Behavior::set_held(true)`（散歩も睡眠もしない）
 - UI からの操作は Tauri のコマンド（`ui_action`・`chat_submit`・`settings_get`・`settings_set`）。コマンドはメインスレッドで動く
 - **後回しは `ui::defer`（別スレッドから `run_on_main_thread`）**。`run_on_main_thread` はメインスレッドから呼ぶと**その場で同期実行される**（tauri-runtime-wry 2.12.2 の `send_user_message`）ので、メインスレッドから直接呼んでも後回しにならない。窓の生成・外側クリックの処理・借用中のペットへの操作はすべて `ui::defer` を通す（2026-10-21 検証係の指摘で判明）

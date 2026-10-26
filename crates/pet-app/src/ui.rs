@@ -48,7 +48,15 @@ const BAR_ISLAND: (f64, f64) = (96.0, 48.0);
 const CHAT_ISLAND: (f64, f64) = (360.0, 48.0);
 const MENU_ISLAND: (f64, f64) = (200.0, 150.0);
 /// 吹き出し: 固定文言のカプセルと、承認のカード（DESIGN.md）。
-const STATUS_ISLAND: (f64, f64) = (180.0, 40.0);
+/// 固定文言は文字に合わせて広げる（`pet_core::bubble::status_island`。2026-10-27 K の報告: 長い文言が切れた）。
+/// ここは窓を作るときの初期値＝最小の大きさ
+const STATUS_ISLAND: (f64, f64) = (
+    pet_core::bubble::STATUS_MIN_WIDTH,
+    pet_core::bubble::STATUS_PAD_Y * 2.0 + pet_core::bubble::STATUS_LINE_HEIGHT,
+);
+/// 吹き出しのページが描画後に測った大きさの上限（論理ピクセル）。見積もりが外れた分だけ広げるための
+/// 値で、ページ側の誤りで窓が画面いっぱいに広がらないよう止める
+const BUBBLE_FIT_MAX: (f64, f64) = (400.0, 600.0);
 const PERMISSION_ISLAND: (f64, f64) = (320.0, 148.0);
 /// 「許可」を出さないカードは注記が 1 行増える（撮影で要約の行が潰れたので分けた）。
 const PERMISSION_NOTE_ISLAND: (f64, f64) = (320.0, 172.0);
@@ -122,6 +130,10 @@ thread_local! {
     static PERMS: RefCell<VecDeque<(String, WireEvent)>> = const { RefCell::new(VecDeque::new()) };
     /// 吹き出しに今出している中身（bubble.html が読み込み時に bubble_state で聞く）
     static BUBBLE_STATE: RefCell<serde_json::Value> = const { RefCell::new(serde_json::Value::Null) };
+    /// 吹き出しの中身の通し番号（`render_bubble` ごとに +1。ページが測った大きさが、今の中身のものかを見分ける）
+    static BUBBLE_SEQ: Cell<u64> = const { Cell::new(0) };
+    /// ページが描画後に測って「この大きさが要る」と伝えてきた島の大きさ（通し番号つき。見積もりより大きい時だけ使う）
+    static BUBBLE_FIT: Cell<Option<(u64, f64, f64)>> = const { Cell::new(None) };
     /// 固定文言の世代（新しい文言が出たら古いタイマーは何もしない）
     static STATUS_GEN: Cell<u64> = const { Cell::new(0) };
     /// 承認のカードの見回り（期限切れを下げる）が動いているか
@@ -804,6 +816,8 @@ pub fn action(action: String) {
             open_chat();
         }
         "chat:new" => new_chat(),
+        // 吹き出しのページが描画後に測った大きさ（見積もりが外れて中身がはみ出した時だけ来る）
+        a if a.starts_with("bubble:fit:") => bubble_fit(a),
         // 音声入力（S11）: 録音中はバーを固定して出したままにする（もう一度押すと止める。V5）
         "voice" => {
             HOVER_BAR.with(|h| h.set(false));
@@ -853,7 +867,22 @@ pub fn note_pet(rect: Rect, dpi: u32) {
     }
 }
 
+/// 吹き出しの島の大きさ。文字から見積もった大きさと、ページが測って伝えてきた大きさの大きい方
+/// （固定文言と答えだけ。承認のカードは行数の上限で「許可」を出さない決まりがあるので広げない）
 fn bubble_island() -> (f64, f64) {
+    let (w, h) = estimated_bubble_island();
+    let fits = BUBBLE_STATE.with(|s| {
+        let s = s.borrow();
+        s["mode"] == "status" || s["mode"] == "answer"
+    });
+    match (fits, BUBBLE_FIT.with(Cell::get)) {
+        (true, Some((seq, fw, fh))) if seq == BUBBLE_SEQ.with(Cell::get) => (w.max(fw), h.max(fh)),
+        _ => (w, h),
+    }
+}
+
+/// 中身（文字数・行数）から見積もった島の大きさ
+fn estimated_bubble_island() -> (f64, f64) {
     BUBBLE_STATE.with(|s| {
         let s = s.borrow();
         if s["mode"] == "answer" {
@@ -870,6 +899,9 @@ fn bubble_island() -> (f64, f64) {
         }
         if s["mode"] == "ask" {
             return (ASK_WIDTH, s["height"].as_f64().unwrap_or(ASK_BASE));
+        }
+        if s["mode"] == "status" {
+            return pet_core::bubble::status_island(s["text"].as_str().unwrap_or(""));
         }
         if s["mode"] != "permission" {
             return STATUS_ISLAND;
@@ -916,7 +948,16 @@ fn place_bubble() {
     place_and_show(BUBBLE, &w, rect, false);
 }
 
-fn render_bubble(state: serde_json::Value) {
+fn render_bubble(mut state: serde_json::Value) {
+    // 中身ごとの通し番号（ページが測った大きさを、古い中身のものと取り違えないため）
+    let seq = BUBBLE_SEQ.with(|q| {
+        q.set(q.get() + 1);
+        q.get()
+    });
+    if let Some(o) = state.as_object_mut() {
+        o.insert("seq".into(), seq.into());
+    }
+    BUBBLE_FIT.with(|f| f.set(None));
     BUBBLE_STATE.with(|s| *s.borrow_mut() = state.clone());
     if state.is_null() {
         hide(BUBBLE);
@@ -1451,7 +1492,13 @@ pub fn show_status(text: &'static str) {
         g.set(g.get() + 1);
         g.get()
     });
-    render_bubble(serde_json::json!({ "mode": "status", "text": text }));
+    // 行数はページが見た目（1 行＝カプセル・複数行＝角丸の箱）を選ぶのに使う
+    let lines = pet_core::bubble::wrap(
+        text,
+        pet_core::bubble::STATUS_MAX_WIDTH - pet_core::bubble::STATUS_PAD_X * 2.0,
+    )
+    .lines;
+    render_bubble(serde_json::json!({ "mode": "status", "text": text, "lines": lines }));
     let Some(handle) = app() else { return };
     let _ = std::thread::Builder::new().spawn(move || {
         std::thread::sleep(std::time::Duration::from_millis(STATUS_MS));
@@ -1463,6 +1510,36 @@ pub fn show_status(text: &'static str) {
             }
         });
     });
+}
+
+/// `bubble:fit:<seq>:<w>:<h>`（ページが描画後に測った、中身が収まる島の大きさ。論理ピクセル）。
+/// 今の中身のものなら覚えて、見積もりより大きければ窓を広げる。縮めはしない（描いた後に縮むと見た目が跳ぶ）
+fn bubble_fit(action: &str) {
+    let Some((seq, w, h)) = parse_fit(action) else {
+        log(format!("bubble:fit を読めない: {action}"));
+        return;
+    };
+    if seq != BUBBLE_SEQ.with(Cell::get) {
+        return;
+    }
+    let before = bubble_island();
+    BUBBLE_FIT.with(|f| f.set(Some((seq, w, h))));
+    if bubble_island() != before && visible(BUBBLE) {
+        place_bubble();
+    }
+}
+
+/// `bubble:fit:<seq>:<w>:<h>` を読む。大きさは `BUBBLE_FIT_MAX` で止める（ページの誤りで画面いっぱいに
+/// 広がらないように）。正の数でなければ `None`
+fn parse_fit(action: &str) -> Option<(u64, f64, f64)> {
+    let mut it = action.strip_prefix("bubble:fit:")?.split(':');
+    let seq: u64 = it.next()?.parse().ok()?;
+    let w: f64 = it.next()?.parse().ok()?;
+    let h: f64 = it.next()?.parse().ok()?;
+    if it.next().is_some() || !(w > 0.0 && h > 0.0) || !w.is_finite() || !h.is_finite() {
+        return None;
+    }
+    Some((seq, w.min(BUBBLE_FIT_MAX.0), h.min(BUBBLE_FIT_MAX.1)))
 }
 
 /// bubble.html が読み込み時に聞く（作った直後の eval は読み込み前で空振りするため）。
@@ -1627,6 +1704,28 @@ mod tests {
         // 先頭でない id・先頭が無いときは関係ない（古い DOM の押下は permission_decide 側で別に止まる）
         assert!(!pressed_too_soon(Some(&front), "a", t0));
         assert!(!pressed_too_soon(None, "b", t0));
+    }
+
+    #[test]
+    fn parse_fit_reads_seq_and_size_and_caps_it() {
+        assert_eq!(parse_fit("bubble:fit:3:320:60"), Some((3, 320.0, 60.0)));
+        assert_eq!(
+            parse_fit("bubble:fit:3:320.5:60.25"),
+            Some((3, 320.5, 60.25))
+        );
+        // 上限で止める
+        assert_eq!(
+            parse_fit("bubble:fit:1:9999:9999"),
+            Some((1, BUBBLE_FIT_MAX.0, BUBBLE_FIT_MAX.1))
+        );
+        // 壊れた形・0 以下・余分な項・NaN は捨てる
+        assert_eq!(parse_fit("bubble:fit:1:320"), None);
+        assert_eq!(parse_fit("bubble:fit:1:0:60"), None);
+        assert_eq!(parse_fit("bubble:fit:1:-1:60"), None);
+        assert_eq!(parse_fit("bubble:fit:1:320:60:7"), None);
+        assert_eq!(parse_fit("bubble:fit:x:320:60"), None);
+        assert_eq!(parse_fit("bubble:fit:1:NaN:60"), None);
+        assert_eq!(parse_fit("chat:more"), None);
     }
 
     #[test]

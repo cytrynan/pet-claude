@@ -5,8 +5,15 @@
 <title>pet-claude bubble</title>
 <link rel="stylesheet" href="ui.css">
 <style>
-  .status { display: flex; align-items: center; justify-content: center; padding: 0 16px;
-    font-feature-settings: "palt"; white-space: nowrap; }
+  /* 固定文言: 1 行ならカプセル（高さ 40＝余白 10＋行 20＋10）、収まらない文は折り返して高さで取る（省略しない。
+     2026-10-27 K の報告「…を使えないよ（ミュートか Windows の…」が切れた）。窓の大きさは ui.rs が
+     pet_core::bubble::status_island で文字から見積もる。余白・行の高さはそこの STATUS_PAD_*・STATUS_LINE_HEIGHT と同じ。
+     flex で上下中央に置くと、はみ出しが上下に割れて scrollHeight で測れないので block で積む */
+  .status { padding: 10px 16px; line-height: 20px; text-align: center;
+    font-feature-settings: "palt"; white-space: pre-wrap; overflow-wrap: anywhere; }
+  /* 複数行は角丸の箱（カプセルの端が文字を削る）・左寄せ（文として読む）。palt は短い UI 文字だけ（apple-design）。
+     文には掛けない＝全角の句読点・括弧が詰まらず、pet_core::bubble の見積もり（全角 1 字＝13.25px）と行の切れ目が合う */
+  .status.multi { border-radius: 16px; text-align: left; font-feature-settings: normal; }
   /* 承認の判断に使う文面なので、背後の文字が透けないほぼ不透明の面にする */
   .card { border-radius: 16px; padding: 12px 14px; display: flex; flex-direction: column; gap: 6px;
     background: var(--surface-solid); }
@@ -96,9 +103,11 @@
   };
   // Rust 側が中身を変えるたびに呼ぶ（作った直後は読み込み前で空振りするので、読み込み時に自分でも聞く）
   window.render = (s) => {
+    window.__lastState = s;
     if (!s || !s.mode) { root.innerHTML = ""; return; }
     if (s.mode === "status") {
-      root.innerHTML = `<div class="island capsule status" role="status">${esc(s.text)}</div>`;
+      root.innerHTML = `<div class="island capsule status${s.lines > 1 ? " multi" : ""}" role="status">${esc(s.text)}</div>`;
+      requestAnimationFrame(() => reportFit(s));
       return;
     }
     if (s.mode === "answer") {
@@ -109,6 +118,7 @@
         </div>`;
       const more = document.getElementById("more");
       if (more) more.onclick = () => invoke("ui_action", { action: "chat:more" });
+      requestAnimationFrame(() => reportFit(s));
       return;
     }
     if (s.mode === "ask") { renderAsk(s); return; }
@@ -182,7 +192,16 @@
       root.querySelector(".summary").after(note);
     }
   }
-  window.addEventListener("resize", guardOverflow);
+  // 固定文言・答え: 見積もり（ui.rs）が外れて中身が島からはみ出していたら、要る大きさを Rust に伝えて窓を広げてもらう。
+  // 承認のカードは guardOverflow（「許可」を隠す）で、広げない。窓が広がると resize が来てもう一度測り、収まれば何も送らない
+  function reportFit(s) {
+    const el = root.firstElementChild;
+    if (!el || !s || s.seq === undefined) return;
+    const dw = el.scrollWidth - el.clientWidth, dh = el.scrollHeight - el.clientHeight;
+    if (dw <= 0 && dh <= 0) return;
+    invoke("ui_action", { action: `bubble:fit:${s.seq}:${el.clientWidth + Math.max(dw, 0)}:${el.clientHeight + Math.max(dh, 0)}` });
+  }
+  window.addEventListener("resize", () => { guardOverflow(); const s = window.__lastState; if (s && (s.mode === "status" || s.mode === "answer")) reportFit(s); });
   invoke("bubble_state").then(window.render);
 </script>
 </body>
