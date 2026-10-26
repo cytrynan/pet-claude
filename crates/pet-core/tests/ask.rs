@@ -187,6 +187,18 @@ fn unsafe_label_is_not_presentable_but_unsafe_description_is_just_hidden() {
 }
 
 #[test]
+fn unsafe_header_is_hidden_but_card_is_still_presentable() {
+    // 見出しも説明と同じ扱い: 出せなければ空（アプリは「質問」と出す）。カード自体は出す
+    let req = AskRequest::parse(&json!({ "questions": [ { "question": "Q", "header": "see https://a", "options": [ { "label": "A" } ] } ] })).unwrap();
+    assert!(req.presentable());
+    assert_eq!(req.questions[0].display_header(), "");
+    let req = AskRequest::parse(&json!({ "questions": [ { "question": "Q", "header": "sk-ant-abc", "options": [ { "label": "A" } ] } ] })).unwrap();
+    assert_eq!(req.questions[0].display_header(), "");
+    let req = AskRequest::parse(&json!({ "questions": [ { "question": "Q", "header": " 色	", "options": [ { "label": "A" } ] } ] })).unwrap();
+    assert_eq!(req.questions[0].display_header(), "色");
+}
+
+#[test]
 fn duplicate_labels_or_questions_are_not_presentable() {
     // 同じラベルが 2 つあると、どれを選んだか決められない
     let req = AskRequest::parse(&json!({ "questions": [ { "question": "Q", "options": [ { "label": "A" }, { "label": "A" } ] } ] })).unwrap();

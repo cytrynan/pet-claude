@@ -125,9 +125,14 @@ impl Question {
         sanitize_line(&self.question, QUESTION_MAX_CHARS)
     }
 
-    /// カードに出す見出し（1 行・`HEADER_MAX_CHARS`）。
+    /// カードに出す見出し（1 行・`HEADER_MAX_CHARS`）。説明と同じく、URL/パス/コード/秘密らしい文字列や隠れた
+    /// 文字を含む見出しは出さず空にする（アプリは空なら「質問」と出す。2026-10-27 セキュリティレビューの指摘）。
     pub fn display_header(&self) -> String {
-        sanitize_line(&self.header, HEADER_MAX_CHARS)
+        if is_showable(&self.header) {
+            sanitize_line(&self.header, HEADER_MAX_CHARS)
+        } else {
+            String::new()
+        }
     }
 
     /// `label` が選択肢にあるか（元の文字列で比べる）。
