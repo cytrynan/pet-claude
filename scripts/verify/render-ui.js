@@ -4,13 +4,35 @@
 // 裏に回るので撮れない（2026-10-21）。見た目はこれで確かめ、クリックの経路は人の実機確認で見る。
 // 使い方: node scripts/verify/render-ui.js <出力フォルダ>（playwright は npm のグローバルにあるものを使う）
 const path = require("path");
+const { execFileSync } = require("child_process");
+const os = require("os");
 const pw = require(path.join(process.env.APPDATA, "npm/node_modules/@playwright/cli/node_modules/playwright"));
 const ui = path.resolve(__dirname, "../../ui").split(path.sep).join("/");
 const out = process.argv[2];
 
 const answer = "たくさん思いつくよ！食べ物なら、焼き芋、栗ご飯、さんま、新米、柿、梨、ぶどう、きのこ料理、月見団子。お出かけなら、紅葉狩り、ハイキング、芋掘り、りんご狩り、温泉。おうちなら、読書、温かいお茶、秋の映画やゲーム。\n\n夜は虫の声を聞くのもいいね。";
 const bubbleText = answer.replace(/\s+/g, " ").slice(0, 139) + "…";
+// 固定文言の吹き出し: 窓の大きさはアプリと同じ関数（pet_core::bubble::status_island）から取る（2026-10-27。
+// 手で写すと式がずれる）。長い文は省略せず、幅は 320 まで・それ以上は折り返して高さで取る
+const statusTexts = {
+  "status-short": "できたよ",
+  "status-k": "マイクを使えないよ（ミュートか Windows の設定）",
+  "status-60": "答えを読み上げられなかったよ。AivisSpeech が起動していないか、音声の出力先が見つからないみたい。設定を見てね。",
+  "status-120": "いま話した文を送れなかったよ。Claude Code が見つからないか、ログインが切れているかもしれない。設定の「いまの接続」で確かめてから、もう一度バーの音声ボタンを押して話してみてね。それでもだめなら再起動してみて。",
+  "status-200": "あ".repeat(200),
+  "status-newline": "できたよ\nほかに 2 件まってるよ\n\n設定も見てね",
+  "status-url": "詳しくは https://github.com/cytrynan/pet-claude/blob/main/docs/architecture.md#63-音声入力 を見てね",
+  "status-latin": "WINDOWS MICROPHONE is muted. Check the Windows sound settings and the mute key on the keyboard.",
+};
+const cargo = process.env.CARGO || path.join(os.homedir(), ".cargo", "bin", "cargo");
+const statusSizes = JSON.parse(execFileSync(cargo, ["run", "-q", "-p", "pet-core", "--example", "bubble_size", "--", JSON.stringify(Object.values(statusTexts))],
+  { cwd: path.resolve(__dirname, "../.."), encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] }));
+const statusCases = Object.entries(statusTexts).map(([name, text], i) => ({
+  name, page: "bubble.html", size: [statusSizes[i].w + 24, statusSizes[i].h + 24],
+  state: { bubble_state: { mode: "status", text, lines: statusSizes[i].lines, seq: 1 } } }));
+
 const cases = [
+  ...statusCases,
   { name: "settings-sub", page: "settings.html", size: [440, 600],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false }, autostart_get: { state: "off", detail: "" } } },
   { name: "settings-placeholder", page: "settings.html", size: [440, 600],
@@ -79,8 +101,9 @@ let failed = 0;
       }, c.state);
       await page.goto("file:///" + ui + "/" + c.page);
       await page.waitForTimeout(300);
-      // 島がはみ出していないか（スクロールが出ていないか）
-      const over = await page.evaluate(() => [...document.querySelectorAll(".island, main")].map((e) => e.scrollHeight - e.clientHeight));
+      // 島がはみ出していないか（スクロールが出ていないか）。縦と横（2026-10-27 固定文言は横にはみ出していた）。0 でなければ失敗
+      const over = await page.evaluate(() => [...document.querySelectorAll(".island, main")].map((e) => Math.max(e.scrollHeight - e.clientHeight, e.scrollWidth - e.clientWidth)));
+      if (over.some((o) => o > 0)) failed++;
       // ボタンの行が横にはみ出していないか（文言が長くなる承認のカード）。右寄せの行は左へはみ出し、
       // scrollWidth には出ないので、子の左右の端を行の箱と比べる（正ならはみ出した px。0 でなければ失敗）
       const wide = await page.evaluate(() => [...document.querySelectorAll(".actions")].map((e) => {
