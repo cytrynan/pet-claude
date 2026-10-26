@@ -23,6 +23,24 @@ const cases = [
   { name: "chat-busy", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
   { name: "chat-first-wait", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
   { name: "chat-error", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
+  // 音声入力で聞き取った文を K の発言として出す（Phase 3 後半）
+  { name: "chat-heard-busy", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+    state: { chat_state: { answer: null, error: false, busy: true, heard: "まめちゃん、明日の天気どうかな" } } },
+  { name: "chat-heard-answer", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+    state: { chat_state: { answer: "明日は晴れそうだよ。朝は少し冷えるから上着があるといいね。", error: false, busy: false, heard: "まめちゃん、明日の天気どうかな" } } },
+  // 打って送る経路を画面のスクリプトで通す（2026-10-23 評価係の指摘: 送信は Rust 側から呼ぶ試験しか無く、
+  // chat.html の SyntaxError を誰も踏まなかった）。打って送信を押し、invoke("chat_submit") が届くかを見る
+  { name: "chat-submit", page: "chat.html", size: [384, 48 + 24],
+    state: { chat_state: { answer: null, error: false, busy: false }, chat_submit: "考え中…" },
+    act: async (page) => {
+      await page.fill("#text", "明日の天気は？");
+      await page.click("#send");
+      await page.waitForTimeout(200);
+      const calls = await page.evaluate(() => window.__calls);
+      const sent = calls.some((c) => c.cmd === "chat_submit" && c.args && c.args.text === "明日の天気は？");
+      const left = await page.inputValue("#text");
+      return { ok: sent && left === "", detail: `calls=${JSON.stringify(calls.map((c) => c.cmd))} input="${left}"` };
+    } },
   { name: "bubble-answer", page: "bubble.html", size: [324, 44 + 7 * 20 + 34 + 24],
     state: { bubble_state: { mode: "answer", text: bubbleText, more: true, error: false, lines: 7 } } },
   { name: "bubble-short", page: "bubble.html", size: [324, 44 + 24],
@@ -40,31 +58,46 @@ const cases = [
     state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: false, lines: 1, more: 12, askLabel: "Claude アプリで", note: "全文が見えないので、許可は Claude アプリで" } } },
 ];
 
+let failed = 0;
 (async () => {
   const browser = await pw.chromium.launch({ channel: "msedge" });
   for (const scheme of ["dark", "light"]) {
     for (const c of cases) {
       const ctx = await browser.newContext({ viewport: { width: c.size[0], height: c.size[1] }, colorScheme: scheme, deviceScaleFactor: 2 });
       const page = await ctx.newPage();
+      // 画面のスクリプトの例外（構文エラーを含む）は失敗にする
+      const errors = [];
+      page.on("pageerror", (e) => errors.push(String(e.message || e)));
       await page.addInitScript((st) => {
-        window.__TAURI__ = { core: { invoke: async (cmd) => (cmd in st ? st[cmd] : null) } };
+        window.__calls = [];
+        window.__TAURI__ = { core: { invoke: async (cmd, args) => { window.__calls.push({ cmd, args }); return cmd in st ? st[cmd] : null; } } };
       }, c.state);
       await page.goto("file:///" + ui + "/" + c.page);
       await page.waitForTimeout(300);
       // 島がはみ出していないか（スクロールが出ていないか）
       const over = await page.evaluate(() => [...document.querySelectorAll(".island, main")].map((e) => e.scrollHeight - e.clientHeight));
       // ボタンの行が横にはみ出していないか（文言が長くなる承認のカード）。右寄せの行は左へはみ出し、
-      // scrollWidth には出ないので、子の左右の端を行の箱と比べる（正ならはみ出した px）
+      // scrollWidth には出ないので、子の左右の端を行の箱と比べる（正ならはみ出した px。0 でなければ失敗）
       const wide = await page.evaluate(() => [...document.querySelectorAll(".actions")].map((e) => {
         const box = e.getBoundingClientRect();
         const kids = [...e.children].map((c) => c.getBoundingClientRect());
         if (!kids.length) return 0;
         return Math.ceil(Math.max(box.left - Math.min(...kids.map((k) => k.left)), Math.max(...kids.map((k) => k.right)) - box.right, 0));
       }));
+      if (wide.some((w) => w > 0)) failed++;
+      let acted = "";
+      if (c.act) {
+        const r = await c.act(page);
+        if (!r.ok) failed++;
+        acted = ` act=${r.ok ? "PASS" : "FAIL"} ${r.detail}`;
+      }
+      if (errors.length) failed++;
       await page.screenshot({ path: `${out}/${scheme}-${c.name}.png` });
-      console.log(scheme, c.name, "overflow", JSON.stringify(over), "wide", JSON.stringify(wide));
+      console.log(scheme, c.name, "overflow", JSON.stringify(over), "wide", JSON.stringify(wide), errors.length ? `PAGEERROR ${errors.join(" | ")}` : "", acted);
       await ctx.close();
     }
   }
   await browser.close();
+  console.log(failed ? `FAIL ${failed}` : "ALL OK");
+  process.exit(failed ? 1 : 0);
 })();

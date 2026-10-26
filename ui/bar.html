@@ -7,6 +7,11 @@
 <style>
   .bar { display: flex; align-items: center; gap: 2px; padding: 0 6px; }
   .sep { width: 1px; height: 18px; background: var(--separator); margin: 0 2px; }
+  /* 録音中: 赤く脈打つ（もう一度押すと止めて送る） */
+  #voice.recording { color: #ff3b30; animation: pulse 1.2s var(--ease) infinite; }
+  @keyframes pulse { 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { #voice.recording { animation: none; } }
+  @media (prefers-color-scheme: dark) { #voice.recording { color: #ff453a; } }
 </style>
 </head>
 <body>
@@ -22,7 +27,15 @@
 <script src="ui.js"></script>
 <script>
   document.getElementById("chat").onclick = () => invoke("ui_action", { action: "chat" });
-  document.getElementById("voice").onclick = () => invoke("ui_action", { action: "voice" });
+  const voice = document.getElementById("voice");
+  voice.onclick = () => invoke("ui_action", { action: "voice" });
+  // Rust 側（ui.rs の refresh_bar）から: { recording }
+  window.renderBar = (s) => {
+    const on = !!(s && s.recording);
+    voice.classList.toggle("recording", on);
+    voice.title = on ? "止めて送る" : "音声入力";
+    voice.setAttribute("aria-label", voice.title);
+  };
 </script>
 </body>
 </html>

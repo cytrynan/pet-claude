@@ -33,6 +33,7 @@ Anatomy = **style** (prominence/shape) + **content** (symbol, label, both) + **r
 - Secondary styles: gray fill (`systemGray5`-family bg + tint label) and plain (tint text, no container).
 - Roles: primary responds to Return and gets the accent; destructive renders red; never make a destructive action the default/primary; always pair destructive with Cancel.
 - Labels start with a verb ("Add to Cart"), 1–2 words, title case. In-button spinner + label swap ("Checkout" → "Checking out…") for non-instant actions.
+- **Live recording toggle (mic) — local note 2026-10-22, pet-claude voice input**: while capturing, keep the same button and switch only its glyph color to system red (`#ff3b30` light / `#ff453a` dark), add a slow opacity pulse (~1.2s, 1 → 0.45 → 1, the house ease) that stops under Reduce Motion, and swap the tooltip/accessible label to the stop action ("Stop and send"). Red here marks a live, interactive state, so it does not count against the one-tint rule. Not verified against HIG text — a local decision.
 - Shapes: capsule for standalone/prominent CTAs, rounded-rect (~12–14pt radius, 50pt tall) for full-width primaries in forms, circle for icon-only.
 
 ## Lists & tables

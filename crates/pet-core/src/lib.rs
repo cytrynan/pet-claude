@@ -16,3 +16,4 @@ pub mod pixels;
 pub mod placeholder;
 pub mod placement;
 pub mod sprite;
+pub mod voice;

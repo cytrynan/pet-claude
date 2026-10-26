@@ -1263,6 +1263,7 @@ pub fn settings() -> serde_json::Value {
 /// 設定画面からの変更。大きさは足元を基準に描き直す。`save` が true のときだけ state.json に書く
 /// （スライダーを動かしている間は描き直すだけにして、離したときに 1 回保存する）。
 pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
+    crate::tts::set_enabled(tts);
     with_pet(move |pet| {
         pet.state.tts = tts;
         pet.state.wake = wake;
@@ -1336,12 +1337,12 @@ pub fn on_wire_event(ev: &WireEvent) {
         "stop_failure" => Some(AgentEvent::Error { session }),
         _ => None,
     };
-    // 吹き出しの固定文言（承認はカードを出すので除く）
+    // 吹き出しの固定文言（承認はカードを出すので除く）。声も同じ文言（pet_core::voice）
     let phrase = match ev.kind.as_str() {
-        "stop" => Some("できたよ"),
-        "stop_failure" => Some("失敗しちゃった"),
+        "stop" => Some(pet_core::voice::PHRASE_DONE),
+        "stop_failure" => Some(pet_core::voice::PHRASE_FAILED),
         "notification" if ev.detail.as_deref() == Some("elicitation_dialog") => {
-            Some("入力を待ってるよ")
+            Some(pet_core::voice::PHRASE_WAITING)
         }
         _ => None,
     };
@@ -1363,6 +1364,7 @@ pub fn on_wire_event(ev: &WireEvent) {
     }
     if let Some(text) = phrase {
         ui::show_status(text);
+        crate::tts::phrase(text);
     }
 }
 
@@ -1372,6 +1374,19 @@ pub fn chat_thinking(session: &'static str) {
         let now = now_ms(pet.epoch);
         pet.behavior.on_agent(
             AgentEvent::Prompt {
+                session: session.to_string(),
+            },
+            now,
+        );
+    });
+}
+
+/// 音声入力の録音中、ペットをこちらを見て待つ動きにする（承認待ちと同じ見た目。セッション名で区別）。
+pub fn chat_listening(session: &'static str) {
+    with_pet(move |pet| {
+        let now = now_ms(pet.epoch);
+        pet.behavior.on_agent(
+            AgentEvent::NeedsInput {
                 session: session.to_string(),
             },
             now,
