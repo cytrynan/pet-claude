@@ -50,6 +50,17 @@ const cases = [
     state: { bubble_state: { mode: "answer", text: bubbleText, more: true, error: false, lines: 7 } } },
   { name: "bubble-short", page: "bubble.html", size: [324, 44 + 24],
     state: { bubble_state: { mode: "answer", text: "こんにちは！", more: false, error: false, lines: 1 } } },
+  // 承認のカード: 「〜で」の文言は来た先（ターミナル・Claude アプリ・分からない）で変わる。いちばん長い組み合わせ（ほかに N 件つき）も撮る
+  { name: "perm-terminal", page: "bubble.html", size: [344, 148 + 24],
+    state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: true, lines: 1, more: 0, askLabel: "ターミナルで", note: "全文が見えないので、許可はターミナルで" } } },
+  { name: "perm-app", page: "bubble.html", size: [344, 148 + 24],
+    state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: true, lines: 1, more: 0, askLabel: "Claude アプリで", note: "全文が見えないので、許可は Claude アプリで" } } },
+  { name: "perm-app-more", page: "bubble.html", size: [344, 148 + 24],
+    state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: true, lines: 1, more: 12, askLabel: "Claude アプリで", note: "全文が見えないので、許可は Claude アプリで" } } },
+  { name: "perm-unknown-more", page: "bubble.html", size: [344, 148 + 24],
+    state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: true, lines: 1, more: 12, askLabel: "Claude Code で", note: "全文が見えないので、許可は Claude Code で" } } },
+  { name: "perm-app-note-more", page: "bubble.html", size: [344, 172 + 24],
+    state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: false, lines: 1, more: 12, askLabel: "Claude アプリで", note: "全文が見えないので、許可は Claude アプリで" } } },
 ];
 
 let failed = 0;
@@ -70,6 +81,15 @@ let failed = 0;
       await page.waitForTimeout(300);
       // 島がはみ出していないか（スクロールが出ていないか）
       const over = await page.evaluate(() => [...document.querySelectorAll(".island, main")].map((e) => e.scrollHeight - e.clientHeight));
+      // ボタンの行が横にはみ出していないか（文言が長くなる承認のカード）。右寄せの行は左へはみ出し、
+      // scrollWidth には出ないので、子の左右の端を行の箱と比べる（正ならはみ出した px。0 でなければ失敗）
+      const wide = await page.evaluate(() => [...document.querySelectorAll(".actions")].map((e) => {
+        const box = e.getBoundingClientRect();
+        const kids = [...e.children].map((c) => c.getBoundingClientRect());
+        if (!kids.length) return 0;
+        return Math.ceil(Math.max(box.left - Math.min(...kids.map((k) => k.left)), Math.max(...kids.map((k) => k.right)) - box.right, 0));
+      }));
+      if (wide.some((w) => w > 0)) failed++;
       let acted = "";
       if (c.act) {
         const r = await c.act(page);
@@ -78,7 +98,7 @@ let failed = 0;
       }
       if (errors.length) failed++;
       await page.screenshot({ path: `${out}/${scheme}-${c.name}.png` });
-      console.log(scheme, c.name, "overflow", JSON.stringify(over), errors.length ? `PAGEERROR ${errors.join(" | ")}` : "", acted);
+      console.log(scheme, c.name, "overflow", JSON.stringify(over), "wide", JSON.stringify(wide), errors.length ? `PAGEERROR ${errors.join(" | ")}` : "", acted);
       await ctx.close();
     }
   }

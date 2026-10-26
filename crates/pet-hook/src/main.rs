@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 use pet_core::hook::{self, Decision, HookInput, MAX_INPUT_BYTES};
 use pet_core::ipc::{self, Discovery, WireEvent};
+use pet_core::origin;
 
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const IO_TIMEOUT: Duration = Duration::from_millis(500);
@@ -57,6 +58,10 @@ fn run() -> Option<String> {
         // 「許可」を出さない（改行を潰した要約・切り詰めた要約を一押しで通させない）
         event.detail = Some(EXACT.to_string());
     }
+    if is_permission {
+        // カードの「ターミナルで」をアプリから来た要求では「Claude アプリで」にするため、来た先を添える
+        event.origin = Some(permission_origin().as_str().to_string());
+    }
     let Ok(body) = serde_json::to_string(&event) else {
         return ask();
     };
@@ -75,6 +80,57 @@ fn summary_is_exact(raw: &[u8]) -> bool {
     };
     let tool = v["tool_name"].as_str().unwrap_or("");
     hook::summary_is_exact(tool, &v["tool_input"])
+}
+
+/// 承認の要求の来た先。判定は `pet_core::origin::classify`。ここでは材料（環境変数と、hook の親の
+/// Claude Code の実行ファイル）を集めるだけ。`CLAUDE_PID` は公式ドキュメントにある「hook を起こした
+/// Claude Code 自身の pid」。
+fn permission_origin() -> origin::Origin {
+    let entrypoint = std::env::var("CLAUDE_CODE_ENTRYPOINT").ok();
+    let exec_path = std::env::var("CLAUDE_CODE_EXECPATH").ok();
+    let image = std::env::var("CLAUDE_PID")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .and_then(process_image);
+    origin::classify(
+        entrypoint.as_deref(),
+        exec_path.as_deref(),
+        image.as_deref(),
+    )
+}
+
+/// pid のプロセスの実行ファイルのフルパス。開けない・取れないなら None。
+fn process_image(pid: u32) -> Option<String> {
+    use windows::Win32::Foundation::CloseHandle;
+    use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
+    // SAFETY: 読み取りだけの権限で開き、必ず閉じる
+    unsafe {
+        let h = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid).ok()?;
+        let path = image_of(h);
+        let _ = CloseHandle(h);
+        path
+    }
+}
+
+/// 開いたプロセスの実行ファイルのフルパス。
+///
+/// # Safety
+/// `h` は `PROCESS_QUERY_LIMITED_INFORMATION` 以上で開いた、まだ閉じていないハンドル。
+unsafe fn image_of(h: windows::Win32::Foundation::HANDLE) -> Option<String> {
+    use windows::Win32::System::Threading::{PROCESS_NAME_WIN32, QueryFullProcessImageNameW};
+    let mut buf = [0u16; 1024];
+    let mut len = buf.len() as u32;
+    // SAFETY: 出力先はローカルの配列で、長さを渡している
+    unsafe {
+        QueryFullProcessImageNameW(
+            h,
+            PROCESS_NAME_WIN32,
+            windows::core::PWSTR(buf.as_mut_ptr()),
+            &mut len,
+        )
+    }
+    .ok()?;
+    Some(String::from_utf16_lossy(&buf[..len as usize]))
 }
 
 fn data_dir() -> PathBuf {
@@ -108,8 +164,7 @@ fn discovery() -> Option<Discovery> {
 fn app_is_alive(pid: u32, written: std::time::SystemTime) -> bool {
     use windows::Win32::Foundation::{CloseHandle, FILETIME};
     use windows::Win32::System::Threading::{
-        GetProcessTimes, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
-        QueryFullProcessImageNameW,
+        GetProcessTimes, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
     };
     let override_path =
         std::env::var_os("PET_CLAUDE_DATA_DIR").and(std::env::var("PET_CLAUDE_APP_PATH").ok());
@@ -128,15 +183,7 @@ fn app_is_alive(pid: u32, written: std::time::SystemTime) -> bool {
         let Ok(h) = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) else {
             return false;
         };
-        let mut buf = [0u16; 1024];
-        let mut len = buf.len() as u32;
-        let named = QueryFullProcessImageNameW(
-            h,
-            PROCESS_NAME_WIN32,
-            windows::core::PWSTR(buf.as_mut_ptr()),
-            &mut len,
-        )
-        .is_ok();
+        let path = image_of(h);
         let (mut created, mut exited, mut kernel, mut user) = (
             FILETIME::default(),
             FILETIME::default(),
@@ -145,10 +192,9 @@ fn app_is_alive(pid: u32, written: std::time::SystemTime) -> bool {
         );
         let timed = GetProcessTimes(h, &mut created, &mut exited, &mut kernel, &mut user).is_ok();
         let _ = CloseHandle(h);
-        if !named || !timed {
+        let Some(path) = path.filter(|_| timed) else {
             return false;
-        }
-        let path = String::from_utf16_lossy(&buf[..len as usize]);
+        };
         path.eq_ignore_ascii_case(&expected) && filetime_to_system(created) <= written
     }
 }

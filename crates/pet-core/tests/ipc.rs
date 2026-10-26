@@ -50,6 +50,7 @@ fn wire(
         tool: tool.map(st),
         summary: summary.map(st),
         detail: detail.map(st),
+        origin: None,
     }
 }
 
@@ -213,6 +214,29 @@ fn wire_event_deserializes_and_round_trips() {
         let back: WireEvent = serde_json::from_str(&text).unwrap();
         assert_eq!(back, w);
     }
+}
+
+// 承認の来た先（`origin`）: 付けた時だけ JSON に出る。古い pet-hook の JSON（欄が無い）も読める
+#[test]
+fn wire_event_origin_is_optional() {
+    let mut w = wire("permission", "s", Some("Bash"), Some("ls"), None);
+    w.origin = Some(st("desktop_app"));
+    let v: Value = serde_json::to_value(&w).unwrap();
+    assert_eq!(v["origin"], json!("desktop_app"));
+    let back: WireEvent = serde_json::from_value(v).unwrap();
+    assert_eq!(back, w);
+
+    let old: WireEvent =
+        serde_json::from_str(r#"{"kind":"permission","session":"s","tool":"Bash","summary":"ls"}"#)
+            .unwrap();
+    assert_eq!(old.origin, None);
+    // HookInput からは付かない（環境を読む pet-hook が付ける）
+    let from_input = WireEvent::from(&HookInput::PermissionRequest {
+        session: st("s"),
+        tool: st("Bash"),
+        summary: st("ls"),
+    });
+    assert_eq!(from_input.origin, None);
 }
 
 // 要件 識別子契約: Discovery と PermissionState の JSON
