@@ -10,6 +10,11 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-22
+* **Update**: [技術仕様書](architecture.md) — §6.3 文字起こしのスクリプトは exe に埋め込んでデータフォルダへ書き出す（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)
+* **Update**: [プロダクト要求定義書](product-requirements.md) — F16・F17 を K の決定（Q1〜Q3 すべて A）に (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §6.2・§6.3 に話し出すまでを縮める工夫（文ごとの合成・エンジンとモデルを先に起こす・文字起こしの子を録音の前に起こす）と前後の実測、ミュートの見分け方 (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [DESIGN.md](../DESIGN.md) — 色付けの例外に「録音中の音声ボタンは記号だけ赤で脈打つ」を足した (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md) — §6.2 読み上げ（SpeechQueue・手書きの HTTP・PlaySoundW・エンジンを起こして暇なら止める）と §6.3 音声入力（waveIn・Endpointer・faster-whisper small の子プロセス・WAV を残さない）、F16・F17 を実装どおりに (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — ウェイクワードをペットごとに持つ（pet.json の wakeWord・まめドラゴンは「まめちゃん」・設定画面のペットの下に出す・build_pet は手で足した項目を残す）、U2 を決定に (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §3-b チャット欄の閉じ方を「ペットの左クリックだけ」に（フォーカスの喪失・外のクリック・Esc・ドラッグでは閉じず、ペットについて行く）。マウスフックはバーかメニューが出ている間だけ (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — チャット欄をバーと同じ規則で置く（ペットの真下、収まらなければ真上。答えの欄で高くなっても置き直す） (kuroko/claude-opus-5-5 ← human:K)

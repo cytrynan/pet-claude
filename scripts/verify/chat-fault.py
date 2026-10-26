@@ -49,6 +49,8 @@ def run_case(name, steps, *, mode="ok", exe=None, timeout_secs=None, state=None,
     # 親に API キーがあってもサブスクでは子に渡らないこと（A1）を見るため、偽の値を入れておく
     env["ANTHROPIC_API_KEY"] = "sk-ant-parent-should-not-leak"
     env["CLAUDECODE"] = "1"
+    # 答えの読み上げで本物の AivisSpeech（約 3.4GB）を起こさない（閉じたポートへ向け、起こす exe も無い扱い）
+    env.update(PET_TEST_AIVIS_ADDR="127.0.0.1:9", PET_TEST_AIVIS_EXE="")
     if timeout_secs:
         env["PET_CHAT_TIMEOUT_SECS"] = str(timeout_secs)
     env.update(parent_extra or {})

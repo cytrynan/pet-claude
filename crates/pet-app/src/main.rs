@@ -12,6 +12,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod chat;
+mod child;
 mod clipstore;
 mod cred;
 mod install;
@@ -21,7 +22,9 @@ mod monitors;
 mod pet_window;
 mod pets;
 mod state;
+mod tts;
 mod ui;
+mod voice;
 
 use std::path::Path;
 
@@ -109,6 +112,10 @@ fn chat_for_tests(app: tauri::AppHandle) {
                     let reply = chat::submit(handle, text, pet_window::chat_auth());
                     log(format!("test chat: submit -> {reply}"));
                 });
+            } else if let Some(on) = step.strip_prefix("tts:") {
+                // 設定画面の「声で知らせる」と同じ関数（話している途中でオフにして止まるかの試験。V4）
+                tts::set_enabled(on == "on");
+                log(format!("test chat: tts -> {on}"));
             } else if step == "new" {
                 let _ = app.run_on_main_thread(ui::new_chat);
             } else if step == "auth" {
@@ -134,6 +141,7 @@ fn ui_action(action: String) {
 /// チャットの送信。待たずに戻り、答えは後で吹き出しとチャット欄に出す。戻り値は入力欄に出す一言
 #[tauri::command]
 fn chat_submit(app: tauri::AppHandle, text: String) -> String {
+    ui::clear_voice_text();
     chat::submit(app, text, pet_window::chat_auth())
 }
 
@@ -186,6 +194,16 @@ async fn chat_auth_check(mode: String) -> String {
     tauri::async_runtime::spawn_blocking(move || chat::auth_status(mode))
         .await
         .unwrap_or_else(|_| "確かめられませんでした".into())
+}
+
+/// 設定画面の「声」の状態（エンジンへの問い合わせに最大 2 秒かかるので async）
+#[tauri::command]
+async fn voice_status() -> serde_json::Value {
+    tauri::async_runtime::spawn_blocking(
+        || serde_json::json!({ "tts": tts::status(), "stt": voice::status() }),
+    )
+    .await
+    .unwrap_or_else(|_| serde_json::json!({}))
 }
 
 /// メニューのページが読み込まれたときに呼ぶ。今バーが出ているか
@@ -276,6 +294,8 @@ fn main() {
         }
     };
     log(format!("start {}", env!("CARGO_PKG_VERSION")));
+    tts::set_enabled(app_state.tts);
+    voice::cleanup_leftovers();
 
     let result = tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
@@ -287,6 +307,7 @@ fn main() {
             chat_key_save,
             chat_key_delete,
             chat_auth_check,
+            voice_status,
             settings_get,
             settings_set,
             bubble_state,
@@ -309,6 +330,8 @@ fn main() {
                 "reset" => pet_window::reset_position(),
                 "quit" => {
                     chat::shutdown();
+                    voice::shutdown();
+                    tts::shutdown();
                     pet_window::shutdown();
                     ipc_server::stop();
                     log("quit");

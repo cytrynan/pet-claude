@@ -39,6 +39,8 @@ build/
 
 # ↓ /init-stack 実行で言語固有のエントリがここに追記されます
 target/
+# 別のビルド先（K のペットが target/debug の exe を掴んでいる間の試験用。target-chat・target-voice など）
+target-*/
 
 # Tauri が生成するスキーマ
 crates/pet-app/gen/

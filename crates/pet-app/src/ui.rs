@@ -123,6 +123,8 @@ thread_local! {
     static LEAVE_PENDING: Cell<bool> = const { Cell::new(false) };
     /// チャットの最後の答え（チャット欄に出す全文, 失敗か）。「新しいチャット」で消す
     static CHAT_LAST: RefCell<Option<(String, bool)>> = const { RefCell::new(None) };
+    /// 音声入力で聞き取って送った文（チャット欄に K の発言として出す。打って送った時と「新しいチャット」で消す）
+    static VOICE_HEARD: RefCell<Option<String>> = const { RefCell::new(None) };
     /// チャット欄を開いた時刻。開いた直後の前面の喪失を 1 回だけ取り直すのに使う（使ったら消す）
     static CHAT_OPENED_AT: Cell<Option<Instant>> = const { Cell::new(None) };
     /// ペットが動いたあとのチャット欄の置き直しを予約済みか（ドラッグ中の描画ごとにスレッドを作らない）
@@ -402,6 +404,8 @@ fn open_bar(pet: Rect, dpi: u32) {
 fn open_chat() {
     // チャットを開いたら、カーソルが離れても閉じない（入力中に閉じると打った文字が消える）
     HOVER_BAR.with(|h| h.set(false));
+    // 打っている間に AivisSpeech を起こしておく（答えを話すまでの待ちを隠す）
+    crate::tts::prewarm();
     if PET_AT.with(Cell::get).is_none() {
         return;
     }
@@ -453,6 +457,7 @@ pub fn chat_state() -> serde_json::Value {
             "answer": c.as_ref().map(|(t, _)| t.clone()),
             "error": c.as_ref().is_some_and(|(_, e)| *e),
             "busy": crate::chat::busy(),
+            "heard": VOICE_HEARD.with(|h| h.borrow().clone()),
         })
     })
 }
@@ -487,6 +492,7 @@ fn place_chat() {
 /// チャットの答え（チャットのスレッドから run_on_main_thread で呼ばれる）。
 /// 全文はチャット欄に、吹き出しには `bubble_text` で整えた 1 行を出す（N3）。
 pub fn show_chat_answer(text: &str) {
+    crate::tts::answer(text);
     show_chat_result(
         pet_core::chat::panel_text(text),
         pet_core::chat::bubble_text(text),
@@ -500,6 +506,7 @@ pub fn show_chat_answer(text: &str) {
 /// `bubble_text` を通して出す。吹き出しで隠れたら、そう書いて「続きを見る」を付ける（理由がどこにも
 /// 残らなかった。2026-10-21 検証係の指摘）。
 pub fn show_chat_failure(reason: &str) {
+    crate::tts::phrase(pet_core::voice::PHRASE_CHAT_FAILED);
     let panel = pet_core::chat::panel_text(reason);
     let bubble = pet_core::chat::bubble_text(reason);
     if bubble == pet_core::chat::BUBBLE_HIDDEN {
@@ -559,10 +566,36 @@ fn answer_lines(text: &str) -> usize {
 pub fn new_chat() {
     crate::chat::new_chat();
     CHAT_LAST.with(|c| *c.borrow_mut() = None);
+    VOICE_HEARD.with(|h| *h.borrow_mut() = None);
     if BUBBLE_STATE.with(|s| s.borrow()["mode"] == "answer") {
         render_bubble(serde_json::Value::Null);
     }
     refresh_chat();
+}
+
+/// 音声入力で聞き取った文を、チャット欄に K の発言として出す（送る直前に呼ぶ）。
+pub fn show_voice_text(text: &str) {
+    VOICE_HEARD.with(|h| *h.borrow_mut() = Some(pet_core::chat::panel_text(text)));
+    refresh_chat();
+}
+
+/// 打って送った: 前に聞き取った文は消す（別の発言の上に出さない）。
+pub fn clear_voice_text() {
+    VOICE_HEARD.with(|h| *h.borrow_mut() = None);
+}
+
+/// 録音中かをバーのボタンに出す。録り終えたら（固定していた）バーを閉じる。
+pub fn refresh_bar() {
+    let recording = crate::voice::recording();
+    if let Some(w) = window(BAR) {
+        let _ = w.eval(format!(
+            "window.renderBar && window.renderBar({})",
+            serde_json::json!({ "recording": recording })
+        ));
+    }
+    if !recording && visible(BAR) && !HOVER_BAR.with(Cell::get) {
+        hide(BAR);
+    }
 }
 
 /// 右クリックメニューを出す。ペットのウィンドウプロシージャから呼ぶので後で実行する。
@@ -749,8 +782,13 @@ pub fn action(action: String) {
             open_chat();
         }
         "chat:new" => new_chat(),
-        // 音声入力は Phase 3。いまはバーを閉じるだけ
-        "voice" => hide(BAR),
+        // 音声入力（S11）: 録音中はバーを固定して出したままにする（もう一度押すと止める。V5）
+        "voice" => {
+            HOVER_BAR.with(|h| h.set(false));
+            if let Some(app) = app() {
+                crate::voice::toggle(app);
+            }
+        }
         "close" => close(Close::Dismiss),
         "menu:settings" => {
             hide(MENU);
@@ -763,6 +801,8 @@ pub fn action(action: String) {
         }
         "menu:quit" => {
             crate::chat::shutdown();
+            crate::voice::shutdown();
+            crate::tts::shutdown();
             crate::pet_window::shutdown();
             crate::ipc_server::stop();
             log("quit");
@@ -960,6 +1000,7 @@ pub fn show_permission(id: String, ev: WireEvent) {
         ev.tool.as_deref().unwrap_or("")
     ));
     PERMS.with(|q| q.borrow_mut().push_back((id.clone(), ev)));
+    crate::tts::phrase(pet_core::voice::PHRASE_PERMISSION);
     show_front_permission();
     schedule_prune();
     auto_decide_for_tests(&id);
