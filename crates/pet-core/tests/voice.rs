@@ -12,9 +12,9 @@ use pet_core::hook::sanitize_line;
 use pet_core::voice::{
     ANSWER_IN_PANEL, CALIBRATION_MS, END_SILENCE_MS, EndReason, EndpointState, Endpointer,
     FRAME_SAMPLES, HALLUCINATIONS, MAX_RECORD_MS, MIN_SPEECH_MS, NO_SPEECH_MS, PHRASE_CHAT_FAILED,
-    PHRASE_DONE, PHRASE_FAILED, PHRASE_NOT_HEARD, PHRASE_PERMISSION, PHRASE_WAITING,
-    SAME_PHRASE_COOLDOWN_MS, SAMPLE_RATE, SPEECH_RMS_FACTOR, SPEECH_RMS_MIN, SpeechQueue,
-    Utterance, WavInfo, parse_wav, rms, speech_for_answer, transcript_text, wav_bytes,
+    PHRASE_DONE, PHRASE_FAILED, PHRASE_NOT_HEARD, PHRASE_PERMISSION, PHRASE_QUESTION,
+    PHRASE_WAITING, SAME_PHRASE_COOLDOWN_MS, SAMPLE_RATE, SPEECH_RMS_FACTOR, SPEECH_RMS_MIN,
+    SpeechQueue, Utterance, WavInfo, parse_wav, rms, speech_for_answer, transcript_text, wav_bytes,
 };
 
 /// 話している音として十分に大きい振幅（どのしきい値も超える）。
@@ -58,6 +58,7 @@ fn constants_match_the_identifier_contract() {
     assert_eq!(PHRASE_FAILED, "失敗しちゃった");
     assert_eq!(PHRASE_WAITING, "入力を待ってるよ");
     assert_eq!(PHRASE_PERMISSION, "確認してほしいことがあるよ");
+    assert_eq!(PHRASE_QUESTION, "聞きたいことがあるよ");
     assert_eq!(PHRASE_CHAT_FAILED, "うまくいかなかったよ");
     assert_eq!(PHRASE_NOT_HEARD, "聞き取れなかったよ");
     assert_eq!(ANSWER_IN_PANEL, "答えはチャット欄に出したよ");

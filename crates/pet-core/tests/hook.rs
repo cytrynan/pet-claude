@@ -1353,3 +1353,81 @@ fn permission_output_deny_escapes_message() {
 fn permission_output_ask_is_empty_object() {
     assert_eq!(permission_output(&Decision::Ask), "{}");
 }
+
+// ---------------------------------------------------------------------------
+// 7. 質問（AskUserQuestion）。原本: .steering/20261027-ask-question/brief.md
+// ---------------------------------------------------------------------------
+
+fn ask_input() -> Value {
+    json!({
+        "hook_event_name": "PreToolUse",
+        "session_id": "s1",
+        "tool_name": "AskUserQuestion",
+        "tool_input": { "questions": [ { "question": "どの色？", "header": "色",
+            "options": [ { "label": "Red", "description": "赤" }, { "label": "Blue" } ], "multiSelect": false } ] },
+        "tool_use_id": "toolu_1"
+    })
+}
+
+#[test]
+fn pre_tool_use_ask_user_question_becomes_ask_question() {
+    let r = parse_value(&ask_input()).unwrap();
+    let HookInput::AskQuestion { session, request } = &r else {
+        panic!("{r:?}");
+    };
+    assert_eq!(session, "s1");
+    assert_eq!(request.questions.len(), 1);
+    assert_eq!(request.questions[0].question, "どの色？");
+    assert_eq!(request.questions[0].options[1].label, "Blue");
+    assert_eq!(
+        request.raw_questions(),
+        &ask_input()["tool_input"]["questions"]
+    );
+    assert_eq!(
+        to_agent_event(&r),
+        Some(AgentEvent::NeedsInput { session: st("s1") })
+    );
+    let ev = WireEvent::from(&r);
+    assert_eq!(ev.kind, "ask_question");
+    assert_eq!(ev.tool.as_deref(), Some("AskUserQuestion"));
+    assert_eq!(ev.questions.as_ref().map(Vec::len), Some(1));
+    // wire の JSON に質問が入り、往復で同じになる
+    let text = serde_json::to_string(&ev).unwrap();
+    assert!(text.contains("\"questions\""));
+    assert_eq!(serde_json::from_str::<WireEvent>(&text).unwrap(), ev);
+}
+
+#[test]
+fn other_tools_and_malformed_questions_stay_tool_start() {
+    let mut v = ask_input();
+    v["tool_name"] = json!("Bash");
+    assert_eq!(
+        parse_value(&v),
+        Ok(HookInput::ToolStart {
+            session: st("s1"),
+            tool: st("Bash")
+        })
+    );
+    // 質問の形が読めなければ、今までどおり ToolStart（hook は何も決めず、いつもの画面が出る）
+    let mut v = ask_input();
+    v["tool_input"] = json!({ "questions": [] });
+    assert_eq!(
+        parse_value(&v),
+        Ok(HookInput::ToolStart {
+            session: st("s1"),
+            tool: st("AskUserQuestion")
+        })
+    );
+    let mut v = ask_input();
+    v["tool_input"] = Value::Null;
+    assert_eq!(
+        parse_value(&v),
+        Ok(HookInput::ToolStart {
+            session: st("s1"),
+            tool: st("AskUserQuestion")
+        })
+    );
+    // wire の questions が無い古い形も読める
+    let ev: WireEvent = serde_json::from_str(r#"{"kind":"permission","session":"s"}"#).unwrap();
+    assert_eq!(ev.questions, None);
+}

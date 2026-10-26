@@ -281,7 +281,8 @@ pub fn bubble_text(s: &str) -> String {
 }
 
 /// 吹き出しに出してはいけない文か（URL・パス・コード・秘密らしい文字列を含む）。
-fn is_unsafe_for_bubble(line: &str) -> bool {
+/// 質問のカード（`crate::ask`）も同じ判定を使う（集合を 1 か所に寄せる）。
+pub fn is_unsafe_for_bubble(line: &str) -> bool {
     // sk-・www.・:// は大文字小文字を無視する。ASCII だけを小文字にするので文字の位置は変わらない
     let lower = line.to_ascii_lowercase();
     if lower.contains("://") || lower.contains("www.") {

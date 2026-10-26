@@ -51,6 +51,7 @@ fn wire(
         summary: summary.map(st),
         detail: detail.map(st),
         origin: None,
+        questions: None,
     }
 }
 

@@ -12,7 +12,7 @@
     background: var(--surface-solid); }
   .card > * { flex-shrink: 0; }
   .title { font-weight: 600; font-feature-settings: "palt"; }
-  .tool { font-size: 12px; color: var(--label-2); }
+  .tool { font-size: 12px; line-height: 16px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   /* 要約は省略せず折り返して全文を出す（省略すると後半を見ずに許可できてしまう）。
      行の高さは ui.rs の SUMMARY_LINE_HEIGHT と同じ 17px */
   .summary {
@@ -43,6 +43,31 @@
   .btn:active { opacity: .8; }
   .note { font-size: 11px; color: var(--label-2); }
   .more { font-size: 11px; color: var(--label-2); margin-right: auto; align-self: center; }
+  /* 質問のカード（AskUserQuestion）。質問文は折り返して全文（行の高さは ui.rs の ASK_LINE_HEIGHT と同じ 18px）。
+     選択肢は縦に並ぶ行のボタン（HIG の option row。ラベルだけ 30px・説明つき 44px・間 4px＝ui.rs の ASK_OPTION_*）。
+     最後の行は「回答を書く…」（iOS のアラートの「その他…」と同じ置き方。面なし・label-2）。
+     複数選択は左に丸いマークが付き、選ぶと tint で塗る。決定は「許可」と同じ primary */
+  .ask .question { line-height: 18px; overflow-wrap: anywhere; font-weight: 600; font-feature-settings: "palt"; }
+  .ask .options { display: flex; flex-direction: column; gap: 4px; }
+  .opt {
+    display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 0 10px;
+    border: 0; border-radius: 8px; background: var(--surface-hover); color: var(--label);
+    font: inherit; font-feature-settings: "palt"; text-align: left;
+    transition: background-color .15s var(--ease), opacity .15s var(--ease);
+  }
+  .opt:hover { background: var(--surface-press); }
+  .opt:active { opacity: .8; }
+  .opt.has-desc { min-height: 44px; padding: 6px 10px; }
+  .opt .body { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+  .opt .label { line-height: 18px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt .desc { font-size: 11px; line-height: 14px; color: var(--label-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .opt .mark { flex: none; width: 16px; height: 16px; border-radius: 999px; box-sizing: border-box;
+    border: 1.5px solid var(--separator); display: grid; place-items: center; }
+  .opt.picked .mark { background: var(--tint); border-color: var(--tint); }
+  .opt.picked .mark::after { content: ""; width: 4px; height: 8px; margin-top: -2px;
+    border-right: 2px solid #fff; border-bottom: 2px solid #fff; transform: rotate(45deg); }
+  .opt.write { background: transparent; color: var(--label-2); }
+  .opt.write:hover { background: var(--surface-hover); }
   /* チャットの答え（DESIGN.md 吹き出し）。文は読ませるので不透明の面。行の高さは ui.rs の ANSWER_LINE_HEIGHT と同じ 20px */
   .answer { border-radius: 16px; padding: 12px 14px; background: var(--surface-solid);
     display: flex; flex-direction: column; gap: 6px; }
@@ -58,6 +83,17 @@
 <script>
   const root = document.getElementById("root");
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  // 出たばかりのカードは 600ms 押せない（前のカードへの二度押しが、読んでいないカードに入らないように。
+  // ui.rs の FRESH_CARD_GUARD と同じ時間。Rust 側でも同じ時間の押下を捨てる）。`key` が変わったら出たばかり
+  const guardFresh = (key, buttons) => {
+    const fresh = window.__frontKey !== key;
+    window.__frontKey = key;
+    if (!fresh) return;
+    for (const b of buttons) {
+      b.disabled = true;
+      setTimeout(() => { b.disabled = false; }, 600);
+    }
+  };
   // Rust 側が中身を変えるたびに呼ぶ（作った直後は読み込み前で空振りするので、読み込み時に自分でも聞く）
   window.render = (s) => {
     if (!s || !s.mode) { root.innerHTML = ""; return; }
@@ -75,6 +111,7 @@
       if (more) more.onclick = () => invoke("ui_action", { action: "chat:more" });
       return;
     }
+    if (s.mode === "ask") { renderAsk(s); return; }
     const more = s.more > 0 ? `<span class="more">ほかに ${s.more} 件</span>` : "";
     // 「〜で」の文言は要求の来た先で変わる（ui.rs の askLabel・note。状態に無ければ中立の言い方）
     const note = s.note || "全文が見えないので、許可は Claude Code で";
@@ -92,19 +129,41 @@
           ${s.canAllow ? '<button class="btn primary" data-d="allow">許可</button>' : ""}
         </div>
       </div>`;
-    // 出たばかりのカードは 600ms 押せない（前のカードへの二度押しが、読んでいないカードに入らないように。
-    // ui.rs の FRESH_CARD_GUARD と同じ時間。Rust 側でも同じ時間の押下を捨てる）
-    const fresh = window.__frontId !== s.id;
-    window.__frontId = s.id;
-    for (const b of root.querySelectorAll("[data-d]")) {
-      b.onclick = () => invoke("permission_decide", { id: s.id, decision: b.dataset.d });
-      if (fresh && b.dataset.d !== "ask") {
-        b.disabled = true;
-        setTimeout(() => { b.disabled = false; }, 600);
-      }
-    }
+    const buttons = [...root.querySelectorAll("[data-d]")];
+    for (const b of buttons) b.onclick = () => invoke("permission_decide", { id: s.id, decision: b.dataset.d });
+    guardFresh(s.id, buttons.filter((b) => b.dataset.d !== "ask"));
     requestAnimationFrame(guardOverflow);
   };
+  // 質問のカード: { id, key, header, question, options: [{label, description, picked}], multi, more, askLabel }
+  // 選択肢を押すと ask_action の pick（番号）。複数選択は付け外しして「決定」。「回答を書く…」はチャット欄で自由入力
+  function renderAsk(s) {
+    const more = s.more > 0 ? `<span class="more">ほかに ${s.more} 件</span>` : "";
+    const opts = (s.options || []).map((o, i) => `
+      <button class="opt${o.description ? " has-desc" : ""}${o.picked ? " picked" : ""}" data-i="${i}"
+        ${s.multi ? `role="checkbox" aria-checked="${o.picked ? "true" : "false"}"` : ""}>
+        ${s.multi ? '<span class="mark" aria-hidden="true"></span>' : ""}
+        <span class="body"><span class="label">${esc(o.label)}</span>${o.description ? `<span class="desc">${esc(o.description)}</span>` : ""}</span>
+      </button>`).join("");
+    root.innerHTML = `
+      <div class="island card ask" role="dialog" aria-label="質問">
+        <div class="tool">${esc(s.header)}${s.multi ? " · いくつでも" : ""}</div>
+        <div class="question">${esc(s.question)}</div>
+        <div class="options">
+          ${opts}
+          <button class="opt write" data-a="text" title="チャット欄に答えを打つ"><span class="body"><span class="label">回答を書く…</span></span></button>
+        </div>
+        <div class="actions">
+          ${more}
+          <button class="btn plain" data-a="ask" title="Claude Code の画面で答える">${esc(s.askLabel || "Claude Code で")}</button>
+          <button class="btn" data-a="deny">拒否</button>
+          ${s.multi ? '<button class="btn primary" data-a="submit">決定</button>' : ""}
+        </div>
+      </div>`;
+    const act = (action, value) => invoke("ask_action", { id: s.id, action, value: value ?? "" });
+    for (const b of root.querySelectorAll("[data-i]")) b.onclick = () => act("pick", b.dataset.i);
+    for (const b of root.querySelectorAll("[data-a]")) b.onclick = () => act(b.dataset.a);
+    guardFresh(s.key || s.id, [...root.querySelectorAll("[data-i], [data-a]")].filter((b) => !["ask", "text"].includes(b.dataset.a)));
+  }
   // 行数の見積もり（ui.rs）が外れてカードの中身が窓からはみ出したら、「許可」を隠して注記を出す。
   // 窓の大きさが後から合えば戻す（作った直後は窓が前の大きさのままのことがある）
   function guardOverflow() {

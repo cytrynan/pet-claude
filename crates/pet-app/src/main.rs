@@ -231,6 +231,13 @@ fn permission_decide(id: String, decision: String) {
     ui::permission_decide(id, decision);
 }
 
+/// 吹き出しの質問のカードのボタンと、チャット欄の「回答」の送信。`action` は pick / submit / text / answer / deny / ask。
+/// 戻り値は answer のときチャット欄に出す一言（受け付けたら "ok"）
+#[tauri::command]
+fn ask_action(id: String, action: String, value: String) -> String {
+    ui::ask_action(id, action, value)
+}
+
 /// 設定画面のペットの選択。`invoke("pet_set", { id })`
 #[tauri::command]
 fn pet_set(id: String) {
@@ -257,8 +264,8 @@ async fn autostart_set(on: bool) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn settings_set(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
-    pet_window::set_settings(scale, tts, wake, walk, save);
+fn settings_set(scale: f32, tts: bool, wake: bool, walk: bool, ask: bool, save: bool) {
+    pet_window::set_settings(scale, tts, wake, walk, ask, save);
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
@@ -331,6 +338,7 @@ fn main() {
     };
     log(format!("start {}", env!("CARGO_PKG_VERSION")));
     tts::set_enabled(app_state.tts);
+    ui::set_ask_enabled(app_state.ask);
     voice::cleanup_leftovers();
 
     let result = tauri::Builder::default()
@@ -350,6 +358,7 @@ fn main() {
             autostart_set,
             bubble_state,
             permission_decide,
+            ask_action,
             pet_set
         ])
         .setup(move |app| {

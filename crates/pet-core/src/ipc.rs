@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::ask::Question;
 use crate::hook::HookInput;
 
 /// 1 つの要求として受け付ける最大のバイト数（ヘッダ＋本文）。
@@ -27,7 +28,7 @@ pub struct Discovery {
 /// hook からアプリへ送る出来事（HTTP の本文の JSON）。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct WireEvent {
-    /// `"prompt"` | `"tool_start"` | `"permission"` | `"notification"` | `"stop"` |
+    /// `"prompt"` | `"tool_start"` | `"permission"` | `"ask_question"` | `"notification"` | `"stop"` |
     /// `"stop_failure"` | `"other"`
     pub kind: String,
     pub session: String,
@@ -42,6 +43,10 @@ pub struct WireEvent {
     /// 付ける。古い pet-hook は付けないので、無ければ「分からない」として扱う。
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub origin: Option<String>,
+    /// 質問（`ask_question`）の中身。質問文・見出し・選択肢（ラベルと説明）・複数選択か。元の文字列のまま
+    /// （表示用の整形はアプリ側が `display_*` で行う）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub questions: Option<Vec<Question>>,
 }
 
 /// 承認の状態（`GET /permission/<id>` の応答の JSON）。
@@ -88,6 +93,7 @@ impl From<&HookInput> for WireEvent {
             summary: None,
             detail: None,
             origin: None,
+            questions: None,
         };
         match input {
             HookInput::Prompt { session } => mk("prompt", session),
@@ -103,6 +109,11 @@ impl From<&HookInput> for WireEvent {
                 tool: Some(tool.clone()),
                 summary: Some(summary.clone()),
                 ..mk("permission", session)
+            },
+            HookInput::AskQuestion { session, request } => WireEvent {
+                tool: Some("AskUserQuestion".to_string()),
+                questions: Some(request.questions.clone()),
+                ..mk("ask_question", session)
             },
             HookInput::Notification { session, kind } => WireEvent {
                 detail: Some(kind.as_str().to_string()),

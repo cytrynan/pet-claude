@@ -90,6 +90,16 @@
   </div>
   <p class="note" id="autostart-status" hidden></p>
 
+  <h2>Claude Code</h2>
+  <div class="group">
+    <!-- 質問（AskUserQuestion）を吹き出しのカードで答える（K 指示 2026-10-27・既定オン） -->
+    <div class="row">
+      <label for="ask">質問にペットで答える</label>
+      <input type="checkbox" class="switch" id="ask" role="switch">
+    </div>
+  </div>
+  <p class="note">オフのときは「聞きたいことがあるよ」と知らせるだけで、質問には Claude Code の画面で答えます。</p>
+
   <h2>声</h2>
   <div class="group">
     <div class="row">
@@ -142,11 +152,12 @@
   const tts = document.getElementById("tts");
   const wake = document.getElementById("wake");
   const walk = document.getElementById("walk");
+  const ask = document.getElementById("ask");
   const pet = document.getElementById("pet");
   const show = () => { scaleValue.textContent = scale.value + "%"; };
   // スライダーを動かしている間は描き直すだけ（save: false）、離したら保存する
   const send = (persist) => invoke("settings_set", {
-    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, walk: walk.checked, save: persist,
+    scale: Number(scale.value) / 100, tts: tts.checked, wake: wake.checked, walk: walk.checked, ask: ask.checked, save: persist,
   });
   const save = () => send(true);
   const wakeWord = document.getElementById("wake-word");
@@ -234,6 +245,7 @@
     tts.checked = s.tts;
     wake.checked = s.wake;
     walk.checked = s.walk;
+    ask.checked = s.ask !== false;
     fillPets(s);
     showAuth(s.chatAuth || "subscription", !!s.hasApiKey);
     show();
@@ -249,6 +261,7 @@
   tts.addEventListener("change", save);
   wake.addEventListener("change", save);
   walk.addEventListener("change", save);
+  ask.addEventListener("change", save);
   // 読み込みは別スレッドで 1〜2 秒かかる。読めないペットだったときに選択欄が戻るよう、少し後に聞き直す
   // 聞き直すのはペットの選択欄だけ（ほかのスイッチやスライダーを古い値で巻き戻さない）。その間に
   // 別のペットを選び直していたら触らない（新しいほうの聞き直しに任せる。2026-10-21 検証係の指摘）。

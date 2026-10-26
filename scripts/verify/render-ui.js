@@ -61,6 +61,52 @@ const cases = [
     state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: true, lines: 1, more: 12, askLabel: "Claude Code で", note: "全文が見えないので、許可は Claude Code で" } } },
   { name: "perm-app-note-more", page: "bubble.html", size: [344, 172 + 24],
     state: { bubble_state: { mode: "permission", id: "p1", tool: "Bash", summary: "cargo test -p pet-core", canAllow: false, lines: 1, more: 12, askLabel: "Claude アプリで", note: "全文が見えないので、許可は Claude アプリで" } } },
+  // 質問のカード（AskUserQuestion）。高さは ui.rs と同じ式: 92 ＋ 質問の行数×18 ＋ 選択肢（ラベルだけ 30・説明つき 44・回答を書く 30・間 4×選択肢の数）
+  ...[
+    // 1 問・説明つき 3 つ（司令塔が実測した入力）・ターミナル
+    { name: "ask-single", height: 92 + 18 + (44 * 3 + 30 + 4 * 3),
+      state: { mode: "ask", id: "q1", key: "q1:0", header: "好きな色", question: "どの色が好きですか？", multi: false, more: 0, askLabel: "ターミナルで",
+        options: [{ label: "Red", description: "赤", picked: false }, { label: "Green", description: "緑", picked: false }, { label: "Blue", description: "青", picked: false }] } },
+    // 複数選択・説明なし 4 つ・2 つ選んである・ほかに 12 件・Claude アプリで（ボタン行が最長）・質問 2 行
+    { name: "ask-multi-more", height: 92 + 36 + (30 * 4 + 30 + 4 * 4),
+      state: { mode: "ask", id: "q2", key: "q2:0", header: "形 · 1/3", question: "どの形を使いますか？ 複数選んでもかまいません。あとから変えられます", multi: true, more: 12, askLabel: "Claude アプリで",
+        options: [{ label: "丸", description: "", picked: true }, { label: "四角", description: "", picked: false }, { label: "三角", description: "", picked: true }, { label: "星", description: "", picked: false }] } },
+    // 3 行の質問・長い説明（1 行に省略）4 つ・2/3
+    { name: "ask-long", height: 92 + 54 + (44 * 4 + 30 + 4 * 4),
+      state: { mode: "ask", id: "q3", key: "q3:1", header: "接続 · 2/3", question: "チャットの接続はどれにしますか？サブスクは Claude Code にログインしているアカウントで答え、API キーは使った分だけ課金されます。", multi: false, more: 1, askLabel: "Claude Code で",
+        options: [
+          { label: "サブスク", description: "Claude Code にログインしているアカウントで答える。追加の課金は無い", picked: false },
+          { label: "API キー", description: "使った分だけ課金される。鍵は Windows の資格情報マネージャーに保存する", picked: false },
+          { label: "あとで決める", description: "いまは何も変えない", picked: false },
+          { label: "両方試す", description: "サブスクで試してから API キーに切り替える", picked: false }] } },
+  ].map((c) => ({ name: c.name, page: "bubble.html", size: [344, c.height + 24], state: { bubble_state: { ...c.state, height: c.height } } })),
+  // 選択肢を押す経路（出たばかりの 600ms は押せない → 700ms 待ってから押す）: ask_action の pick が番号で届く
+  { name: "ask-pick", page: "bubble.html", size: [344, 92 + 18 + (30 * 2 + 30 + 4 * 2) + 24],
+    state: { bubble_state: { mode: "ask", id: "q4", key: "q4:0", header: "質問", question: "どっち？", multi: false, more: 0, askLabel: "ターミナルで", height: 92 + 18 + (30 * 2 + 30 + 4 * 2),
+      options: [{ label: "A", description: "", picked: false }, { label: "B", description: "", picked: false }] }, ask_action: "ok" },
+    act: async (page) => {
+      await page.waitForTimeout(700);
+      await page.click('[data-i="1"]');
+      await page.click('[data-a="text"]');
+      await page.waitForTimeout(100);
+      const calls = (await page.evaluate(() => window.__calls)).filter((c) => c.cmd === "ask_action");
+      const ok = calls.length === 2 && calls[0].args.action === "pick" && calls[0].args.value === "1" && calls[0].args.id === "q4" && calls[1].args.action === "text";
+      return { ok, detail: JSON.stringify(calls.map((c) => c.args)) };
+    } },
+  // チャット欄が質問への回答の入力になっている: 質問文を出し、送信は ask_action の answer に向く
+  { name: "chat-ask", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+    state: { chat_state: { answer: null, error: false, busy: false, ask: { id: "q1", question: "どの色が好きですか？" } }, ask_action: "ok" },
+    act: async (page) => {
+      await page.fill("#text", "むらさき");
+      await page.click("#send");
+      await page.waitForTimeout(200);
+      const calls = await page.evaluate(() => window.__calls);
+      const sent = calls.some((c) => c.cmd === "ask_action" && c.args && c.args.action === "answer" && c.args.value === "むらさき" && c.args.id === "q1");
+      const noChat = !calls.some((c) => c.cmd === "chat_submit");
+      const left = await page.inputValue("#text");
+      const title = await page.textContent("#answer-title");
+      return { ok: sent && noChat && left === "" && title === "質問", detail: `calls=${JSON.stringify(calls.map((c) => c.cmd))} input="${left}" title=${title}` };
+    } },
 ];
 
 let failed = 0;

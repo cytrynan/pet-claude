@@ -8,6 +8,7 @@
 
 use serde_json::{Map, Value, json};
 
+use crate::ask::AskRequest;
 use crate::behavior::AgentEvent;
 
 /// 標準入力として受け付ける最大のバイト数。これを超えたら解析しない。
@@ -49,8 +50,14 @@ impl NotificationKind {
 pub enum HookInput {
     /// `UserPromptSubmit`
     Prompt { session: String },
-    /// `PreToolUse`
+    /// `PreToolUse`（`AskUserQuestion` 以外、または質問の形が読めないとき）
     ToolStart { session: String, tool: String },
+    /// `PreToolUse` で `tool_name == "AskUserQuestion"` かつ `tool_input.questions` が読めたとき。
+    /// 質問の本文は `request` に持つ（吹き出しに出すため。出してよいかは `AskRequest::presentable`）
+    AskQuestion {
+        session: String,
+        request: AskRequest,
+    },
     /// `PermissionRequest`。`summary` は `summarize` を通した 1 行。
     PermissionRequest {
         session: String,
@@ -125,10 +132,17 @@ pub fn parse(input: &[u8]) -> Result<HookInput, HookError> {
 
     let parsed = match event {
         "UserPromptSubmit" => HookInput::Prompt { session },
-        "PreToolUse" => HookInput::ToolStart {
-            session,
-            tool: tool_name()?,
-        },
+        "PreToolUse" => {
+            let tool = tool_name()?;
+            let request = (tool == "AskUserQuestion")
+                .then(|| obj.get("tool_input"))
+                .flatten()
+                .and_then(AskRequest::parse);
+            match request {
+                Some(request) => HookInput::AskQuestion { session, request },
+                None => HookInput::ToolStart { session, tool },
+            }
+        }
         "PermissionRequest" => {
             let tool = tool_name()?;
             // tool_input が無い・オブジェクトでないときは Null を渡す（summarize は空文字を返す）。
@@ -279,9 +293,11 @@ pub fn to_agent_event(input: &HookInput) -> Option<AgentEvent> {
         HookInput::ToolStart { session, .. } => Some(AgentEvent::ToolStart {
             session: session.clone(),
         }),
-        HookInput::PermissionRequest { session, .. } => Some(AgentEvent::NeedsInput {
-            session: session.clone(),
-        }),
+        HookInput::PermissionRequest { session, .. } | HookInput::AskQuestion { session, .. } => {
+            Some(AgentEvent::NeedsInput {
+                session: session.clone(),
+            })
+        }
         HookInput::Notification { session, kind } => match kind {
             NotificationKind::PermissionPrompt | NotificationKind::ElicitationDialog => {
                 Some(AgentEvent::NeedsInput {

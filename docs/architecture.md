@@ -176,6 +176,7 @@ Grabbed（ドラッグ中）
 |---|---|---|---|
 | `UserPromptSubmit` | Prompt（起き上がる） | 出ている承認のカードを下げる | 非同期（`async: true`, timeout 5） |
 | `PreToolUse`（`*`） | ToolStart（作業） | なし | 非同期 |
+| `PreToolUse`（`AskUserQuestion`） | NeedsInput（手を振る） | 質問のカード（§5.4） | **同期**（timeout 300・`--ask`）。答えが来るまで待つ |
 | `PermissionRequest`（`*`） | NeedsInput（手を振る） | 承認のカード | **同期**（timeout 60）。答えが来るまで待つ |
 | `Notification` | `permission_prompt`・`elicitation_dialog` は NeedsInput | `elicitation_dialog` は「入力を待ってるよ」 | 非同期 |
 | `Stop` | Done（1 回だけ喜ぶ） | 「できたよ」・カードを下げる | 非同期 |
@@ -213,6 +214,18 @@ Grabbed（ドラッグ中）
 - hook は接続 300ms・読み書き 500ms、応答全体 1 秒・16KB で諦める
 - 承認は 120 秒、または hook が 5 秒問い合わせなければ失効（GET は 404、答えは受け付けない）。hook の待ちは最大 55 秒・問い合わせは 300ms ごと
 - 故障注入: hook 側 `crates/pet-hook/tests/fault.rs`（9 本）、アプリ側 `scripts/verify/fault-app.py`（遅い接続・期限後に完成した要求・放置の失効）
+
+### 5.4 質問（AskUserQuestion・2026-10-27 実装）
+
+Claude Code が `AskUserQuestion` で聞いてきた質問に、ペットの吹き出しで答える（K 指示 2026-10-27。正本 `.steering/20261027-ask-question/brief.md`）。中心ロジックは `pet-core::ask`（解析・出してよいかの検査・hook の出力・1 問ずつの進み `Progress`。テストは `crates/pet-core/tests/ask.rs`）。
+
+- **hook の仕組み**（公式 hooks リファレンス「Tools that require user interaction」）: `PreToolUse`（matcher `AskUserQuestion`）が `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{"questions":[元のまま],"answers":{"<質問文>":"<ラベル>"}}}}` を返すと、質問の画面を出さずに進む（`allow` だけでは足りない）。複数選択はラベルを `, ` でつなぐ。**選択肢に無い自由文も受ける**（2026-10-27 CLI の対話で実測。「User answered Claude's questions: → むらさき」と出て Claude はその答えを使った）。拒否は `permissionDecision: "deny"`＋`permissionDecisionReason`（承認の拒否と同じ文言）
+- **登録**: `--install-hooks` が `PreToolUse` に matcher `AskUserQuestion`・**同期**・`timeout` 300（既定の 60 秒では読んで考える時間が足りない）・`args: ["--pet-claude-managed", "--ask"]` の組を足す。既存の `*`（非同期）の組は残り、pet-hook は `--ask` の無い AskUserQuestion の `PreToolUse` では何もしない（同じ質問を二重に送らない。`crates/pet-hook/tests/fault.rs` の ask_*）
+- **往復**: pet-hook が `POST /permission` に kind `ask_question` で質問（`WireEvent.questions`: 質問文・見出し・選択肢・複数選択か。元の文字列のまま）と来た先（§5.2 の 7）を送り、承認と同じ `GET /permission/<id>` を 300ms ごとに最大 290 秒（`PET_ASK_WAIT_SECS`）問い合わせる。アプリは 300 秒で失効（承認は 120 秒）。答えは応答の `answers`（`Reply` の並び: `{"chosen":[...]}`／`{"free":"..."}`）。hook は `ask_output` で質問に合うか検査してから出力する（合わなければ `{}`）
+- **カード**（DESIGN.md「質問のカード」）: 1 問ずつ出す。見出し（`header`。複数なら `n/N`）→ 質問文（折り返し・200 字まで）→ 選択肢の行（ラベル＋説明 1 行）→ 「回答を書く…」（チャット欄を答えの入力に切り替える。1〜500 字・1 行）→ 「ターミナルで／Claude アプリで／Claude Code で」「拒否」（複数選択は「決定」）。待ちが複数なら「ほかに N 件」。出たばかりのカードと次の質問に進んだ直後は 600ms 押せない（承認と同じ）。全部答えてから 1 回で hook に返す
+- **出さない時**: 設定「質問にペットで答える」がオフ（`state.json` の `ask`。既定オン）、または質問文・ラベルに URL／パス／コード／秘密らしい文字列（チャットの吹き出しと同じ `chat::is_unsafe_for_bubble`）か隠れた文字（ゼロ幅・双方向制御）がある、形が違う（5 問以上・5 選択肢以上・ラベルの重複・質問文の重複）→ 吹き出しに「聞きたいことがあるよ」を出し、`tts` がオンなら読み上げ、hook には「決めない」（`{}`）で Claude Code のいつもの画面に任せる。説明だけが出せない時は説明を空にしてカードは出す
+- **試験**: デバッグビルドだけ `PET_AUTO_ASK=pick:last|pick:first|free:<文>|deny|ask`（`PET_CLAUDE_DATA_DIR` と一緒の時だけ）。端から端までは `scripts/verify/e2e-ask.sh`（対話の `claude` を ConPTY で動かす `scripts/verify/claude-tui.py`。`-p` ではモデルが AskUserQuestion を呼ばない）。見た目は `scripts/verify/render-ui.js` の `ask-*`・`chat-ask`
+- **対象外**: ペットのチャット（`claude -p`）からの質問。デスクトップ版は仕組みが同じ（同じ hook・同じ環境変数）だが実機の確認は K 待ち
 
 ## 6. 声（Phase 3〜4）
 

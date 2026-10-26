@@ -24,6 +24,8 @@ pub struct AppState {
     pub wake: bool,
     /// 放置すると散歩する（K 指示 2026-10-21: 既定はオフ。睡眠は対象外）
     pub walk: bool,
+    /// Claude Code の質問（AskUserQuestion）にペットの吹き出しで答える（K 指示 2026-10-27: 既定はオン）
+    pub ask: bool,
     /// 表示するペットの id（`pets::discover` の id。None は内蔵の仮キャラ）
     pub pet: Option<String>,
     /// チャットの接続（K 決定 2026-10-21: 既定はサブスク）。API キーそのものは資格情報マネージャー（cred.rs）
@@ -38,6 +40,7 @@ impl Default for AppState {
             tts: true,
             wake: false,
             walk: false,
+            ask: true,
             pet: None,
             chat_auth: AuthMode::Subscription,
         }
@@ -66,6 +69,7 @@ impl AppState {
             tts: v["tts"].as_bool().unwrap_or(d.tts),
             wake: v["wake"].as_bool().unwrap_or(d.wake),
             walk: v["walk"].as_bool().unwrap_or(d.walk),
+            ask: v["ask"].as_bool().unwrap_or(d.ask),
             pet: v["pet"].as_str().map(str::to_string),
             // 無い・知らない値はサブスク（from_state の規則）
             chat_auth: AuthMode::from_state(v["chat_auth"].as_str()),
@@ -82,6 +86,7 @@ impl AppState {
             "tts": self.tts,
             "wake": self.wake,
             "walk": self.walk,
+            "ask": self.ask,
             "pet": self.pet,
             "chat_auth": self.chat_auth.as_str(),
         });

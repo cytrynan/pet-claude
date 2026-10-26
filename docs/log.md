@@ -9,6 +9,9 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-27
+* **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — 質問（AskUserQuestion）にペットの吹き出しで答える（§5.1 の表と §5.4・F21・質問のカードと設定の「Claude Code」） (kuroko/claude-fable-5-1 ← human:K)
+
 ## 2026-10-26
 * **Update**: [技術仕様書](architecture.md) — §7 に「端末の窓を出さない」（デバッグでも GUI サブシステム・CLI は AttachConsole・リダイレクト時はつながない） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md)・[技術仕様書](architecture.md) — ウェイクワードの道具（`scripts/wake/`）を git の外に（`.gitignore`）。履歴は 25f7b23・f2bac67 (kuroko/claude-opus-5-5 ← human:K)
