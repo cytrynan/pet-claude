@@ -43,7 +43,7 @@
 
 - `cargo test -p pet-core --test bubble`（22 本）・`ui.rs` の `parse_fit`（1 本）・ゲート（fmt・clippy・全テスト）
 - `node scripts/verify/render-ui.js <out>`: 明暗 × 46 ケース、はみ出し 0・ALL OK。窓の大きさはアプリと同じ関数（`cargo run -p pet-core --example bubble_size`）から取る
-- 実機（常駐のペット）は未確認: K の常駐は `pet-claude-main\target\debug\pet-app.exe` で、このブランチのビルドは `target-bubble` に分けた
+- 実機（2026-10-27 03:09・主ディスプレイ 2880×1800・200%）: `py -3 -I scripts/verify/shot-status.py target-bubble <出力>` で、K の常駐（`pet-claude-main` の `target/debug/pet-app.exe`・PID 26420）を止めずに 2 体目（別のデータフォルダ＝試験用のミューテックス）を起こし、ミュートのマイクの形の WAV で「マイクを使えないよ（ミュートか Windows の設定）」を出した。2 行の角丸の箱に全文が出て、「できたよ」は従来のカプセルのまま。ペットが作業領域の右端にいる時は吹き出しが左へ寄る（従来どおり）。⚠️ 試験用のミューテックスは 1 つなので、別のセッションの試験用 pet-app（`target-ask`）が動いている間は起動できない（「既に起動しているので終了」。スクリプトはそれを検知して止まる）
 
 ## 止まった点
 
