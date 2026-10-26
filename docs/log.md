@@ -9,8 +9,19 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-26
+* **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md)・[技術仕様書](architecture.md) — ウェイクワードの道具（`scripts/wake/`）を git の外に（`.gitignore`）。履歴は 25f7b23・f2bac67 (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md)・[技術仕様書](architecture.md) — ウェイクワード（F20）を保留に。道具までで止め、ダウンロード・K の録音・マイクへの接続はしない (kuroko/claude-opus-5-5 ← human:K)
+
 ## 2026-10-24
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — 承認のカードの「ターミナルで」を要求の来た先で変える（アプリは「Claude アプリで」・分からない時は「Claude Code で」）。§5.2 に判定の規則（CLAUDE_CODE_ENTRYPOINT と、EXECPATH と CLAUDE_PID の実行ファイルの照合）と根拠、DESIGN.md にボタン行の余白と折り返さない規則 (kuroko/claude-opus-5-5)
+* **Update**: [プロダクト要求定義書](product-requirements.md)・[ロードマップ](roadmap.md) — U3 を決定に（まめドラゴンを本番素材にする）。roadmap の Phase 4 の本番素材を決定済みに (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §6 のウェイクワードを実装どおりに（Python の子・openWakeWord の特徴抽出＋ペットごとの頭・学習と判定の道具・置き場所・ライセンス CC BY-NC-SA 4.0） (kuroko/claude-opus-5-5)
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 のウェイクワードを「学習と判定の道具まで。数字はダウンロードと K の録音待ち」に (kuroko/claude-opus-5-5)
+
+## 2026-10-23
+* **Update**: [ロードマップ](roadmap.md) — Phase 4 の自動起動（実装済み）とウェイクワード（道具まで）の進み具合 (kuroko/claude-opus-5-5)
+* **Update**: [技術仕様書](architecture.md) — §7 に自動起動（Windows タスク・run-hidden.vbs・schtasks の XML・CLI）を実装どおりに (kuroko/claude-opus-5-5)
 
 ## 2026-10-22
 * **Update**: [技術仕様書](architecture.md) — §6.3 文字起こしのスクリプトは exe に埋め込んでデータフォルダへ書き出す（セキュリティレビューの指摘） (kuroko/claude-opus-5-5)

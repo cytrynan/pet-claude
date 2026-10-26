@@ -80,6 +80,16 @@
     </div>
   </div>
 
+  <h2>起動</h2>
+  <div class="group">
+    <!-- 実物はタスク スケジューラ（pet-claude）。開くたびに読み直す（Phase 4・PRD N5） -->
+    <div class="row">
+      <label for="autostart">サインインしたらペットを出す</label>
+      <input type="checkbox" class="switch" id="autostart" role="switch" disabled>
+    </div>
+  </div>
+  <p class="note" id="autostart-status" hidden></p>
+
   <h2>声</h2>
   <div class="group">
     <div class="row">
@@ -200,7 +210,26 @@
     checkResult.textContent = await invoke("chat_auth_check", { mode: auth.value });
     check.disabled = false;
   });
+  // ---- 自動起動（Windows タスク）。スイッチは実物の状態に合わせて戻す（登録に失敗したらオフに戻る） ----
+  const autostart = document.getElementById("autostart");
+  const autostartStatus = document.getElementById("autostart-status");
+  const showAutostart = (a) => {
+    if (!a) return;
+    autostart.checked = a.state === "on";
+    autostart.disabled = false;
+    const text = a.state === "other" ? "別の場所の pet-app が登録されています。オンにすると、いま動いているものに置き換えます"
+      : a.state === "error" ? "登録できませんでした: " + a.detail
+      : "";
+    autostartStatus.textContent = text;
+    autostartStatus.title = a.state === "other" ? a.detail : "";
+    autostartStatus.hidden = text === "";
+  };
+  autostart.addEventListener("change", async () => {
+    autostart.disabled = true;
+    showAutostart(await invoke("autostart_set", { on: autostart.checked }));
+  });
   window.reload = () => invoke("settings_get").then((s) => {
+    invoke("autostart_get").then(showAutostart);
     scale.value = Math.round(s.scale * 100);
     tts.checked = s.tts;
     wake.checked = s.wake;
