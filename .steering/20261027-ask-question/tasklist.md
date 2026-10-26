@@ -15,4 +15,4 @@ tracking: #37
 - [x] `--install-hooks` に AskUserQuestion の同期 hook（timeout 300・`--ask`）を足す (#42)
 - [x] 画面の確認（render-ui.js に質問のカード・明暗ではみ出し 0）と CLI の対話で A1〜A7（未確認②の自由文を含む） (#43)
 - [x] docs（architecture §5・DESIGN.md・PRD・log.md）と apple-design の改善点 (#44)
-- [ ] K の実機でデスクトップ版の確認（未確認①。手順は報告に） (#45)
+- [x] K の実機でデスクトップ版の確認（未確認①。手順は報告に） (#45)

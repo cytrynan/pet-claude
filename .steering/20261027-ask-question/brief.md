@@ -106,3 +106,18 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-27T02:30:00+09:00 }
 2. TUI の照合 `ANSWER=` がプロンプトの echo に当たり、Claude が答える前に /exit を送っていた（3 モードが「要求 0」で FAIL）。Claude の答えの行の印「● 」で照合するようにした
 3. 質問の hook が `{}` を返した後、auto mode は AskUserQuestion の PermissionRequest を起こし、ペットに要約の無い承認のカードが出た。pet-hook はそのツールの承認を送らず `{}` で任せるようにした（故障注入 1 本）
 4. `wmic` が Windows 11 に無く、試験のアプリが残った。PowerShell の Get-Process で実行ファイルの場所から止める
+
+## K の実機の結果（2026-10-27 03:43〜03:52・main 2d0e1d7 のビルド・本物のクリック）
+
+| 手順 | 判定 | 証拠 |
+|---|---|---|
+| 5 Blue をクリック（CLI） | PASS | 端末「User answered Claude's questions: → Blue」「ANSWER=Blue」・pet.log action=pick → state=allow |
+| 6 回答を書く…→ むらさき（CLI） | PASS | 端末「→ むらさき」「ANSWER=むらさき」・pet.log action=text → chat shown → action=answer → state=allow |
+| 7 拒否（CLI） | PASS | 端末「ANSWER=DECLINED」＋「hook error: ペット（pet-claude）の吹き出しで拒否されました」・state=deny |
+| 8 ターミナルで（CLI） | PASS | 端末にいつもの質問の画面（Red/Green/Blue・Enter to select）・state=ask。K は別の端末を見ていて最初「出ない」と報告したが、起こした端末タブには出ていた |
+| 9 デスクトップ版（Code タブのセッションが AskUserQuestion を呼ぶ） | PASS | ボタンは「Claude アプリで」（K の目視）。ペットのカードの Blue で Claude 側に Blue が届き、アプリの質問 UI は出なかった。pet.log 03:49:53 ask requested → action=pick → state=allow |
+| 10 設定オフ | PASS | pet.log `enabled=false`・カード無し・質問はアプリの画面に出て K が Red を選んだ。state.json `"ask": false`。吹き出しの「聞きたいことがあるよ」は K の目視（下に追記） |
+
+A11（デスクトップ版）は PASS に更新。
+
+吹き出しの「聞きたいことがあるよ」: 出た（K の目視・2026-10-27）。10 手順すべて合格。
