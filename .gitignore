@@ -39,8 +39,13 @@ build/
 
 # ↓ /init-stack 実行で言語固有のエントリがここに追記されます
 target/
-# 別のビルド先（K のペットが target/debug の exe を掴んでいる間の試験用。target-chat・target-voice など）
+# 別のビルド先（K のペットが target/debug の exe を掴んでいる間の試験用。target-chat・target-voice・target-p4 など）
 target-*/
+__pycache__/
+
+# ウェイクワードの道具（F20 は保留。K 2026-10-26「ウェイクワード関連のフォルダ、ファイルは gitignore にして」）。
+# 中身は commit 25f7b23・f2bac67 の履歴に残る。再開する時はここを外して git add し直す
+/scripts/wake/
 
 # Tauri が生成するスキーマ
 crates/pet-app/gen/
