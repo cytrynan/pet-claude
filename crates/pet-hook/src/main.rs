@@ -3,17 +3,22 @@
 //! - 標準入力の JSON を `pet_core::hook::parse` で読み、`WireEvent` にしてアプリへ HTTP で送る
 //! - 承認待ち（`PermissionRequest`）だけは、アプリの答えを待って許可・拒否を標準出力に書く。
 //!   答えが無い・アプリが居ない・何か失敗したときは `{}`（Claude Code のいつもの流れに戻す）
+//! - 質問（`PreToolUse` の `AskUserQuestion`）は、`--ask` 引数で起こされたときだけアプリへ送り、承認と同じ
+//!   経路で答え（選んだラベル・自由文・拒否）を待って `updatedInput` 付きの JSON を書く。`--ask` の無い
+//!   登録（`*` の非同期）から来た分は何もしない（同じ質問を二重に送らない）。答えが無いときは `{}`
 //! - **どんな失敗でも終了コード 0**。Claude Code を止めない（パニックも捕まえる）
 //!
 //! 環境変数:
 //! - `PET_CLAUDE_DATA_DIR`: 発見ファイルを探す場所（既定 `%LOCALAPPDATA%\pet-claude`）。試験用
 //! - `PET_PERMISSION_WAIT_SECS`: 承認の答えを待つ最大秒数（既定 55）
+//! - `PET_ASK_WAIT_SECS`: 質問の答えを待つ最大秒数（既定 290。登録する hook の timeout は 300）
 
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
+use pet_core::ask::{AskAnswer, AskRequest, ask_output};
 use pet_core::hook::{self, Decision, HookInput, MAX_INPUT_BYTES};
 use pet_core::ipc::{self, Discovery, WireEvent};
 use pet_core::origin;
@@ -22,12 +27,18 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(300);
 const IO_TIMEOUT: Duration = Duration::from_millis(500);
 const POLL_INTERVAL: Duration = Duration::from_millis(300);
 const DEFAULT_WAIT_SECS: u64 = 55;
+/// 質問の答えを待つ既定の秒数。人が読んで考える時間を取る（登録する hook の timeout 300 秒より短く）。
+const DEFAULT_ASK_WAIT_SECS: u64 = 290;
+/// 質問の待ちの上限（hook の timeout 300 秒を超えても意味が無い）。
+const MAX_ASK_WAIT_SECS: u64 = 295;
 const DENY_MESSAGE: &str = "ペット（pet-claude）の吹き出しで拒否されました";
-/// 1 往復の応答を読み切る期限と大きさの上限（アプリの応答は数十バイト）。
+/// 1 往復の応答を読み切る期限と大きさの上限（アプリの応答は数十バイト。質問の答えでも数 KB）。
 const RESPONSE_DEADLINE: Duration = Duration::from_millis(1000);
 const MAX_RESPONSE_BYTES: usize = 16 * 1024;
 /// 承認の `detail` に付ける印。アプリ側の `ui::can_allow` と同じ値。
 const EXACT: &str = "exact";
+/// 質問を扱う登録に付ける引数（`install.rs` が登録する）。
+const ASK_ARG: &str = "--ask";
 
 fn main() {
     let out = std::panic::catch_unwind(run).ok().flatten();
@@ -46,8 +57,22 @@ fn run() -> Option<String> {
         .take(MAX_INPUT_BYTES as u64 + 1)
         .read_to_end(&mut buf);
     let input = hook::parse(&buf).ok()?;
+    if let HookInput::AskQuestion { request, .. } = &input {
+        // `*` の非同期登録から来た分は何もしない（同期の `--ask` 登録が送って答えを待つ）
+        if !std::env::args().any(|a| a == ASK_ARG) {
+            return None;
+        }
+        return Some(run_ask(request, &input));
+    }
     let is_permission = matches!(input, HookInput::PermissionRequest { .. });
     let ask = || is_permission.then(|| hook::permission_output(&Decision::Ask));
+    if let HookInput::PermissionRequest { tool, .. } = &input
+        && tool == "AskUserQuestion"
+    {
+        // 質問の承認（auto mode で、質問の hook が「決めない」を返した後に来る。2026-10-27 実測）は
+        // Claude Code の画面の質問そのもの。カードにしても要約が無く答えられないので、アプリには送らず任せる
+        return ask();
+    }
 
     let Some(disc) = discovery() else {
         return ask();
@@ -71,6 +96,20 @@ fn run() -> Option<String> {
     }
     let decision = wait_for_decision(&disc, &body).unwrap_or(Decision::Ask);
     Some(hook::permission_output(&decision))
+}
+
+/// 質問をアプリへ送り、答えを待って hook の出力にする。アプリが居ない・答えが無い・何か失敗なら `{}`
+/// （Claude Code のいつもの画面が出る）。
+fn run_ask(request: &AskRequest, input: &HookInput) -> String {
+    let answer = (|| {
+        let disc = discovery()?;
+        let mut event = WireEvent::from(input);
+        event.origin = Some(permission_origin().as_str().to_string());
+        let body = serde_json::to_string(&event).ok()?;
+        wait_for_answer(&disc, &body)
+    })()
+    .unwrap_or(AskAnswer::Ask);
+    ask_output(request, &answer)
 }
 
 /// 承認の要約が元の文字列と同じか。`parse` は済んでいるので、ここでは要約の元だけ読み直す。
@@ -236,7 +275,18 @@ fn call(disc: &Discovery, method: &str, path: &str, body: &str) -> Option<(u16, 
     Some((status, body.to_string()))
 }
 
-fn wait_for_decision(disc: &Discovery, body: &str) -> Option<Decision> {
+/// 環境変数の秒数（無い・読めなければ既定）。巨大な値で Instant の足し算が溢れないよう上限で切る。
+fn wait_secs(var: &str, default: u64, max: u64) -> u64 {
+    std::env::var(var)
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(default)
+        .min(max)
+}
+
+/// `POST /permission` で登録し、答えが出るまで `GET /permission/<id>` を問い合わせる。答えの JSON
+/// （`state` が `pending` 以外）を返す。時間切れ・アプリが落ちた・id が消えたら None。
+fn wait_for_state(disc: &Discovery, body: &str, wait: Duration) -> Option<serde_json::Value> {
     let (status, resp) = call(disc, "POST", "/permission", body)?;
     if status != 200 {
         return None;
@@ -244,13 +294,7 @@ fn wait_for_decision(disc: &Discovery, body: &str) -> Option<Decision> {
     let id = serde_json::from_str::<serde_json::Value>(&resp).ok()?["id"]
         .as_str()?
         .to_string();
-    let wait = std::env::var("PET_PERMISSION_WAIT_SECS")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(DEFAULT_WAIT_SECS)
-        // 巨大な値で Instant の足し算が溢れないように（hook の timeout は 60 秒なので、それ以上は意味が無い）
-        .min(DEFAULT_WAIT_SECS * 2);
-    let deadline = Instant::now() + Duration::from_secs(wait);
+    let deadline = Instant::now() + wait;
     while Instant::now() < deadline {
         std::thread::sleep(POLL_INTERVAL);
         let Some((200, resp)) = call(disc, "GET", &format!("/permission/{id}"), "") else {
@@ -258,16 +302,45 @@ fn wait_for_decision(disc: &Discovery, body: &str) -> Option<Decision> {
             return None;
         };
         let state = serde_json::from_str::<serde_json::Value>(&resp).ok()?;
-        match state["state"].as_str()? {
-            "allow" => return Some(Decision::Allow),
-            "deny" => {
-                return Some(Decision::Deny {
-                    message: DENY_MESSAGE.to_string(),
-                });
-            }
-            "ask" => return Some(Decision::Ask),
-            _ => {}
+        if state["state"].as_str()? != "pending" {
+            return Some(state);
         }
     }
     None
+}
+
+fn wait_for_decision(disc: &Discovery, body: &str) -> Option<Decision> {
+    // hook の timeout は 60 秒なので、それ以上は意味が無い
+    let wait = wait_secs(
+        "PET_PERMISSION_WAIT_SECS",
+        DEFAULT_WAIT_SECS,
+        DEFAULT_WAIT_SECS * 2,
+    );
+    let state = wait_for_state(disc, body, Duration::from_secs(wait))?;
+    match state["state"].as_str()? {
+        "allow" => Some(Decision::Allow),
+        "deny" => Some(Decision::Deny {
+            message: DENY_MESSAGE.to_string(),
+        }),
+        "ask" => Some(Decision::Ask),
+        _ => None,
+    }
+}
+
+/// 質問の答え。`allow` のときは応答の `answers`（`Reply` の並び）を読む。読めなければ None（`{}` になる）。
+fn wait_for_answer(disc: &Discovery, body: &str) -> Option<AskAnswer> {
+    let wait = wait_secs(
+        "PET_ASK_WAIT_SECS",
+        DEFAULT_ASK_WAIT_SECS,
+        MAX_ASK_WAIT_SECS,
+    );
+    let state = wait_for_state(disc, body, Duration::from_secs(wait))?;
+    match state["state"].as_str()? {
+        "allow" => Some(AskAnswer::Answered(
+            serde_json::from_value(state["answers"].clone()).ok()?,
+        )),
+        "deny" => Some(AskAnswer::Deny),
+        "ask" => Some(AskAnswer::Ask),
+        _ => None,
+    }
 }

@@ -17,6 +17,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use pet_core::ask::{Progress, Step};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::{PermissionState, WireEvent};
 use pet_core::placement;
@@ -89,6 +90,16 @@ const SUMMARY_LINE_HEIGHT: f64 = 17.0;
 const EXACT: &str = "exact";
 /// 出たばかりの承認のカードを押せない時間（ダブルクリックの間隔 500ms より長く）。
 const FRESH_CARD_GUARD: Duration = Duration::from_millis(600);
+/// 質問のカード: 幅、固定部分の高さ（上下の余白 24＋見出しの行 16＋ボタン行 34＋区切り 6×3）、質問文の 1 行の
+/// 高さと桁数（本文 13px・幅 292px＝半角 41 桁を多めに 38 桁で数える）、選択肢 1 つの高さ（ラベルだけ 30・
+/// 説明つき 44）と間。bubble.html の .ask と同じ値。確認は scripts/verify/render-ui.js の ask-* の overflow が 0
+const ASK_WIDTH: f64 = 320.0;
+const ASK_BASE: f64 = 92.0;
+const ASK_LINE_HEIGHT: f64 = 18.0;
+const ASK_COLS: usize = 38;
+const ASK_OPTION_ROW: f64 = 30.0;
+const ASK_OPTION_ROW_DESC: f64 = 44.0;
+const ASK_OPTION_GAP: f64 = 4.0;
 /// ホバーで出したバーから離れて閉じるまでの猶予（縁をかすめただけで閉じないように）。
 const HOVER_LEAVE_MS: u64 = 400;
 /// 固定文言を出しておく時間。
@@ -129,6 +140,12 @@ thread_local! {
     static PRUNING: Cell<bool> = const { Cell::new(false) };
     /// 承認のカードの先頭と、それが先頭になった時刻（出たばかりのカードへの押下を捨てる）
     static FRONT_SINCE: RefCell<Option<(String, Instant)>> = const { RefCell::new(None) };
+    /// 先頭の質問のカードの進み（id と、1 問ずつ集めた答え）。先頭が替わったら作り直す
+    static ASK_PROGRESS: RefCell<Option<(String, Progress)>> = const { RefCell::new(None) };
+    /// チャット欄を「回答」の入力に切り替えている質問の id
+    static ASK_TEXT_FOR: RefCell<Option<String>> = const { RefCell::new(None) };
+    /// 設定「質問にペットで答える」（state.json の ask）
+    static ASK_ENABLED: Cell<bool> = const { Cell::new(true) };
     /// いま出ているバーはカーソルが乗って出したもの（離れたら閉じる）。クリック・チャット・右クリックで false
     static HOVER_BAR: Cell<bool> = const { Cell::new(false) };
     /// ホバーのバーから離れたかの確認を待っている
@@ -441,8 +458,11 @@ fn open_chat() {
 
 /// チャット欄の島の大きさ。答えがあれば入力欄の上に答えの欄を足す。
 fn chat_island() -> (f64, f64) {
-    // 待ち中も答えの欄を出す（「新しいチャット」で取り消せるように。2026-10-21 検証係の指摘）
-    let has_answer = CHAT_LAST.with(|c| c.borrow().is_some()) || crate::chat::busy();
+    // 待ち中も答えの欄を出す（「新しいチャット」で取り消せるように。2026-10-21 検証係の指摘）。
+    // 質問への「回答」の入力中は、答えの欄に質問文を出す
+    let has_answer = CHAT_LAST.with(|c| c.borrow().is_some())
+        || crate::chat::busy()
+        || ask_text_target().is_some();
     if has_answer {
         (CHAT_ISLAND.0, CHAT_ISLAND.1 + CHAT_GAP + CHAT_ANSWER_HEIGHT)
     } else {
@@ -470,6 +490,8 @@ pub fn chat_state() -> serde_json::Value {
             "error": c.as_ref().is_some_and(|(_, e)| *e),
             "busy": crate::chat::busy(),
             "heard": VOICE_HEARD.with(|h| h.borrow().clone()),
+            // 質問への「回答」の入力中（id と質問文）。chat.html は送信を ask_action に向ける
+            "ask": ask_text_target(),
         })
     })
 }
@@ -875,6 +897,9 @@ fn estimated_bubble_island() -> (f64, f64) {
                 ANSWER_BASE + (lines - 1) as f64 * ANSWER_LINE_HEIGHT + more,
             );
         }
+        if s["mode"] == "ask" {
+            return (ASK_WIDTH, s["height"].as_f64().unwrap_or(ASK_BASE));
+        }
         if s["mode"] == "status" {
             return pet_core::bubble::status_island(s["text"].as_str().unwrap_or(""));
         }
@@ -1021,6 +1046,7 @@ fn show_front_permission() {
         }
     });
     match front {
+        Some((id, ev, more)) if ev.kind == "ask_question" => render_ask(id, ev, more),
         Some((id, ev, more)) => render_bubble(serde_json::json!({
             "mode": "permission",
             "id": id,
@@ -1042,8 +1068,12 @@ fn origin_of(ev: &WireEvent) -> pet_core::origin::Origin {
     pet_core::origin::Origin::from_wire(ev.origin.as_deref())
 }
 
-/// 受け口から（メインスレッドで）呼ばれる。承認のカードを出す。
+/// 受け口から（メインスレッドで）呼ばれる。承認のカードを出す（質問は `show_question`）。
 pub fn show_permission(id: String, ev: WireEvent) {
+    if ev.kind == "ask_question" {
+        show_question(id, ev);
+        return;
+    }
     log(format!(
         "permission requested id={id} tool={}",
         ev.tool.as_deref().unwrap_or("")
@@ -1141,6 +1171,315 @@ pub fn drop_permissions_for(session: &str) {
     if !removed.is_empty() {
         show_front_permission();
     }
+}
+
+// ---- 吹き出し: 質問のカード（AskUserQuestion。.steering/20261027-ask-question/brief.md） ----
+
+/// 設定「質問にペットで答える」。オフなら質問のカードを出さず、知らせるだけにする。
+pub fn set_ask_enabled(on: bool) {
+    ASK_ENABLED.with(|a| a.set(on));
+}
+
+/// 受け口から（メインスレッドで）呼ばれる。質問のカードを出す。設定がオフ・吹き出しに出せない質問
+/// （URL/パス/コード/秘密らしい文字列・形が違う）なら、知らせるだけで hook には「決めない」を返す
+/// （Claude Code のいつもの画面が出る）。
+fn show_question(id: String, ev: WireEvent) {
+    let presentable = ev
+        .questions
+        .as_deref()
+        .is_some_and(pet_core::ask::presentable);
+    let enabled = ASK_ENABLED.with(Cell::get);
+    log(format!(
+        "ask requested id={id} questions={} enabled={enabled} presentable={presentable}",
+        ev.questions.as_ref().map_or(0, Vec::len)
+    ));
+    if !enabled || !presentable {
+        crate::ipc_server::decide(&id, PermissionState::Ask);
+        show_status(pet_core::voice::PHRASE_QUESTION);
+        crate::tts::phrase(pet_core::voice::PHRASE_QUESTION);
+        return;
+    }
+    PERMS.with(|q| q.borrow_mut().push_back((id.clone(), ev)));
+    crate::tts::phrase(pet_core::voice::PHRASE_QUESTION);
+    show_front_permission();
+    schedule_prune();
+    auto_ask_for_tests(&id);
+}
+
+/// 質問文をカードで折り返したときの行数の見積もり（多めに数える。本文 13px・幅 292px＝半角 41 桁を 38 桁で）。
+fn ask_lines(question: &str) -> usize {
+    let cols: usize = question
+        .chars()
+        .map(|c| if (c as u32) < 0x1100 { 1 } else { 2 })
+        .sum();
+    cols.div_ceil(ASK_COLS).max(1)
+}
+
+/// 選択肢の欄の高さ（ラベルだけ 30・説明つき 44・最後の「回答を書く…」30・間 4）。bubble.html と同じ値。
+fn ask_options_height(options: &[pet_core::ask::Choice]) -> f64 {
+    let rows: f64 = options
+        .iter()
+        .map(|c| {
+            if c.display_description().is_empty() {
+                ASK_OPTION_ROW
+            } else {
+                ASK_OPTION_ROW_DESC
+            }
+        })
+        .sum();
+    rows + ASK_OPTION_ROW + ASK_OPTION_GAP * options.len() as f64
+}
+
+/// 先頭の質問のカードの進みに触る。`id` が先頭でなければ None。
+fn with_progress<R>(id: &str, f: impl FnOnce(&mut Progress) -> R) -> Option<R> {
+    ASK_PROGRESS.with(|p| {
+        let mut p = p.borrow_mut();
+        let (i, prog) = p.as_mut()?;
+        (i == id).then(|| f(prog))
+    })
+}
+
+/// 質問のカードを描く。進み（`Progress`）は先頭のカードの id ごとに 1 つ（先頭が替わったら作り直す）。
+fn render_ask(id: String, ev: WireEvent, more: usize) {
+    let is_same = ASK_PROGRESS.with(|p| p.borrow().as_ref().is_some_and(|(i, _)| *i == id));
+    if !is_same {
+        let questions = ev.questions.clone().unwrap_or_default();
+        ASK_PROGRESS.with(|p| *p.borrow_mut() = Some((id.clone(), Progress::new(questions))));
+    }
+    let ask_label = origin_of(&ev).ask_label();
+    let state = with_progress(&id, |prog| {
+        let q = prog.current()?;
+        let counter = if prog.total() > 1 {
+            format!(" · {}/{}", prog.cursor() + 1, prog.total())
+        } else {
+            String::new()
+        };
+        let header = match q.display_header() {
+            h if h.is_empty() => "質問".to_string(),
+            h => h,
+        };
+        let options: Vec<_> = q
+            .options
+            .iter()
+            .map(|c| {
+                serde_json::json!({
+                    "label": c.display_label(),
+                    "description": c.display_description(),
+                    "picked": prog.picked().contains(&c.label),
+                })
+            })
+            .collect();
+        let question = q.display_question();
+        let lines = ask_lines(&question);
+        Some(serde_json::json!({
+            "mode": "ask",
+            "id": id,
+            // 先頭のカードと質問の番号。変わったら出たばかり扱い（600ms 押せない）にする
+            "key": format!("{id}:{}", prog.cursor()),
+            "header": format!("{header}{counter}"),
+            "question": question,
+            "options": options,
+            "multi": q.multi_select,
+            "more": more,
+            "askLabel": ask_label,
+            "height": ASK_BASE + lines as f64 * ASK_LINE_HEIGHT + ask_options_height(&q.options),
+        }))
+    })
+    .flatten();
+    match state {
+        Some(s) => render_bubble(s),
+        // 質問が無い・全部答えた後に描くことは無いはず。来たら任せる
+        None => finish_ask(&id, PermissionState::Ask, None),
+    }
+}
+
+/// 質問のカードを終える（答え・拒否・任せる）。表から消し、次のカードを出す。「回答」で開いた
+/// チャット欄は閉じる。
+fn finish_ask(id: &str, state: PermissionState, replies: Option<Vec<pet_core::ask::Reply>>) {
+    let accepted = match replies {
+        Some(r) => crate::ipc_server::decide_with_answers(id, r),
+        None => crate::ipc_server::decide(id, state),
+    };
+    let effective = match state {
+        PermissionState::Allow => "allow",
+        PermissionState::Deny => "deny",
+        _ => "ask",
+    };
+    // E2E はこの行を見る
+    log(format!("ask {id} state={effective} (accepted={accepted})"));
+    PERMS.with(|q| q.borrow_mut().retain(|(i, _)| *i != id));
+    ASK_PROGRESS.with(|p| {
+        let mut p = p.borrow_mut();
+        if p.as_ref().is_some_and(|(i, _)| i == id) {
+            *p = None;
+        }
+    });
+    let was_text = ASK_TEXT_FOR.with(|t| {
+        let mut t = t.borrow_mut();
+        let mine = t.as_deref() == Some(id);
+        if mine {
+            *t = None;
+        }
+        mine
+    });
+    if was_text && visible(CHAT) {
+        hide(CHAT);
+    }
+    show_front_permission();
+}
+
+/// 1 問答えた後。全部そろえば hook に返し、残りがあれば次の質問を描く（チャット欄が「回答」の入力なら
+/// 次の質問に合わせて描き直す）。
+fn after_ask_step(id: &str, step: Step) {
+    match step {
+        Step::Done(replies) => finish_ask(id, PermissionState::Allow, Some(replies)),
+        Step::Next => {
+            // 次の質問は出たばかり扱い（同じ場所の二度押しが次の質問に入らないように）
+            FRONT_SINCE.with(|f| *f.borrow_mut() = Some((id.to_string(), Instant::now())));
+            show_front_permission();
+            refresh_chat();
+        }
+        Step::Stay => show_front_permission(),
+        Step::Rejected => log(format!("ask {id}: 受け付けない答え")),
+    }
+}
+
+/// 質問のカードのボタン（`invoke("ask_action", {id, action, value})`）と、チャット欄の「回答」の送信。
+///
+/// - `pick`（value＝選択肢の番号）: 1 つ選ぶ質問ならその答え、複数選択なら付け外し
+/// - `submit`: 複数選択の「決定」
+/// - `text`: チャット欄を「回答」の入力に切り替えて開く
+/// - `answer`（value＝自由文）: チャット欄から。戻り値は入力欄に出す一言（受け付けたら "ok"）
+/// - `deny` / `ask`: 拒否・Claude Code の画面に任せる
+///
+/// 出たばかりのカード（600ms 以内）への pick・submit・deny は捨てる（承認のカードと同じ）。
+pub fn ask_action(id: String, action: String, value: String) -> String {
+    let is_front = ASK_PROGRESS.with(|p| p.borrow().as_ref().is_some_and(|(i, _)| *i == id));
+    if !is_front {
+        log(format!("ask {id}: もう無いカードへの {action}"));
+        return "この質問はもう終わっています".to_string();
+    }
+    let fresh = FRONT_SINCE.with(|f| pressed_too_soon(f.borrow().as_ref(), &id, Instant::now()));
+    if fresh && matches!(action.as_str(), "pick" | "submit" | "deny") {
+        log(format!(
+            "ask {id}: 出たばかりのカードへの {action} を捨てた"
+        ));
+        return String::new();
+    }
+    log(format!("ask {id} action={action}"));
+    match action.as_str() {
+        "text" => {
+            ASK_TEXT_FOR.with(|t| *t.borrow_mut() = Some(id));
+            defer(open_chat);
+            "ok".to_string()
+        }
+        "answer" => match with_progress(&id, |p| p.answer_text(&value)) {
+            Some(Step::Rejected) | None => {
+                format!("答えは 1〜{} 字で", pet_core::ask::FREE_TEXT_MAX_CHARS)
+            }
+            Some(step) => {
+                after_ask_step(&id, step);
+                "ok".to_string()
+            }
+        },
+        "pick" => {
+            let label = value.parse::<usize>().ok().and_then(|i| {
+                with_progress(&id, |p| {
+                    p.current()
+                        .and_then(|q| q.options.get(i))
+                        .map(|c| c.label.clone())
+                })
+                .flatten()
+            });
+            match label {
+                Some(l) => {
+                    if let Some(step) = with_progress(&id, |p| p.pick(&l)) {
+                        after_ask_step(&id, step);
+                    }
+                }
+                None => log(format!("ask {id}: 無い選択肢 {value}")),
+            }
+            "ok".to_string()
+        }
+        "submit" => {
+            if let Some(step) = with_progress(&id, Progress::submit) {
+                after_ask_step(&id, step);
+            }
+            "ok".to_string()
+        }
+        "deny" => {
+            finish_ask(&id, PermissionState::Deny, None);
+            "ok".to_string()
+        }
+        _ => {
+            finish_ask(&id, PermissionState::Ask, None);
+            "ok".to_string()
+        }
+    }
+}
+
+/// チャット欄が「回答」の入力になっている質問（id と、いま答える質問文）。無ければ None。
+fn ask_text_target() -> Option<serde_json::Value> {
+    let id = ASK_TEXT_FOR.with(|t| t.borrow().clone())?;
+    with_progress(&id, |p| {
+        p.current()
+            .map(|q| serde_json::json!({ "id": id, "question": q.display_question() }))
+    })
+    .flatten()
+}
+
+/// 試験用（デバッグビルドだけ）: `PET_AUTO_ASK=pick:last|pick:first|free:<文>|deny|ask` なら 1.5 秒後に
+/// ボタンと同じ関数で答える（複数の質問・複数選択は 0.7 秒ごとに 1 手ずつ）。`PET_CLAUDE_DATA_DIR` と
+/// 一緒の時だけ効く（承認の `PET_AUTO_DECIDE` と同じ理由）。
+fn auto_ask_for_tests(id: &str) {
+    if !cfg!(debug_assertions) {
+        return;
+    }
+    let Ok(spec) = std::env::var("PET_AUTO_ASK") else {
+        return;
+    };
+    if std::env::var_os("PET_CLAUDE_DATA_DIR").is_none() {
+        log("PET_AUTO_ASK は PET_CLAUDE_DATA_DIR と一緒の時だけ効く（無視した）");
+        return;
+    }
+    schedule_auto_ask(id.to_string(), spec, Duration::from_millis(1500), 12);
+}
+
+fn schedule_auto_ask(id: String, spec: String, delay: Duration, left: u32) {
+    let Some(handle) = app() else { return };
+    let _ = std::thread::Builder::new().spawn(move || {
+        std::thread::sleep(delay);
+        let _ = handle.run_on_main_thread(move || {
+            let (action, value) = match spec.split_once(':') {
+                Some(("pick", which)) => {
+                    let Some((n, multi, picked)) = with_progress(&id, |p| {
+                        p.current()
+                            .map(|q| (q.options.len(), q.multi_select, p.picked().len()))
+                    })
+                    .flatten() else {
+                        return;
+                    };
+                    if multi && picked > 0 {
+                        ("submit".to_string(), String::new())
+                    } else {
+                        let i = if which == "first" {
+                            0
+                        } else {
+                            n.saturating_sub(1)
+                        };
+                        ("pick".to_string(), i.to_string())
+                    }
+                }
+                Some(("free", text)) => ("answer".to_string(), text.to_string()),
+                _ => (spec.clone(), String::new()),
+            };
+            let _ = ask_action(id.clone(), action, value);
+            let more = with_progress(&id, |p| p.current().is_some()).unwrap_or(false);
+            if more && left > 0 {
+                schedule_auto_ask(id, spec, Duration::from_millis(700), left - 1);
+            }
+        });
+    });
 }
 
 /// 短い固定文言を 3 秒出す。承認のカード・バー・メニューが出ている間は出さない。
@@ -1282,6 +1621,7 @@ mod tests {
             summary: summary.map(Into::into),
             detail: exact.then(|| EXACT.into()),
             origin: None,
+            questions: None,
         }
     }
 

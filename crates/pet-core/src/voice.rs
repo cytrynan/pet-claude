@@ -54,6 +54,8 @@ pub const PHRASE_FAILED: &str = "失敗しちゃった";
 pub const PHRASE_WAITING: &str = "入力を待ってるよ";
 /// 許可の確認が要る時の一言。
 pub const PHRASE_PERMISSION: &str = "確認してほしいことがあるよ";
+/// 質問（AskUserQuestion）が来た（カードを出す時と、設定でペットが答えない時の両方）
+pub const PHRASE_QUESTION: &str = "聞きたいことがあるよ";
 /// チャットが失敗した時の一言。
 pub const PHRASE_CHAT_FAILED: &str = "うまくいかなかったよ";
 /// 録音から文字が取れなかった時の一言。

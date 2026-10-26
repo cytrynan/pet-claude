@@ -13,14 +13,27 @@ use serde_json::{Map, Value, json};
 
 pub const MARKER: &str = "--pet-claude-managed";
 
-/// (hook の名前, 待つか, timeout 秒, ツール名で絞るか)。design.md「hooks の登録内容」と同じ
-const EVENTS: [(&str, bool, u32, bool); 6] = [
-    ("UserPromptSubmit", false, 5, false),
-    ("PreToolUse", false, 5, true),
-    ("PermissionRequest", true, 60, true),
-    ("Notification", false, 5, false),
-    ("Stop", false, 5, false),
-    ("StopFailure", false, 5, false),
+/// 質問（AskUserQuestion）を扱う登録に付ける引数。pet-hook はこれが無い AskUserQuestion の PreToolUse では
+/// 何もしない（`*` の非同期登録と二重に送らない）。
+pub const ASK_ARG: &str = "--ask";
+
+/// (hook の名前, 待つか, timeout 秒, matcher, 追加の引数)。docs/architecture.md §5.1 と同じ。
+/// 質問の timeout は 300 秒（既定の 60 秒では人が読んで考える時間が足りない。K 2026-10-27）
+type Registration = (
+    &'static str,
+    bool,
+    u32,
+    Option<&'static str>,
+    &'static [&'static str],
+);
+const EVENTS: [Registration; 7] = [
+    ("UserPromptSubmit", false, 5, None, &[]),
+    ("PreToolUse", false, 5, Some("*"), &[]),
+    ("PreToolUse", true, 300, Some("AskUserQuestion"), &[ASK_ARG]),
+    ("PermissionRequest", true, 60, Some("*"), &[]),
+    ("Notification", false, 5, None, &[]),
+    ("Stop", false, 5, None, &[]),
+    ("StopFailure", false, 5, None, &[]),
 ];
 
 fn is_managed(hook: &Value) -> bool {
@@ -85,19 +98,21 @@ pub fn add_managed(settings: &mut Value, hook_exe: &str) {
     let Some(hooks) = hooks.as_object_mut() else {
         return;
     };
-    for (event, wait, timeout, tool_matcher) in EVENTS {
+    for (event, wait, timeout, matcher, extra_args) in EVENTS {
+        let mut args = vec![MARKER];
+        args.extend_from_slice(extra_args);
         let mut entry = json!({
             "type": "command",
             "command": hook_exe,
-            "args": [MARKER],
+            "args": args,
             "timeout": timeout,
         });
         if !wait {
             entry["async"] = json!(true);
         }
         let mut group = json!({ "hooks": [entry] });
-        if tool_matcher {
-            group["matcher"] = json!("*");
+        if let Some(m) = matcher {
+            group["matcher"] = json!(m);
         }
         let groups = hooks
             .entry(event)
@@ -218,6 +233,17 @@ mod tests {
         assert_eq!(v["hooks"]["Stop"][0]["hooks"][0]["async"], true);
         assert_eq!(v["hooks"]["PreToolUse"][0]["matcher"], "*");
         assert!(v["hooks"]["Stop"][0].get("matcher").is_none());
+        // 質問: `*` の非同期登録とは別の組で、同期・300 秒・`--ask` 付き（2 回登録しても 1 組）
+        let ask = &v["hooks"]["PreToolUse"][1];
+        assert_eq!(ask["matcher"], "AskUserQuestion");
+        assert_eq!(ask["hooks"][0]["timeout"], 300);
+        assert!(ask["hooks"][0].get("async").is_none());
+        assert_eq!(ask["hooks"][0]["args"], json!([MARKER, ASK_ARG]));
+        assert_eq!(
+            v["hooks"]["PreToolUse"][0]["hooks"][0]["args"],
+            json!([MARKER])
+        );
+        assert_eq!(v["hooks"]["PreToolUse"].as_array().map(Vec::len), Some(2));
     }
 
     #[test]

@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-27
+* **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — 質問（AskUserQuestion）にペットの吹き出しで答える（§5.1 の表と §5.4・F21・質問のカードと設定の「Claude Code」） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §3-b に吹き出しの固定文言の大きさの決め方（字幅の見積もり・幅 180〜320・折り返して高さで取る・描画後の測定で広げる保険）、DESIGN.md の固定文言を文字に合わせて広げる形に (kuroko/claude-fable-5-1 ← human:K)
 ## 2026-10-26
 * **Update**: [技術仕様書](architecture.md) — §7 に「端末の窓を出さない」（デバッグでも GUI サブシステム・CLI は AttachConsole・リダイレクト時はつながない） (kuroko/claude-fable-5-1 ← human:K)

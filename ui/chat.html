@@ -47,7 +47,7 @@
 <body>
 <section class="island answer" id="answer" hidden aria-live="polite">
   <header>
-    <h1>こたえ</h1>
+    <h1 id="answer-title">こたえ</h1>
     <button type="button" class="new" id="new" title="会話を忘れて最初から">新しいチャット</button>
   </header>
   <div class="text" id="answer-text"></div>
@@ -67,29 +67,46 @@
   const send = document.getElementById("send");
   const answer = document.getElementById("answer");
   const answerText = document.getElementById("answer-text");
+  const answerTitle = document.getElementById("answer-title");
+  const newBtn = document.getElementById("new");
+  // 質問への「回答」の入力中（ui.rs の chat_state の ask: {id, question}）。送信は ask_action に向ける
+  window.__ask = null;
   const idle = "新しいチャットを開始";
   const followUp = "続けて話す";
   let busy = false;
-  const update = () => { send.disabled = busy || text.value.trim() === ""; };
+  const update = () => { send.disabled = (busy && !window.__ask) || text.value.trim() === ""; };
   text.addEventListener("input", update);
   // Rust 側（ui.rs の chat_state）から: { answer, error, busy, heard }（heard は音声入力で聞き取った文）
   window.renderChat = (s) => {
     busy = !!(s && s.busy);
+    const ask = s && s.ask && typeof s.ask.question === "string" ? s.ask : null;
+    window.__ask = ask;
     const has = s && typeof s.answer === "string";
-    // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）
-    answer.hidden = !has && !busy;
-    answer.classList.toggle("error", !!(s && s.error));
+    // 待ち中は答えが無くても欄を出す（「新しいチャット」で取り消せるように）。質問への回答中は質問文を出す
+    answer.hidden = !has && !busy && !ask;
+    answer.classList.toggle("error", !ask && !!(s && s.error));
+    answerTitle.textContent = ask ? "質問" : "こたえ";
+    newBtn.hidden = !!ask;
     const said = s && typeof s.heard === "string" ? "「" + s.heard + "」\n\n" : "";
-    answerText.textContent = said + (busy ? "考え中…" : (has ? s.answer : ""));
-    answer.classList.toggle("busy", busy);
+    answerText.textContent = ask ? ask.question : said + (busy ? "考え中…" : (has ? s.answer : ""));
+    answer.classList.toggle("busy", busy && !ask);
     answerText.scrollTop = 0;
-    text.placeholder = busy ? "考え中…" : (has && !s.error ? followUp : idle);
+    text.placeholder = ask ? "答えを打って送る" : (busy ? "考え中…" : (has && !s.error ? followUp : idle));
     update();
   };
   document.getElementById("form").addEventListener("submit", async (e) => {
     e.preventDefault();
     const value = text.value.trim();
-    if (!value || busy) return;
+    if (!value) return;
+    if (window.__ask) {
+      // 質問への回答: Rust 側が受け付けたら "ok"（カードが次の質問に進むか、全部答えてチャット欄が閉じる）
+      const reply = await invoke("ask_action", { id: window.__ask.id, action: "answer", value });
+      if (reply === "ok") text.value = "";
+      else if (reply) text.placeholder = reply;
+      update();
+      return;
+    }
+    if (busy) return;
     const reply = await invoke("chat_submit", { text: value });
     // 受け付けられたら打った文を消す。断られた（まだ考え中・長すぎる）時は残す。
     // 待ち中かどうかは Rust 側の renderChat だけで決める（この応答は答えの描き直しより遅く届くことがあり、

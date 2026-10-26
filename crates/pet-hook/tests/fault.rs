@@ -257,3 +257,203 @@ fn malformed_discovery_file() {
     assert_eq!(code, 0);
     assert_eq!(out.trim(), "{}");
 }
+
+// ---------------------------------------------------------------------------
+// 質問（AskUserQuestion）。原本: .steering/20261027-ask-question/brief.md A5
+// ---------------------------------------------------------------------------
+
+const ASK: &str = r#"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"どの色？","header":"色","options":[{"label":"Red","description":"赤"},{"label":"Blue","description":"青"}],"multiSelect":false}]}}"#;
+
+/// `--ask` 付きで起こす（質問を扱う登録。install.rs が付ける引数と同じ）。
+fn run_hook_ask(dir: &Path, input: &[u8]) -> (i32, String, Duration) {
+    let start = Instant::now();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_pet-hook"))
+        .arg("--pet-claude-managed")
+        .arg("--ask")
+        .env("PET_CLAUDE_DATA_DIR", dir)
+        .env("PET_CLAUDE_APP_PATH", this_exe_path())
+        .env("PET_ASK_WAIT_SECS", "3")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let _ = stdin.write_all(input);
+    drop(stdin);
+    let out = child.wait_with_output().unwrap();
+    (
+        out.status.code().unwrap_or(-1),
+        String::from_utf8_lossy(&out.stdout).into_owned(),
+        start.elapsed(),
+    )
+}
+
+/// 偽のアプリ: `POST /permission` に id を返し、`GET /permission/<id>` に `state_body` を返す。
+/// 受けた要求の本文（POST の分）を返す。
+fn fake_app(listener: TcpListener, state_body: &'static str) -> std::thread::JoinHandle<String> {
+    std::thread::spawn(move || {
+        let mut posted = String::new();
+        for _ in 0..4 {
+            let Ok((mut s, _)) = listener.accept() else {
+                break;
+            };
+            let _ = s.set_read_timeout(Some(Duration::from_millis(500)));
+            let mut buf = Vec::new();
+            let mut chunk = [0u8; 4096];
+            while let Ok(n) = s.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                buf.extend_from_slice(&chunk[..n]);
+                if let Ok(req) = pet_core::ipc::parse_request(&buf) {
+                    let body = if req.method == "POST" {
+                        posted = String::from_utf8_lossy(&req.body).into_owned();
+                        r#"{"id":"q1"}"#
+                    } else {
+                        state_body
+                    };
+                    let _ = s.write_all(&pet_core::ipc::format_response(200, body));
+                    break;
+                }
+            }
+            if !posted.is_empty() && buf.starts_with(b"GET") {
+                break;
+            }
+        }
+        posted
+    })
+}
+
+#[test]
+fn ask_without_flag_outputs_nothing() {
+    // `*` の非同期登録から来た分: アプリが居ても何も送らず、何も書かない
+    let dir = temp_dir("ask-noflag");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+    let (code, out, took) = run_hook(&dir, ASK.as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(out, "");
+    assert!(took < QUICK, "{took:?}");
+    assert!(listener.accept().is_err(), "接続してはいけない");
+}
+
+#[test]
+fn ask_app_absent_falls_back_to_the_usual_screen() {
+    let dir = temp_dir("ask-absent");
+    let (code, out, took) = run_hook_ask(&dir, ASK.as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "{}");
+    assert!(took < QUICK, "{took:?}");
+}
+
+#[test]
+fn ask_answer_from_app_becomes_updated_input() {
+    let dir = temp_dir("ask-answer");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+    let server = fake_app(
+        listener,
+        r#"{"state":"allow","answers":[{"chosen":["Blue"]}]}"#,
+    );
+    let (code, out, _) = run_hook_ask(&dir, ASK.as_bytes());
+    let posted = server.join().unwrap();
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    let hs = &v["hookSpecificOutput"];
+    assert_eq!(hs["hookEventName"], "PreToolUse");
+    assert_eq!(hs["permissionDecision"], "allow");
+    assert_eq!(hs["updatedInput"]["answers"]["どの色？"], "Blue");
+    assert_eq!(
+        hs["updatedInput"]["questions"][0]["options"][1]["label"],
+        "Blue"
+    );
+    // アプリへは質問の中身と来た先を送っている（プロンプトの本文は無い）
+    let sent: serde_json::Value = serde_json::from_str(&posted).unwrap();
+    assert_eq!(sent["kind"], "ask_question");
+    assert_eq!(sent["questions"][0]["question"], "どの色？");
+    assert!(sent.get("origin").is_some());
+}
+
+#[test]
+fn ask_deny_and_ask_and_broken_answers() {
+    for (state, expect_decision) in [
+        (r#"{"state":"deny"}"#, Some("deny")),
+        (r#"{"state":"ask"}"#, None),
+        // 選択肢に無いラベル・形の違う答えは {}（いつもの画面）
+        (
+            r#"{"state":"allow","answers":[{"chosen":["Purple"]}]}"#,
+            None,
+        ),
+        (r#"{"state":"allow","answers":"x"}"#, None),
+        (r#"{"state":"allow"}"#, None),
+    ] {
+        let dir = temp_dir("ask-states");
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+        let server = fake_app(listener, state);
+        let (code, out, _) = run_hook_ask(&dir, ASK.as_bytes());
+        let _ = server.join();
+        assert_eq!(code, 0);
+        match expect_decision {
+            Some(d) => {
+                let v: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+                assert_eq!(v["hookSpecificOutput"]["permissionDecision"], d, "{state}");
+                assert!(
+                    v["hookSpecificOutput"]["permissionDecisionReason"]
+                        .as_str()
+                        .is_some_and(|r| r.contains("pet-claude"))
+                );
+            }
+            None => assert_eq!(out.trim(), "{}", "{state}"),
+        }
+    }
+}
+
+#[test]
+fn ask_times_out_to_the_usual_screen() {
+    let dir = temp_dir("ask-timeout");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+    // ずっと pending（PET_ASK_WAIT_SECS=3 で諦める）
+    let server = std::thread::spawn(move || {
+        for _ in 0..40 {
+            let Ok((mut s, _)) = listener.accept() else {
+                break;
+            };
+            let mut buf = [0u8; 4096];
+            let _ = s.read(&mut buf);
+            let body = if buf.starts_with(b"POST") {
+                r#"{"id":"q1"}"#
+            } else {
+                r#"{"state":"pending"}"#
+            };
+            let _ = s.write_all(&pet_core::ipc::format_response(200, body));
+        }
+    });
+    let (code, out, took) = run_hook_ask(&dir, ASK.as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "{}");
+    assert!(
+        took >= Duration::from_secs(3) && took < Duration::from_secs(6),
+        "{took:?}"
+    );
+    drop(server);
+}
+
+#[test]
+fn permission_request_for_ask_user_question_is_left_to_claude_code() {
+    // 質問の hook が「決めない」を返した後、auto mode は AskUserQuestion の PermissionRequest を起こす
+    // （2026-10-27 実測）。それは画面の質問そのものなので、アプリに送らず {} で任せる（カードを出さない）
+    let dir = temp_dir("ask-perm");
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    write_discovery(&dir, &listener.local_addr().unwrap().to_string(), "t");
+    let input = r#"{"hook_event_name":"PermissionRequest","session_id":"s1","tool_name":"AskUserQuestion","tool_input":{"questions":[]}}"#;
+    let (code, out, took) = run_hook(&dir, input.as_bytes());
+    assert_eq!(code, 0);
+    assert_eq!(out.trim(), "{}");
+    assert!(took < QUICK, "{took:?}");
+    assert!(listener.accept().is_err(), "接続してはいけない");
+}

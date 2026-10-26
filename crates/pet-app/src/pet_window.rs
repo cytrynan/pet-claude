@@ -1250,6 +1250,7 @@ pub fn settings() -> serde_json::Value {
                     .collect();
                 serde_json::json!({
                     "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk,
+                    "ask": p.state.ask,
                     "pet": p.want.id, "pets": pets,
                     // 鍵は返さない。保存されているかだけ（N4）
                     "chatAuth": p.state.chat_auth.as_str(), "hasApiKey": crate::cred::has_key(),
@@ -1257,16 +1258,18 @@ pub fn settings() -> serde_json::Value {
             })
         })
     })
-    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false, "walk": false }))
+    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false, "walk": false, "ask": true }))
 }
 
 /// 設定画面からの変更。大きさは足元を基準に描き直す。`save` が true のときだけ state.json に書く
 /// （スライダーを動かしている間は描き直すだけにして、離したときに 1 回保存する）。
-pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, save: bool) {
+pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, ask: bool, save: bool) {
     crate::tts::set_enabled(tts);
+    crate::ui::set_ask_enabled(ask);
     with_pet(move |pet| {
         pet.state.tts = tts;
         pet.state.wake = wake;
+        pet.state.ask = ask;
         if walk != pet.state.walk {
             // 定数が変わるので作り直す（散歩中なら止まり、待機から数え直す）
             pet.state.walk = walk;
@@ -1324,7 +1327,8 @@ pub fn on_wire_event(ev: &WireEvent) {
     let agent = match ev.kind.as_str() {
         "prompt" => Some(AgentEvent::Prompt { session }),
         "tool_start" => Some(AgentEvent::ToolStart { session }),
-        "permission" => Some(AgentEvent::NeedsInput { session }),
+        // 承認も質問も、K の入力を待つ（手を振る）
+        "permission" | "ask_question" => Some(AgentEvent::NeedsInput { session }),
         "notification"
             if matches!(
                 ev.detail.as_deref(),

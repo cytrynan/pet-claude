@@ -3,8 +3,9 @@
 //! - 起動時に発見ファイル `runtime/ipc.json`（`Discovery`）を一時ファイル＋rename で書き、終了時に消す
 //! - token の合わない要求・`Origin` 付きの要求は 401（`ipc::is_authorized`）
 //! - `POST /event`: 出来事をメインスレッドへ回す（`run_on_main_thread` を別スレッドから呼ぶのでキューに積まれる）
-//! - `POST /permission`: 承認の表に Pending で入れ、吹き出しに出す。`{"id": ...}` を返す
-//! - `GET /permission/<id>`: 状態を返す。答えが出ていれば、返した後に表から消す
+//! - `POST /permission`: 承認の表に Pending で入れ、吹き出しに出す。`{"id": ...}` を返す。質問
+//!   （kind `ask_question`）も同じ表に入れる（期限だけ長い）
+//! - `GET /permission/<id>`: 状態を返す（質問の答えは `answers` に `Reply` の並び）。答えが出ていれば、返した後に表から消す
 //!
 //! 承認の表は受け口のスレッドとメインスレッドの両方から触るので `Mutex` に置く。
 
@@ -15,6 +16,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{LazyLock, Mutex};
 use std::time::{Duration, Instant};
 
+use pet_core::ask::Reply;
 use pet_core::ipc::{self, Discovery, ParseError, PermissionState, WireEvent};
 use tauri::AppHandle;
 
@@ -22,6 +24,8 @@ use crate::log::{data_dir, log};
 
 /// 答えを待つ承認をこの時間で捨てる（hook 側の待ちは最大 55 秒）。
 const PERMISSION_TTL: Duration = Duration::from_secs(120);
+/// 質問の期限（hook 側の待ちは最大 295 秒・登録する hook の timeout は 300 秒）。
+const ASK_TTL: Duration = Duration::from_secs(300);
 /// hook はこの間隔より短く（300ms ごとに）問い合わせる。これだけ問い合わせが無ければ、hook は
 /// あきらめた・殺された（ターミナルで答えた）とみなしてカードを下げる。
 const ABANDONED_AFTER: Duration = Duration::from_secs(5);
@@ -37,11 +41,21 @@ struct Entry {
     created: Instant,
     /// 最後に hook が問い合わせた時刻（登録時は登録の時刻）
     polled: Instant,
+    /// 期限（承認 120 秒・質問 300 秒）
+    ttl: Duration,
+    /// 質問の答え（`state` が Allow のときだけ）
+    answers: Option<Vec<Reply>>,
+}
+
+impl Entry {
+    fn is_live(&self, now: Instant) -> bool {
+        is_live(self.created, self.polled, now, self.ttl)
+    }
 }
 
 /// まだ答えを受け付けてよいか（期限内で、hook が問い合わせ続けている）。
-fn is_live(created: Instant, polled: Instant, now: Instant) -> bool {
-    now.duration_since(created) < PERMISSION_TTL && now.duration_since(polled) < ABANDONED_AFTER
+fn is_live(created: Instant, polled: Instant, now: Instant, ttl: Duration) -> bool {
+    now.duration_since(created) < ttl && now.duration_since(polled) < ABANDONED_AFTER
 }
 
 static PERMISSIONS: LazyLock<Mutex<HashMap<String, Entry>>> =
@@ -184,9 +198,15 @@ fn route(req: &ipc::Request, app: &AppHandle) -> (u16, String) {
                 let Some(id) = random_hex(8) else {
                     return (500, r#"{"error":"no randomness"}"#.to_string());
                 };
+                // 質問は人が読んで考えるので期限を長く取る
+                let ttl = if ev.kind == "ask_question" {
+                    ASK_TTL
+                } else {
+                    PERMISSION_TTL
+                };
                 {
                     let mut table = PERMISSIONS.lock().unwrap_or_else(|p| p.into_inner());
-                    table.retain(|_, e| e.created.elapsed() < PERMISSION_TTL);
+                    table.retain(|_, e| e.created.elapsed() < e.ttl);
                     let now = Instant::now();
                     table.insert(
                         id.clone(),
@@ -194,6 +214,8 @@ fn route(req: &ipc::Request, app: &AppHandle) -> (u16, String) {
                             state: PermissionState::Pending,
                             created: now,
                             polled: now,
+                            ttl,
+                            answers: None,
                         },
                     );
                 }
@@ -213,20 +235,21 @@ fn route(req: &ipc::Request, app: &AppHandle) -> (u16, String) {
             match table.get_mut(id) {
                 // 期限切れ・放置（5 秒問い合わせが無かった）は知らない id と同じ（hook は決めずに終わる）。
                 // 放置された承認は吹き出しから下げてあるので、ここで生き返らせない（2026-10-21 検証係の指摘）
-                Some(e)
-                    if e.state == PermissionState::Pending
-                        && !is_live(e.created, e.polled, now) =>
-                {
+                Some(e) if e.state == PermissionState::Pending && !e.is_live(now) => {
                     table.remove(id);
                     (404, r#"{"error":"expired"}"#.to_string())
                 }
                 Some(e) => {
                     e.polled = now;
                     let state = e.state;
+                    let mut body = serde_json::json!({ "state": state });
+                    if let Some(answers) = &e.answers {
+                        body["answers"] = serde_json::json!(answers);
+                    }
                     if state != PermissionState::Pending {
                         table.remove(id);
                     }
-                    (200, serde_json::json!({ "state": state }).to_string())
+                    (200, body.to_string())
                 }
                 None => (404, r#"{"error":"unknown id"}"#.to_string()),
             }
@@ -238,13 +261,20 @@ fn route(req: &ipc::Request, app: &AppHandle) -> (u16, String) {
 /// 吹き出しのボタン（または試験用の自動応答）から呼ぶ。待っている承認に答えを入れる。
 /// 返り値: その id が待っていたか（もう答えた・期限切れなら false）。
 pub fn decide(id: &str, state: PermissionState) -> bool {
+    set_state(id, state, None)
+}
+
+/// 質問に全部答えた。`replies` は質問と同じ順（hook が `ask_output` で検査してから出力する）。
+pub fn decide_with_answers(id: &str, replies: Vec<Reply>) -> bool {
+    set_state(id, PermissionState::Allow, Some(replies))
+}
+
+fn set_state(id: &str, state: PermissionState, answers: Option<Vec<Reply>>) -> bool {
     let mut table = PERMISSIONS.lock().unwrap_or_else(|p| p.into_inner());
     match table.get_mut(id) {
-        Some(e)
-            if e.state == PermissionState::Pending
-                && is_live(e.created, e.polled, Instant::now()) =>
-        {
+        Some(e) if e.state == PermissionState::Pending && e.is_live(Instant::now()) => {
             e.state = state;
+            e.answers = answers;
             true
         }
         _ => false,
@@ -257,9 +287,7 @@ pub fn is_pending(id: &str) -> bool {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
         .get(id)
-        .is_some_and(|e| {
-            e.state == PermissionState::Pending && is_live(e.created, e.polled, Instant::now())
-        })
+        .is_some_and(|e| e.state == PermissionState::Pending && e.is_live(Instant::now()))
 }
 
 #[cfg(test)]
@@ -270,12 +298,16 @@ mod tests {
     fn live_only_within_ttl_and_while_polled() {
         let t0 = Instant::now();
         let at = |s: u64| t0 + Duration::from_secs(s);
-        assert!(is_live(t0, t0, at(1)));
+        assert!(is_live(t0, t0, at(1), PERMISSION_TTL));
         // hook が 5 秒問い合わせない（あきらめた・殺された）
-        assert!(!is_live(t0, t0, at(5)));
+        assert!(!is_live(t0, t0, at(5), PERMISSION_TTL));
         // 問い合わせ続けていても 120 秒で終わり
-        assert!(is_live(t0, at(118), at(119)));
-        assert!(!is_live(t0, at(119), at(120)));
+        assert!(is_live(t0, at(118), at(119), PERMISSION_TTL));
+        assert!(!is_live(t0, at(119), at(120), PERMISSION_TTL));
+        // 質問は 300 秒まで（5 秒の放置の判定は同じ）
+        assert!(is_live(t0, at(298), at(299), ASK_TTL));
+        assert!(!is_live(t0, at(299), at(300), ASK_TTL));
+        assert!(!is_live(t0, t0, at(5), ASK_TTL));
     }
 
     #[test]
