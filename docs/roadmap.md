@@ -37,8 +37,8 @@ stale_after: 2027-01-21
 
 ## Phase 3: 声とチャット
 
-- AivisSpeech TTS（固定文言＋答え）、設定画面（大きさ・音声出力・音声トリガー）
-- バー（チャット／音声入力）、ローカルで文字起こし（whisper-rs かサイドカーの faster-whisper。architecture §6）
+- AivisSpeech TTS（固定文言＋答え）、設定画面（大きさ・音声出力・音声トリガー）: 2026-10-22 実装（architecture §6.2・`.steering/20261022-phase3-voice/`）
+- バー（チャット／音声入力）、ローカルで文字起こし（faster-whisper small をサイドカーで。architecture §6.3）: 2026-10-22 実装。残りは K の声での実機確認
 - チャットの送り先（PRD U1）を K と決めてから Agent SDK 連携
 
 ## Phase 4: ウェイクワードと本番素材

@@ -97,11 +97,19 @@
       <input type="checkbox" class="switch" id="tts" role="switch">
     </div>
     <div class="row">
+      <label>読み上げ</label>
+      <span class="status" id="tts-status">確かめています…</span>
+    </div>
+    <div class="row">
+      <label>音声入力</label>
+      <span class="status" id="stt-status">確かめています…</span>
+    </div>
+    <div class="row">
       <label for="wake">呼びかけで音声入力を始める</label>
       <input type="checkbox" class="switch" id="wake" role="switch">
     </div>
   </div>
-  <p class="note">声の機能は Phase 3 以降で使えます（設定は保存されます）。</p>
+  <p class="note">呼びかけで音声入力を始めるのは Phase 4 で使えます（設定は保存されます）。</p>
 
   <h2>チャット</h2>
   <div class="group">
@@ -229,6 +237,11 @@
     fillPets(s);
     showAuth(s.chatAuth || "subscription", !!s.hasApiKey);
     show();
+    // 声の状態はエンジンに問い合わせるので後から埋める（最大 2 秒）
+    invoke("voice_status").then((v) => {
+      document.getElementById("tts-status").textContent = (v && v.tts) || "確かめられませんでした";
+      document.getElementById("stt-status").textContent = (v && v.stt) || "確かめられませんでした";
+    });
   });
   window.reload();
   scale.addEventListener("input", () => { show(); send(false); });
