@@ -1,0 +1,16 @@
+feat(pets): pet.json の fullCell（動画のコマを等倍で持つ）を足し、次のペットからの作り方を 960・等倍にする
+
+なぜ: K 決定（2026-10-27）「画質の A/B の右上（960 で生成＋コマを等倍で持つ）が一番良い。
+まめドラゴン・りんりんはそのままで、次回のペットから右上のにして」。等倍の上限は全ペット
+共通だったので、ペットごとに pet.json で選べるようにした。2 体は書かないので今までどおり 3/4。
+
+- pet-core::sprite::PetManifest に fullCell（無ければ false）。テスト: 既定 false・true・同梱 2 体は false
+- pet-app::pets::max_cell(source_cell, has_clips, full_cell): マニフェストの値か試験の切り替えで等倍。
+  LoadedSheet と pet_window に full_cell を通した（読み直しの判定・クリップの持つ大きさの両方）
+- docs/architecture.md §4.4 に fullCell、§4.5 に「次のペットから」（姿勢画像 960・size 960・
+  canvas 960・fullCell true・効き目とメモリ）
+
+実機: 試験用フォルダで fullCell: true のペット（rinrin-960）は環境変数なしで 384×416 を持ち、
+りんりん（fullCell なし）は 288×312 のまま（evidence/cap/fullcell-results.txt）。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -126,6 +126,8 @@ pub struct LoadedSheet {
     pub breathe: f32,
     /// 動画クリップ（pet.json の `clips`。無ければシートだけで動く）
     pub clips: Option<ClipPack>,
+    /// 動画のコマを元の大きさで持つか（pet.json の `fullCell`。無ければ 3/4。2026-10-27 K 決定で次のペットから true）
+    pub full_cell: bool,
 }
 
 fn roots() -> Vec<PathBuf> {
@@ -219,8 +221,8 @@ fn entry_from(m: PetManifest, dir: PathBuf) -> PetEntry {
 /// 歩き 15MB）とシートの行（10MB）で、散歩中の専有が 66.7MB と PRD N1（50MB）を超えた。
 /// 読み直しの判定（`pet_window::kick_load`）もこの上限を使う（使わないと「もっと細かく」が成り立ち続け、
 /// シートを読み直し続けた。2026-10-21 実測で CPU 200%）
-pub fn max_cell(source_cell: (u32, u32), has_clips: bool) -> (u32, u32) {
-    max_cell_with(source_cell, has_clips, full_cell_for_tests())
+pub fn max_cell(source_cell: (u32, u32), has_clips: bool, full_cell: bool) -> (u32, u32) {
+    max_cell_with(source_cell, has_clips, full_cell || full_cell_for_tests())
 }
 
 /// `max_cell` の本体。`full` なら動画のあるペットでも元のコマの大きさまで持つ
@@ -253,7 +255,7 @@ pub fn needed_cell(factor: f32) -> (u32, u32) {
 /// 補間しないように 1 コマずつ）。
 pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String> {
     let started = std::time::Instant::now();
-    let (image, source_cell, breathe, clips) = match &entry.dir {
+    let (image, source_cell, breathe, clips, full_cell) = match &entry.dir {
         None => (
             image::load_from_memory(BUILTIN_SHEET)
                 .map_err(|e| e.to_string())?
@@ -261,6 +263,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
             (CELL_W, CELL_H),
             0.0,
             None,
+            false,
         ),
         Some(dir) => {
             let m = read_manifest(dir)?;
@@ -285,7 +288,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
                         None
                     }
                 });
-            (img, m.cell_size(), m.breathe(), clips)
+            (img, m.cell_size(), m.breathe(), clips, m.full_cell())
         }
     };
     let rows = image.height() / source_cell.1;
@@ -304,7 +307,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
     if layout.is_empty() {
         return Err("中身のあるコマが 1 つも無い".into());
     }
-    let max = max_cell(source_cell, clips.is_some());
+    let max = max_cell(source_cell, clips.is_some(), full_cell);
     let cell = (needed.0.min(max.0), needed.1.min(max.1));
     // クリップがあるなら、シートで描くのはクリップで描けないポーズ（困る・ループの無い姿勢）の行だけ
     let rows: Option<Vec<u32>> = clips.as_ref().map(|pack| {
@@ -343,6 +346,7 @@ pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String>
         layout,
         breathe,
         clips,
+        full_cell,
     })
 }
 
@@ -509,7 +513,8 @@ mod tests {
         assert_eq!(max_cell_with((384, 416), true, false), (288, 312));
         assert_eq!(max_cell_with((384, 416), false, false), (384, 416));
         assert_eq!(max_cell_with((384, 416), true, true), (384, 416));
-        // 試験の切り替えが無い普段の経路は 3/4（環境変数を立てていないテストプロセスで）
-        assert_eq!(max_cell((384, 416), true), (288, 312));
+        // 試験の切り替えが無い普段の経路は 3/4（環境変数を立てていないテストプロセスで）、pet.json の fullCell で等倍
+        assert_eq!(max_cell((384, 416), true, false), (288, 312));
+        assert_eq!(max_cell((384, 416), true, true), (384, 416));
     }
 }

@@ -86,6 +86,11 @@ tracking: #49
 - **訂正**: 前の報告で「K の窓 576×624 に 2 倍に引き伸ばしている」と書いたが、K の定位置はウルトラワイド（100%）で窓は 288×312＝上限と同じで、引き伸ばしは無い。引き伸ばしが起きるのはノートの 200% の画面に置いた時だけ。
 - 止まった点: `cap_trial.ps1` の窓の撮影は座標系（DPI 非対応の PowerShell が返す論理座標と winctl の物理座標）が合わず別の場所を撮った → 撮影は証拠に使わない（ログの cell と KB で判定）。2 回目の Comfy の実行中に、attach したタブを K が使っていて（LMS へ移動）ジョブの監視が落ちた。ジョブ自体は完了していた → 次からは `tab-new` で自分のタブを開く。
 
+## K 決定（2026-10-27 「右上が一番良い。まめドラゴン・りんりんはそのままで次回のペットから右上のにして」）
+- 右上＝960 で生成＋コマを等倍で持つ。まめドラゴン・りんりんは 640・3/4 のまま。
+- 仕組み: `pet.json` に `fullCell`（無ければ 3/4・true で等倍）を足し、`pets::max_cell` をペットごとに。試験の切り替え `PET_TEST_FULL_CELL` は残す。テスト: sprite.rs `full_cell_defaults_to_false`（同梱 2 体は false）・pets.rs `max_cell_is_three_quarters_only_with_clips_unless_full`。
+- 手順の正本: `docs/architecture.md` §4.5「次のペットから」（姿勢画像 960・size 960・canvas 960・fullCell true）。比較用の `assets/pets/rinrin-960/` は git 外のまま（採用しない）。
+
 ## 止まった点
 - **無料枠の前提が外れていた**: 「前回 0/5 で使い切った」を前提に止まる計画だったが、同じ Chrome で `/api/features` は 5/5・履歴 0 件。使う前に必ず `/features` を見る（前提で止まらない）。枠が戻る周期か別アカウント扱いかは未確認。
 - **まめドラゴンと同じ 4 本の検分の数値が、本ごとには残っていなかった**（1 回目の記録は範囲だけ）。今回は `inspect_clips.py` で本ごとの表を `runN/inspection.json` に残した。

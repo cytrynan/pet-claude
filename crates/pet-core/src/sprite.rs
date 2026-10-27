@@ -263,6 +263,11 @@ pub struct PetManifest {
     /// pet-claude 独自の項目。いまは設定画面に出すだけで、聞き取りは Phase 4（F20）で使う
     #[serde(default)]
     pub wake_word: Option<String>,
+    /// 動画のコマを元の大きさ（`cellScale` 倍の 192×208）で持つか。無ければ 3/4 に縮めて持つ
+    /// （メモリ N1 のため。まめドラゴン・りんりんはこちら）。2026-10-27 K 決定「次のペットから 960×960 で
+    /// 生成し、コマを等倍で持つ」＝新しいペットは `true` にする。200% の画面で窓が元のコマより大きい時だけ効く
+    #[serde(default)]
+    pub full_cell: Option<bool>,
 }
 
 /// pet.json に書かれたパス（`spritesheetPath`・`clips`）が、ペットのフォルダの中を指す相対パスか。
@@ -295,6 +300,11 @@ impl PetManifest {
 
     /// ウェイクワード（前後の空白を除く。空・`MAX_WAKE_WORD_CHARS` 字を超える・改行や制御文字を含むものは
     /// 無いものとする）。他人が作ったペットの pet.json でも設定画面の 1 行に収まる言葉だけを通す
+    /// 動画のコマを元の大きさで持つか（無ければ 3/4）。
+    pub fn full_cell(&self) -> bool {
+        self.full_cell.unwrap_or(false)
+    }
+
     pub fn wake_word(&self) -> Option<&str> {
         self.wake_word
             .as_deref()
@@ -619,6 +629,26 @@ mod tests {
         let text = include_str!("../../../assets/pets/mame-dragon/pet.json");
         let m: PetManifest = serde_json::from_str(text).unwrap();
         assert_eq!(m.wake_word(), Some("まめちゃん"));
+    }
+
+    /// `fullCell` は無ければ 3/4（まめドラゴン・りんりんは書かない）、true なら等倍（次のペットから。2026-10-27 K 決定）
+    #[test]
+    fn full_cell_defaults_to_false() {
+        let none: PetManifest =
+            serde_json::from_str(r#"{"id":"a","displayName":"A","spritesheetPath":"s.webp"}"#)
+                .unwrap();
+        assert!(!none.full_cell());
+        let yes: PetManifest = serde_json::from_str(
+            r#"{"id":"a","displayName":"A","spritesheetPath":"s.webp","fullCell":true}"#,
+        )
+        .unwrap();
+        assert!(yes.full_cell());
+        let mame: PetManifest =
+            serde_json::from_str(include_str!("../../../assets/pets/mame-dragon/pet.json"))
+                .unwrap();
+        let rin: PetManifest =
+            serde_json::from_str(include_str!("../../../assets/pets/rinrin/pet.json")).unwrap();
+        assert!(!mame.full_cell() && !rin.full_cell(), "2 体はそのまま 3/4");
     }
 
     /// 同梱のりんりん（パンダ・2026-10-27 K 指示）の pet.json: 呼びかけは「りんちゃん」、
