@@ -18,7 +18,7 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-28T04:10:00+09:00 }
 - [x] docs/usage.md を書く (#123)
 - [x] 実機・Edge のスクリーンショットを撮り images/ に入れる（1 枚 500KB 以下） (#124)。実機 6 枚（pet-idle・pet-bar・pet-menu・perm-card・ask-card・status-bubble）＋ Edge 5 枚（settings・chat-empty・chat-answer・chat-menu-mode・chat-menu-model）。最大 185KB
 - [x] マニュアルの原稿と PDF 生成スクリプトを作り、PDF を目視する (#125)。11 ページ・8 章・画像 13 か所・目次の内部リンク 24・フォント埋め込み（check-pdf.py OK）。全ページを 60〜75dpi で描いて目視
-- [~] gate-commit → PR（マージは K） (#126)
+- [x] gate-commit → PR（マージは K） (#126)。commit 60f16ec・PR #128（マージは K）
 
 ## 止まった点
 - 最初の撮影は K のデスクトップの中身（開いていた表）が背景に写った。無地の下敷き窓を「最前面でない」形で出したら、入力の無いプロセスからは前に出せず他の窓の裏に出た（実測）。最前面＋物理座標指定（`backdrop.ps1`）に直して撮り直した。ペット（1 秒ごとに最前面を取り直す）と吹き出し（後から出る）はその上に載る
