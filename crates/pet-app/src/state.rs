@@ -26,7 +26,7 @@ pub struct AppState {
     pub walk: bool,
     /// Claude Code の質問（AskUserQuestion）にペットの吹き出しで答える（K 指示 2026-10-27: 既定はオン）
     pub ask: bool,
-    /// 表示するペットの id（`pets::discover` の id。None は内蔵の仮キャラ）
+    /// 表示するペットの id（`pets::discover` の id。None はまだ選んでいない＝既定のまめドラゴン）
     pub pet: Option<String>,
     /// チャットの接続（K 決定 2026-10-21: 既定はサブスク）。API キーそのものは資格情報マネージャー（cred.rs）
     pub chat_auth: AuthMode,
