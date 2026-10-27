@@ -36,10 +36,10 @@ const statusCases = Object.entries(statusTexts).map(([name, text], i) => ({
 const cases = [
   ...statusCases,
   { name: "settings-sub", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false }, autostart_get: { state: "off", detail: "" } } },
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false }, autostart_get: { state: "off", detail: "" } } },
   // チャットの既定 4 項目（2026-10-27）: 設定済みの値と長い作業フォルダ
   { name: "settings-chat-defaults", page: "settings.html", size: [440, 1200],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
       chatModel: "sonnet", chatEffort: "medium", chatMode: "acceptEdits", chatDir: "C:\\Users\\k\\dev\\pet-claude\\pet-claude-main\\very\\long\\path", chatDirDefault: "C:\\Users\\k" } },
     act: async (page) => {
       const v = await page.evaluate(() => [document.getElementById("model").value, document.getElementById("effort").value, document.getElementById("mode").value,
@@ -49,7 +49,7 @@ const cases = [
     } },
   // 知らない値は既定（Fable・高・自動）で見せ、作業フォルダは既定（ホーム）を出して「既定に戻す」は隠す
   { name: "settings-chat-unknown", page: "settings.html", size: [440, 1200],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
       chatModel: "gpt", chatEffort: "ultra", chatMode: "root", chatDir: null, chatDirDefault: "C:\\Users\\k" } },
     act: async (page) => {
       const v = await page.evaluate(() => [document.getElementById("model").value, document.getElementById("effort").value, document.getElementById("mode").value,
@@ -58,15 +58,15 @@ const cases = [
       return { ok, detail: JSON.stringify(v) };
     } },
   { name: "settings-no-wake-word", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "b", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "b", name: "ねこ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "b", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "b", name: "ねこ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
   { name: "settings-key-empty", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: false } } },
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: false } } },
   { name: "settings-key-saved", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: true } } },
+    state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: true } } },
   // 自動起動（Phase 4）: 登録済み・別の場所の exe・失敗
   ...[["on", ""], ["other", "C:\Users\k\dev\pet-claude\pet-claude-main\target\debug\pet-app.exe"], ["error", "C:\Users\k\.claude\scripts\run-hidden.vbs が無い"]].map(([st, detail]) => (
     { name: "settings-autostart-" + st, page: "settings.html", size: [440, 960],
-      state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false },
+      state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false },
         autostart_get: { state: st, detail } } })),
   // チャット欄の下の行（モード・モデル＋エフォート）とメニュー（2026-10-27）。メニューは入力の島の上に伸びる。
   // 窓の高さはメニューの分（ui.rs の set_chat_menu_height に伝える offsetHeight）を見込んで取る

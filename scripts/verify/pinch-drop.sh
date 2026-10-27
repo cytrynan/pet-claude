@@ -28,7 +28,7 @@ try:
     s = json.load(open(sys.argv[1], encoding="utf-8"))
 except OSError:
     s = {"version": 1}
-s.update({"pet": "mame-dragon", "walk": False, "tts": False, "wake": False})
+s.update({"pet": "mame-dragon", "walk": False, "tts": False})
 open(sys.argv[2], "w", encoding="utf-8", newline="\n").write(json.dumps(s, ensure_ascii=False, indent=2))
 EOF
 
