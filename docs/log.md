@@ -6,6 +6,10 @@
 
 <!-- /setup-project でドキュメントを作成したら、最初のエントリを**このコメントの下（閉じ記号の後）**に追記してください。
 コメントの中に書くと Markdown の描画に出ません（実例: 「ここに追記」と読んでコメント内へ書き続け、ログ全体が見えないまま運用された）。例:
+## 2026-10-28
+* **Update**: [README.md](manual/README.md)・[pet-claude-manual.docx](manual/pet-claude-manual.docx) — マニュアルを apple-design（HIG）の値で組み直し。文章を半分に減らし、流れ・状態・時間軸の図 8 枚（diagrams.html → render-diagrams.js → images/diagrams/）と色つきチップで見せる。10 ページ・各章 1 ページ (kuroko/claude-fable-5-1 ← human:K)
+* **Update**: [README.md](manual/README.md)・[pet-claude-manual.docx](manual/pet-claude-manual.docx) — マニュアルの正本を Word（pet-claude-manual.docx）に変更。PDF は export-pdf.ps1（Word の COM）で書き出す。manual.html・build-pdf.js は削除、初版を組む build-docx.js を追加 (kuroko/claude-fable-5-1 ← human:K)
+
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
@@ -97,3 +101,4 @@
 - 2026-10-20 extras/github/workflows: 起動時 env 検証向けのダミー値の注記を ci-node / ci-node-pnpm に追加
 - 2026-10-28 docs/architecture.md §6.1・§7, DESIGN.md: チャットを Claude Code と同じ環境で起こす（model/effort/権限モードの既定は設定・切替はチャット欄のメニュー・作業フォルダはホーム）。実測と常駐案は .steering/20261027-chat-same-env/brief.md (kuroko/claude-fable-5-1 ← human:K)
 - 2026-10-28 docs/architecture.md §6.1, DESIGN.md: チャット欄の答えの欄を 188→264px（一番高い切替メニューと同じ）にし、答えが出ている間はメニューを開け閉めしても窓を動かさない（会話が一瞬消えるバグ）。経緯は .steering/20261028-fix-chat-menu-blink/brief.md (kuroko/claude-opus-5-5 ← human:K)
+- 2026-10-28 README.md, docs/usage.md（新設）, docs/manual/（新設）: 利用者向け文書 3 点。README を実態（6 体・Phase 3〜4 実装済み・ウェイクワードは保留）に合わせて「できること→使い方→技術の詳細」に書き直し、使い方 docs/usage.md と PDF マニュアル docs/manual/pet-claude-manual.pdf（manual.html＋build-pdf.js・実機のスクリーンショット 11 枚）を新設。計画 .steering/20261028-user-docs/tasklist.md (kuroko/claude-fable-5-1 ← human:K)
