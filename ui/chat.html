@@ -35,9 +35,11 @@
   .opt:hover, .opt[aria-expanded="true"] { background: var(--surface-hover); color: var(--label); }
   .opt:active { background: var(--surface-press); }
   .opt:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
-  /* 最後の答え（入力欄の上。高さは ui.rs の CHAT_ANSWER_HEIGHT = 188px、入力欄との間 8px）。
-     文は読ませるので不透明の面。全文を折り返し、長ければ中でスクロール */
-  .answer { bottom: calc(12px + 80px + 8px); border-radius: 16px; background: var(--surface-solid);
+  /* 最後の答え（入力欄の上。高さは ui.rs の CHAT_ANSWER_HEIGHT = 264px、入力欄との間 8px）。
+     文は読ませるので不透明の面。全文を折り返し、長ければ中でスクロール。
+     高さは一番高いメニュー（モード 264px）と同じにして、答えが出ている間はメニューを開いても窓を動かさない。
+     top は auto で高さを固定（.island の inset で窓いっぱいに伸ばすと、窓が変わるたびに答えの欄も伸び縮みした） */
+  .answer { top: auto; bottom: calc(12px + 80px + 8px); height: 264px; border-radius: 16px; background: var(--surface-solid);
     display: flex; flex-direction: column; }
   .answer[hidden] { display: none; }
   .answer header { display: flex; align-items: center; justify-content: space-between;
@@ -59,6 +61,8 @@
   .scrim[hidden] { display: none; }
   .menu { position: absolute; top: auto; bottom: calc(12px + 80px + 8px); inset-inline: auto; width: 280px; z-index: 2;
     border-radius: 12px; padding: 5px; background: var(--surface-solid); display: flex; flex-direction: column; }
+  /* 答えが出ている間は答えの欄の高さを超えない（文字の大きさが違う環境でメニューが伸びても窓を動かさない。超えた分は中でスクロール） */
+  #answer:not([hidden]) ~ .menu { max-height: 264px; overflow-y: auto; }
   .menu.left { left: 12px; }
   .menu.right { right: 12px; }
   .menu[hidden] { display: none; }
