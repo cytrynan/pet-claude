@@ -13,7 +13,14 @@
 - 肌色 max の指標は茶トラの毛色が肌色に入るため使えない → SKILL.md に注記。
 
 ## 実機・ゲート
-（commit 後に追記: pet-switch.sh・cap_trial の held_cell と専有メモリ・gate.sh）
+- `pet-switch.sh`（target-tora）: 3 項目 PASS（起動まめドラゴン → tora loaded 795 ms・clips 13 → state.json）。
+- `cap_trial.ps1`（2880×1800・env 無し）: held_cell **384×416**（`fullCell: true` が効く）・専有 37.5MB（N1 50MB 以内）。
+- `gate.sh`: GATE OK（2 commit とも gate-commit 経由）。新テスト: `tora_manifest_is_full_cell_with_clips_and_wake_word`、`bundled_pets_clips_json_match_frame_files` に tora、`align_poses.fits_in_canvas`。
+
+## 2 commit 目（K の指摘「つままれてる時のやつ耳出てない？」）
+- 姿勢画像のつままれるが上 62px 外に出ていた（吊り 560 のまま・茶トラは尻尾が垂れて縦に長い）→ `--floor dragged=612` で作り直し、つままれ中・置かれるの 2 本だけ再生成（1 回消費・残り 2/5）。
+- 下げた分、尻尾の先が床の下（コマに 12px）に当たって自動の共通倍率が 0.40 まで縮んだので、`clips-src.json` に `scale: 0.60` を決め打ち（眠る・起きるは切れず、つままれ中の揺れで尻尾の先が最大 6px 出るだけ。倍率ごとのはみ出し表は tasklist）。
+- 再発防止: `align_poses.py` に「絵がキャンバスの縁に触れていない」検査 `fits_in_canvas` を足して止まるようにした。
 
 ## 入れていないもの
 zip・展開した静止画・姿勢画像・元の動画・workflow・証拠スクショ（`.git/info/exclude`）。
