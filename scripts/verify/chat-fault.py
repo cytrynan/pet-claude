@@ -195,10 +195,43 @@ check("A5 2 通目に --resume", len(argv) == 3 and "--resume" not in argv[0]
 check("A1 サブスクで親の鍵・CLAUDECODE が子に届かない",
       len(lines) == 3 and all("ANTHROPIC_API_KEY=false" in x and "CLAUDECODE=false" in x for x in lines),
       lines[0][-80:] if lines else "なし")
-check("A3 ツールなしの引数", bool(argv) and argv[0][argv[0].index("--tools") + 1] == ""
-      and "--safe-mode" in argv[0] and "mcp__*" in argv[0], " ".join(argv[0][:8]) if argv else "なし")
+# 同じ環境で起こす（2026-10-27 K 指示）: 制限の引数が無く、既定のモデル・エフォート・モードと設定の読み込み元が付く
+def after(a, flag):
+    return a[a.index(flag) + 1] if flag in a else None
+def trio(a):
+    return (after(a, "--model"), after(a, "--effort"), after(a, "--permission-mode"))
+check("同じ環境の引数（既定 Fable・高・自動）", bool(argv) and trio(argv[0]) == ("fable", "high", "auto")
+      and after(argv[0], "--setting-sources") == "user,project,local" and "--append-system-prompt-file" in argv[0]
+      and not ({"--safe-mode", "--tools", "--disallowedTools", "--strict-mcp-config", "--max-turns", "--system-prompt-file"} & set(argv[0])),
+      " ".join(argv[0][:14]) if argv else "なし")
 check("N4 ログに本文・答えが無い", "一通目" not in log and "受け取ったよ" not in log
       and "sk-ant-parent" not in log, "ログを grep")
+
+# 設定の既定（state.json の chat_model / chat_effort / chat_mode）が引数に乗り、チャット欄のメニュー（opt:）が
+# 次の送信から効き、「新しいチャット」で既定に戻る
+log, wd, alive_ = run_case("options", "send:一|wait:1500|opt:sonnet,,manual|send:二|wait:1500|new|send:三",
+                            state={"chat_model": "haiku", "chat_effort": "low", "chat_mode": "plan"},
+                            wait_for=("chat answer in", 3))
+argv = [json.loads(line.split(" ANTHROPIC_API_KEY=")[0]) for line in fake_args(wd)]
+trip = [trio(a) for a in argv]
+check("設定の既定が引数に乗る", len(trip) == 3 and trip[0] == ("haiku", "low", "plan"), f"{trip}")
+check("メニューの値は次の送信から・新しいチャットで既定へ", len(trip) == 3 and trip[1] == ("sonnet", "low", "manual")
+      and trip[2] == ("haiku", "low", "plan") and "test chat: opt -> " in log, f"{trip}")
+
+# 知らない値は既定に倒れる（壊れた state.json で bypassPermissions のような広い権限に倒れない）
+log, wd, alive_ = run_case("unknownopt", "send:一", state={"chat_model": "gpt", "chat_effort": "ultra", "chat_mode": "root"},
+                            wait_for=("chat answer in", 1))
+argv = [json.loads(line.split(" ANTHROPIC_API_KEY=")[0]) for line in fake_args(wd)]
+check("知らない値は既定（Fable・高・自動）", len(argv) == 1 and trio(argv[0]) == ("fable", "high", "auto"),
+      f"{[trio(a) for a in argv]}")
+
+# 作業フォルダ: 設定のフォルダが在ればそこで起こす（偽の claude は cwd に fake-args.txt を書く）。消えていれば既定へ
+mydir = work / "chatdir" / "mydir"
+mydir.mkdir(parents=True, exist_ok=True)
+log, wd, alive_ = run_case("chatdir", "send:一", state={"chat_dir": str(mydir)}, wait_for=("chat answer in", 1))
+check("作業フォルダは設定のフォルダ", bool(fake_args(mydir)) and not fake_args(wd), f"mydir={len(fake_args(mydir))} work={len(fake_args(wd))}")
+log, wd, alive_ = run_case("chatdirgone", "send:一", state={"chat_dir": str(work / "chatdir" / "gone")}, wait_for=("chat answer in", 1))
+check("消えた作業フォルダは既定へ", bool(fake_args(wd)) and not (work / "chatdir" / "gone").exists(), f"work={len(fake_args(wd))}")
 
 # A2 の片側: API キーを選んだのに鍵が無い → 起こさずに失敗（資格情報マネージャーは K の名前なので触らない）
 log, wd, alive_ = run_case("nokey", "send:やあ", state={"chat_auth": "api_key"},

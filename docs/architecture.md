@@ -237,17 +237,18 @@ Claude Code が `AskUserQuestion` で聞いてきた質問に、ペットの吹�
 | TTS | AivisSpeech `POST /audio_query` → `POST /synthesis`（`127.0.0.1:10101`、天深シノ・ノーマル。ai-news の `dev\ai-news-routine\lib\radio.mjs` と同じエンジンと話者）。§6.2 | 起こせない・応答しない・壊れた音は黙る |
 | STT | faster-whisper small（CPU・int8）を録音ごとに子プロセスで起こす（`scripts/stt/transcribe.py`）。§6.3 | 設定画面で `scripts\setup-stt.ps1` を案内 |
 | ウェイクワード | Python の子（`scripts/wake/listen.py`。声の環境の numpy・onnxruntime で動かし、openwakeword のパッケージは入れない）。openWakeWord の特徴抽出（`melspectrogram.onnx`→`embedding_model.onnx`、80ms ごとに 96 次元）の上に、ペットごとの小さな頭（直近 1.28 秒を見る 1536→32→1）を載せる。頭は AivisSpeech の合成（`synth.py`）と K の録音（`record-wake.ps1`）から `train.py` で学習し、しきい値は `evaluate.py` が誤反応の上限から決める。モデル・録音・頭は `%LOCALAPPDATA%\pet-claude\wake\` に置き、リポジトリに入れない。特徴抽出と公開の否定データは CC BY-NC-SA 4.0（非営利の個人利用）。学習の道具まで作って保留（K 2026-10-26・PRD F20）。道具（`scripts/wake/`）は git の外に置く（`.gitignore`。K 2026-10-26）。中身は commit 25f7b23・f2bac67 の履歴に残る。再開したら、マイクには声の PR #25 の後につなぐ（詳細は `.steering/20261023-phase4/design.md` §2） | 既定 OFF。頭が無い・子が落ちても pet-app は動き続ける（W5） |
-| チャット | `claude -p` を送信ごとに子プロセスで起こす（§6.1。PRD U1 決定 2026-10-21） | 見つからない・未ログイン・時間切れは吹き出しに短い理由 |
+| チャット | `claude -p` を送信ごとに子プロセスで起こす（§6.1。PRD U1 決定 2026-10-21。2026-10-27 から Claude Code の対話と同じ環境） | 見つからない・未ログイン・時間切れは吹き出しに短い理由 |
 
 話す文言は固定文言＋検証済みの短文のみ（1〜140 字・単一行・コード/URL/パス/秘密らしい文字列は拒否）。
 
-### 6.1 チャット（Phase 3 前半・2026-10-21 実装）
+### 6.1 チャット（Phase 3 前半・2026-10-21 実装。2026-10-27 同じ環境に）
 
-バーのチャットに打った文を、ペット専用の新しいセッションに送る（ツールなし・会話だけ）。設計と実測の正本は `.steering/20261021-phase3-chat/`（design.md・evidence.md）。
+バーのチャットに打った文を、**Claude Code の対話セッションと同じ環境**（K の設定・CLAUDE.md・スキル・hooks・MCP・ツールすべて）の新しいセッションに送る（K 指示 2026-10-27「サブスクを使う場合 Claude Code と全く同じ環境にしたい」。それまでは `--safe-mode`・ツールなしの会話だけだった）。設計と実測の正本は `.steering/20261021-phase3-chat/`（design.md・evidence.md）と `.steering/20261027-chat-same-env/brief.md`（同じ環境の実測・常駐案）。
 
-- **起こし方**: 送るたびに `claude -p` を 1 回起こして終わる（Agent SDK と同じ仕組みを、常駐なしで使う）。引数は `pet_core::chat::child_args`: `--output-format json --safe-mode --model sonnet --tools "" --disallowedTools "mcp__*" --strict-mcp-config --settings {"disableAllHooks":true} --disable-slash-commands --permission-prompts none --max-turns 1 --system-prompt-file <ペットの話し方>`、続きは `--resume <session_id>`。本文は標準入力で渡す
-  - `--safe-mode`: K の `~/.claude/CLAUDE.md`・自動メモリ・スキル・hooks・MCP を読まない（無いと個人の指示書が毎回入り、入力 19,156 トークン。あると 787）。pet の hooks もチャット自身の会話では鳴らない
-  - `--model sonnet`: CLI 既定（Fable）は上限に達すると全く答えない。haiku でも秒数は変わらない（起動が約 3 秒を占める）。答えまで 3.4〜9.8 秒（実測）
+- **起こし方**: 送るたびに `claude -p` を 1 回起こして終わる（Agent SDK と同じ仕組みを、常駐なしで使う）。引数は `pet_core::chat::child_args`: `-p --output-format json --model <opus|fable|sonnet|haiku> --effort <low|medium|high|xhigh|max> --permission-mode <auto|manual|acceptEdits|plan|bypassPermissions> --permission-prompts none --setting-sources user,project,local --append-system-prompt-file <ペットの話し方>`、続きは `--resume <session_id>`。本文は標準入力で渡す
+  - モデル・エフォート・権限モード（`pet_core::chat::ChatOptions`）: 既定は設定画面（`state.json`。無い・知らない値は Fable・高・自動＝Claude デスクトップアプリと同じ）、チャット欄の下の行のメニューでそのチャットの間だけ変えられる（`crate::chat::OVERRIDE`。次の送信から効き、「新しいチャット」で既定に戻る）。alias の 4 つは 2.1.305 で通ることを確かめた
+  - `--append-system-prompt-file`: Claude Code の既定の system prompt を残して話し方を足す（置き換えない）。`--permission-prompts none`: `-p` では対話の承認が出せないため。**`none` でも `PermissionRequest` hook は走り、hook の allow は効く**（2026-10-28 実測。印を書く hook で Write が通った）＝ペットの承認のカード（§5.2）は同じチャットでも鳴る（実機: manual で Write を頼むと送信 9.7 秒後にカード。押さなければ hook の 60 秒で拒否。Write のように要約が元の操作と同じでない道具はカードに「許可」が無く、`-p` には答える画面も無いので拒否しかできない＝別作業の提案）
+  - 実測（同じ環境・K のホーム・fable/high/auto・2026-10-28）: 答えまで **23.5 秒**（`duration_ms` 10.6 秒、残り約 13 秒は起動＋K の SessionStart hooks＋MCP の立ち上げ）、入力 **66,772 トークン**（キャッシュ作成）。`--safe-mode` の頃は 3.4〜9.8 秒・787 トークン。15 秒を超えるので、子を `--input-format stream-json` で常駐させる案を brief に設計だけ書いた（K の判断待ち）
 - **実行ファイル**: `pet_core::chat::find_claude`。PATH の `claude.exe` → npm 版は `claude.cmd` の隣の `node_modules\@anthropic-ai\claude-code\bin\claude.exe`（`.cmd` は cmd.exe の引用符解釈を受けるので直接起こさない）→ `%USERPROFILE%\.local\bin\claude.exe`
 - **認証**: 設定の「接続」で切り替える（既定サブスク）。子の環境は `pet_core::chat::child_env` で組み、`ANTHROPIC_API_KEY`・`ANTHROPIC_AUTH_TOKEN`・`CLAUDE_CODE_USE_BEDROCK/VERTEX/FOUNDRY`・`ANTHROPIC_PROFILE`・`CLAUDECODE`・`CLAUDE_CODE_ENTRYPOINT` を必ず消す（大文字小文字を無視。`claude -p` は環境の API キーを必ず使うため、消さないと気づかずに API 課金になる）。API キーのときだけ、資格情報マネージャー（GENERIC・`pet-claude/anthropic-api-key`。`crates/pet-app/src/cred.rs`）から読んだ鍵を 1 つ足す。鍵は画面に読み返さない・ログに書かない
 - **アプリ側**（`crates/pet-app/src/chat.rs`）: 送信は待たずに戻り、別スレッドで子を起こす（`CREATE_NO_WINDOW`）。本文は `input_text` で 2000 字まで（超えたら断る）。同時に 1 本だけ（受け付けの時点で予約し、答えを受けて `session_id` を覚えてから外す＝メインスレッドが詰まって手順がまとめて走っても 2 本起きず、続きも切れない）。子は**止めた状態で**（`CREATE_SUSPENDED`）起こして送信ごとの Job Object（閉じると中身ごと止まる）に入れてから動かす（入れる前に孫が逃げないように。入れられなければ動かさない）。本文は別スレッドで標準入力に書く（子が読まずにパイプが詰まっても時間切れが効く）。120 秒で時間切れ。「新しいチャット」・終了で止め、世代番号で古い答えを捨てる。pet-app が落ちても OS がハンドルを閉じて子も止まる。待つ間ペットは作業中の動き（行動ロジックには `pet-chat` のセッションとして渡す）
@@ -255,8 +256,8 @@ Claude Code が `AskUserQuestion` で聞いてきた質問に、ペットの吹�
 - **重なり**: チャット欄はバーと同じ規則で置く（ペットの真下、作業領域の下に収まらなければ真上。`ui::below_pet`）。答えの欄が足されて高くなった時も同じ規則で置き直すので、ペットには重ならない（K 指示 2026-10-22「端っこでチャットを開くと重なる問題も直して」）。念のため、チャット欄が出ている間はペットは最前面を取り直さない。開いた直後 600ms 以内に前面を失っても 1 回だけ取り直す（窓を作った直後は 7ms で失って閉じていた）
 - **「確かめる」**: `claude auth status` もチャットと同じ起こし方（Job・出力の上限）で、15 秒で時間切れ
 - **ログ**: 字数・秒数・終了コード・is_error・接続の種類だけ。本文・答え・鍵は書かない（N4）
-- **作業フォルダ**: `%LOCALAPPDATA%\pet-claude\chat\work`（空。リポジトリや K の作業フォルダの設定を拾わない）。ペットの話し方は同じフォルダの上の `system-prompt.txt` に毎回書き出す（中身はコードの定数）
-- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 97 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い。18 項目（panic の故障注入を含む）。取り消し・まとめて来た手順は、アプリを止める前に子が残っていないかを見る）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
+- **作業フォルダ**: 既定は **K のホーム（`%USERPROFILE%`）**。設定画面の「作業フォルダ」で選べる（`state.json` の `chat_dir`。Windows の共通ダイアログ `crates/pet-app/src/pickdir.rs`）。決め方は `pet_core::chat::work_dir`（設定のフォルダが在ればそれ → ホーム → `%LOCALAPPDATA%\pet-claude\chat\work`）。試験（`PET_CLAUDE_DATA_DIR`）ではホームを使わない（偽の claude が K のホームに書かないように）。ペットの話し方は `%LOCALAPPDATA%\pet-claude\chat\system-prompt.txt` に毎回書き出す（中身はコードの定数）
+- **検証**: 単体 `crates/pet-core/tests/chat.rs`（テスト先行 97 本＋同じ環境の 12 本）、故障注入 `scripts/verify/chat-fault.py`（偽の claude `examples/fake_claude.rs` で見つからない・is_error・壊れた出力・時間切れ・新しいチャット・アプリが落ちる・1 本だけ・まとめて来た手順・続き・環境・鍵が無い・設定の既定とメニューの切替・知らない値・作業フォルダ。23 項目（panic の故障注入を含む）。取り消し・まとめて来た手順は、アプリを止める前に子が残っていないかを見る）、見た目 `scripts/verify/render-ui.js`（invoke の偽物＋Edge で設定・チャット欄・吹き出しを撮る）。試験用の差し替え（`PET_TEST_CHAT`・`PET_CLAUDE_EXE`・`PET_CHAT_TIMEOUT_SECS`、別名のミューテックス）はデバッグビルドで `PET_CLAUDE_DATA_DIR` を指定した時だけ効く
 
 ### 6.2 読み上げ（Phase 3 後半・2026-10-22 実装）
 
@@ -292,9 +293,9 @@ Claude Code が `AskUserQuestion` で聞いてきた質問に、ペットの吹�
 
 ## 7. 設定・ログ・保存先
 
-- `%LOCALAPPDATA%\pet-claude\state.json`: `scale`（0.25〜1.5、既定 0.55）、`positions`、`chat_auth`（`subscription` / `api_key`。無い・知らない値はサブスク）。書き込みは一時ファイル＋rename
+- `%LOCALAPPDATA%\pet-claude\state.json`: `scale`（0.25〜1.5、既定 0.55）、`positions`、`chat_auth`（`subscription` / `api_key`。無い・知らない値はサブスク）、`chat_model`（`opus` / `fable` / `sonnet` / `haiku`。既定 `fable`）、`chat_effort`（`low` / `medium` / `high` / `xhigh` / `max`。既定 `high`）、`chat_mode`（`auto` / `manual` / `acceptEdits` / `plan` / `bypassPermissions`。既定 `auto`）、`chat_dir`（作業フォルダ。無い・空は K のホーム）。無い・知らない値はどれも既定（§6.1。2026-10-27）。書き込みは一時ファイル＋rename
 - チャットの API キー: Windows の資格情報マネージャー（自分のユーザーだけが読める。§6.1）。`state.json` には書かない
-- `%LOCALAPPDATA%\pet-claude\chat\`: チャットの作業フォルダと話し方の指示（§6.1）
+- `%LOCALAPPDATA%\pet-claude\chat\`: チャットの話し方の指示と、ホームが無い時の作業フォルダ（§6.1。作業フォルダの既定は K のホーム）
 - `%LOCALAPPDATA%\pet-claude\logs\pet.log`: 起動・配置・クリック・ドラッグ・DPI 変化。`PET_TRACE=1` でドラッグ中の座標も書く
 - 自動起動（Phase 4・2026-10-23 実装）: 設定の「サインインしたらペットを出す」で Windows タスク `pet-claude` を登録・解除する。実物はタスク スケジューラで、`state.json` には持たない（設定画面は開くたびに読む）。中身は `pet_core::autostart::task_xml`（`%SystemRoot%\System32\wscript.exe //B //Nologo "%USERPROFILE%\.claude\scripts\run-hidden.vbs" pet-claude "<いまの pet-app.exe>"`、このユーザーのサインインから 10 秒後・時間の上限なし（既定の 72 時間で止まらないように）・電池でも動く・優先度 4（既定 7 は通常未満）・二重に起こさない）。登録は `crates/pet-app/src/autostart.rs` が `schtasks /Create /XML`（UTF-16LE＋BOM の一時ファイル）で行う。`run-hidden.vbs` が無ければ登録しない。CLI: `--install-autostart [--task-name <名前>] [--disabled]`・`--uninstall-autostart`・`--autostart-status`（試験は無効のタスクを別名で作ってすぐ消す）。記録 `.steering/20261023-phase4/`
 - 端末の窓を出さない（2026-10-26 K 指示）: `pet-app` はデバッグビルドでも GUI サブシステム（`#![windows_subsystem = "windows"]`）。`--probe` などの CLI の引数の時だけ、`crates/pet-app/src/console.rs` が親の端末に `AttachConsole` でつなぎ直して出力する。標準出力が既にある（`> file`・パイプ）時はつながない（つなぐとリダイレクト先に届かない）。端末から CLI を起こすとプロンプトが先に戻ってから出力が出る（GUI のプロセスをシェルが待たないため）。`pet-hook` は hook から標準入出力のパイプで起こされるので変えていない

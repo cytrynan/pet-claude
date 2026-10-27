@@ -45,7 +45,8 @@ const POPUPS: [&str; 3] = [BAR, CHAT, MENU];
 /// 島の大きさ（論理ピクセル）。窓は影のために四方 12px 大きい。DESIGN.md と合わせる。
 const SHADOW_PAD: f64 = 12.0;
 const BAR_ISLAND: (f64, f64) = (96.0, 48.0);
-const CHAT_ISLAND: (f64, f64) = (360.0, 48.0);
+/// チャット欄: 入力の行 48px＋モード・モデルの切替の行 32px（Claude デスクトップアプリの入力欄を写す。2026-10-27）
+const CHAT_ISLAND: (f64, f64) = (360.0, 80.0);
 const MENU_ISLAND: (f64, f64) = (200.0, 150.0);
 /// 吹き出し: 固定文言のカプセルと、承認のカード（DESIGN.md）。
 /// 固定文言は文字に合わせて広げる（`pet_core::bubble::status_island`。2026-10-27 K の報告: 長い文言が切れた）。
@@ -156,6 +157,9 @@ thread_local! {
     static VOICE_HEARD: RefCell<Option<String>> = const { RefCell::new(None) };
     /// チャット欄を開いた時刻。開いた直後の前面の喪失を 1 回だけ取り直すのに使う（使ったら消す）
     static CHAT_OPENED_AT: Cell<Option<Instant>> = const { Cell::new(None) };
+    /// チャット欄のメニュー（モード・モデル）が開いている間の高さ（論理ピクセル。0 は閉じている）。
+    /// メニューは入力欄の上に伸びるので、答えの欄より高ければその分だけ窓を広げる
+    static CHAT_MENU_HEIGHT: Cell<f64> = const { Cell::new(0.0) };
     /// ペットが動いたあとのチャット欄の置き直しを予約済みか（ドラッグ中の描画ごとにスレッドを作らない）
     static CHAT_PLACE_PENDING: Cell<bool> = const { Cell::new(false) };
 }
@@ -463,11 +467,30 @@ fn chat_island() -> (f64, f64) {
     let has_answer = CHAT_LAST.with(|c| c.borrow().is_some())
         || crate::chat::busy()
         || ask_text_target().is_some();
-    if has_answer {
-        (CHAT_ISLAND.0, CHAT_ISLAND.1 + CHAT_GAP + CHAT_ANSWER_HEIGHT)
+    let answer = if has_answer {
+        CHAT_GAP + CHAT_ANSWER_HEIGHT
     } else {
-        CHAT_ISLAND
-    }
+        0.0
+    };
+    // 開いているメニューは答えの欄に重ねて出す。答えの欄より高い分だけ（答えが無ければ全部）上に足す
+    let menu = CHAT_MENU_HEIGHT.with(Cell::get);
+    let menu = if menu > 0.0 { CHAT_GAP + menu } else { 0.0 };
+    (CHAT_ISLAND.0, CHAT_ISLAND.1 + answer.max(menu))
+}
+
+/// チャット欄のメニューを開いた（高さ）・閉じた（0）。窓をその分だけ広げて置き直す（中身は描き直さない）。
+/// 上限は `BUBBLE_FIT_MAX` の高さ（ページ側の誤りで窓が画面いっぱいに広がらないように）。
+pub fn set_chat_menu_height(height: f64) {
+    let height = if height.is_finite() {
+        height.clamp(0.0, BUBBLE_FIT_MAX.1)
+    } else {
+        0.0
+    };
+    // WebView2 のコールバック中なので、窓の操作は後で
+    defer(move || {
+        CHAT_MENU_HEIGHT.with(|h| h.set(height));
+        place_chat();
+    });
 }
 
 /// チャット欄の窓の矩形。バーと同じく、ペットの真下に置き、作業領域の下に収まらなければ真上に置く。
@@ -492,6 +515,8 @@ pub fn chat_state() -> serde_json::Value {
             "heard": VOICE_HEARD.with(|h| h.borrow().clone()),
             // 質問への「回答」の入力中（id と質問文）。chat.html は送信を ask_action に向ける
             "ask": ask_text_target(),
+            // いま効いているモデル・エフォート・権限モード（メニューの値か設定の既定）。下の行の表示に使う
+            "options": crate::chat::options(crate::pet_window::chat_setup().defaults).to_json(),
         })
     })
 }

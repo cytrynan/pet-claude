@@ -53,6 +53,8 @@
   .key { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 0; border-radius: 8px;
     font: inherit; color: var(--label); background: var(--surface-hover); outline: 0; }
   .status { color: var(--label-2); font-feature-settings: "palt"; text-align: right; }
+  /* 作業フォルダのパス: 長ければ末尾を省略（全文はツールチップ）。文には palt を掛けない */
+  .status.path { font-feature-settings: normal; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -144,8 +146,31 @@
     </div>
   </div>
   <p class="note">サブスクは Claude Code にログインしているアカウントで答えます。API キーは使った分だけ課金され、鍵は Windows の資格情報マネージャーに保存します。</p>
+  <!-- 既定のモデル・エフォート・権限モードと作業フォルダ（K 指示 2026-10-27: Claude Code と同じ環境。既定は Fable 5.1・高・自動・ホーム） -->
+  <div class="group">
+    <div class="row">
+      <label for="model">モデル</label>
+      <span class="popup"><select id="model"></select></span>
+    </div>
+    <div class="row">
+      <label for="effort">エフォート</label>
+      <span class="popup"><select id="effort"></select></span>
+    </div>
+    <div class="row">
+      <label for="mode">モード</label>
+      <span class="popup"><select id="mode"></select></span>
+    </div>
+    <div class="row">
+      <label>作業フォルダ</label>
+      <span class="status path" id="chat-dir"></span>
+      <button type="button" class="btn" id="dir-reset" hidden>既定に戻す</button>
+      <button type="button" class="btn" id="dir-pick">選ぶ</button>
+    </div>
+  </div>
+  <p class="note">モデル・エフォート・モードはチャットの既定です。チャット欄の下の行で、そのチャットの間だけ変えられます。作業フォルダは Claude Code を起こす場所で（既定は K のホーム）、その中の CLAUDE.md や .claude の設定も読みます。</p>
 </main>
 <script src="ui.js"></script>
+<script src="options.js"></script>
 <script>
   const scale = document.getElementById("scale");
   const scaleValue = document.getElementById("scale-value");
@@ -221,6 +246,42 @@
     checkResult.textContent = await invoke("chat_auth_check", { mode: auth.value });
     check.disabled = false;
   });
+  // ---- チャットの既定（モデル・エフォート・モード）と作業フォルダ ----
+  const model = document.getElementById("model");
+  const effort = document.getElementById("effort");
+  const mode = document.getElementById("mode");
+  const fillOptions = (select, list) => select.replaceChildren(...list.map(([v, name]) => {
+    const o = document.createElement("option");
+    o.value = v;
+    o.textContent = name;
+    return o;
+  }));
+  fillOptions(model, CHAT_MODELS);
+  fillOptions(effort, CHAT_EFFORTS);
+  fillOptions(mode, CHAT_MODES);
+  // 知らない値（古い state.json・手で書いた値）は既定に戻して見せる（Rust 側の from_state と同じ規則）
+  const pickOption = (select, list, value, fallback) => { select.value = list.some((x) => x[0] === value) ? value : fallback; };
+  const saveDefaults = () => invoke("chat_defaults_set", { model: model.value, effort: effort.value, mode: mode.value });
+  model.addEventListener("change", saveDefaults);
+  effort.addEventListener("change", saveDefaults);
+  mode.addEventListener("change", saveDefaults);
+  const chatDir = document.getElementById("chat-dir");
+  const dirPick = document.getElementById("dir-pick");
+  const dirReset = document.getElementById("dir-reset");
+  let dirDefault = "";
+  // 選んでいなければ既定（ホーム）を薄く出す。全文はツールチップ
+  const showDir = (dir) => {
+    chatDir.textContent = dir || dirDefault || "ホーム";
+    chatDir.title = dir || dirDefault || "";
+    dirReset.hidden = !dir;
+  };
+  dirPick.addEventListener("click", async () => {
+    dirPick.disabled = true;
+    const picked = await invoke("chat_dir_pick");
+    if (typeof picked === "string" && picked) showDir(await invoke("chat_dir_set", { dir: picked }));
+    dirPick.disabled = false;
+  });
+  dirReset.addEventListener("click", async () => { showDir(await invoke("chat_dir_set", { dir: "" })); });
   // ---- 自動起動（Windows タスク）。スイッチは実物の状態に合わせて戻す（登録に失敗したらオフに戻る） ----
   const autostart = document.getElementById("autostart");
   const autostartStatus = document.getElementById("autostart-status");
@@ -248,6 +309,11 @@
     ask.checked = s.ask !== false;
     fillPets(s);
     showAuth(s.chatAuth || "subscription", !!s.hasApiKey);
+    pickOption(model, CHAT_MODELS, s.chatModel, CHAT_DEFAULTS.model);
+    pickOption(effort, CHAT_EFFORTS, s.chatEffort, CHAT_DEFAULTS.effort);
+    pickOption(mode, CHAT_MODES, s.chatMode, CHAT_DEFAULTS.mode);
+    dirDefault = typeof s.chatDirDefault === "string" ? s.chatDirDefault : "";
+    showDir(typeof s.chatDir === "string" ? s.chatDir : "");
     show();
     // 声の状態はエンジンに問い合わせるので後から埋める（最大 2 秒）
     invoke("voice_status").then((v) => {

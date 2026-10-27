@@ -33,31 +33,89 @@ const statusCases = Object.entries(statusTexts).map(([name, text], i) => ({
 
 const cases = [
   ...statusCases,
-  { name: "settings-sub", page: "settings.html", size: [440, 600],
+  { name: "settings-sub", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false }, autostart_get: { state: "off", detail: "" } } },
-  { name: "settings-placeholder", page: "settings.html", size: [440, 600],
+  // チャットの既定 4 項目（2026-10-27）: 設定済みの値と長い作業フォルダ
+  { name: "settings-chat-defaults", page: "settings.html", size: [440, 1200],
+    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
+      chatModel: "sonnet", chatEffort: "medium", chatMode: "acceptEdits", chatDir: "C:\\Users\\k\\dev\\pet-claude\\pet-claude-main\\very\\long\\path", chatDirDefault: "C:\\Users\\k" } },
+    act: async (page) => {
+      const v = await page.evaluate(() => [document.getElementById("model").value, document.getElementById("effort").value, document.getElementById("mode").value,
+        document.getElementById("chat-dir").textContent, document.getElementById("dir-reset").hidden]);
+      const ok = v[0] === "sonnet" && v[1] === "medium" && v[2] === "acceptEdits" && v[3].endsWith("path") && v[4] === false;
+      return { ok, detail: JSON.stringify(v) };
+    } },
+  // 知らない値は既定（Fable・高・自動）で見せ、作業フォルダは既定（ホーム）を出して「既定に戻す」は隠す
+  { name: "settings-chat-unknown", page: "settings.html", size: [440, 1200],
+    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false,
+      chatModel: "gpt", chatEffort: "ultra", chatMode: "root", chatDir: null, chatDirDefault: "C:\\Users\\k" } },
+    act: async (page) => {
+      const v = await page.evaluate(() => [document.getElementById("model").value, document.getElementById("effort").value, document.getElementById("mode").value,
+        document.getElementById("chat-dir").textContent, document.getElementById("dir-reset").hidden]);
+      const ok = v[0] === "fable" && v[1] === "high" && v[2] === "auto" && v[3] === "C:\\Users\\k" && v[4] === true;
+      return { ok, detail: JSON.stringify(v) };
+    } },
+  { name: "settings-placeholder", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "placeholder", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
-  { name: "settings-key-empty", page: "settings.html", size: [440, 600],
+  { name: "settings-key-empty", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: false } } },
-  { name: "settings-key-saved", page: "settings.html", size: [440, 600],
+  { name: "settings-key-saved", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: true } } },
   // 自動起動（Phase 4）: 登録済み・別の場所の exe・失敗
   ...[["on", ""], ["other", "C:\Users\k\dev\pet-claude\pet-claude-main\target\debug\pet-app.exe"], ["error", "C:\Users\k\.claude\scripts\run-hidden.vbs が無い"]].map(([st, detail]) => (
-    { name: "settings-autostart-" + st, page: "settings.html", size: [440, 600],
+    { name: "settings-autostart-" + st, page: "settings.html", size: [440, 960],
       state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false },
         autostart_get: { state: st, detail } } })),
-  { name: "chat-answer", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer, error: false, busy: false } } },
-  { name: "chat-busy", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
-  { name: "chat-first-wait", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
-  { name: "chat-error", page: "chat.html", size: [384, 48 + 8 + 188 + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
+  // チャット欄の下の行（モード・モデル＋エフォート）とメニュー（2026-10-27）。メニューは入力の島の上に伸びる。
+  // 窓の高さはメニューの分（ui.rs の set_chat_menu_height に伝える offsetHeight）を見込んで取る
+  { name: "chat-opts-nondefault", page: "chat.html", size: [384, 80 + 24],
+    state: { chat_state: { answer: null, error: false, busy: false, options: { model: "haiku", effort: "max", mode: "bypassPermissions" } } } },
+  ...[["mode", "#mode-btn", 5, 290], ["model", "#model-btn", 4, 220]].map(([kind, btn, rows, h]) => (
+    { name: "chat-menu-" + kind, page: "chat.html", size: [384, 80 + 8 + h + 24],
+      state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } }, chat_options_set: { model: "opus", effort: "high", mode: "auto" } },
+      act: async (page) => {
+        await page.click(btn);
+        await page.waitForTimeout(100);
+        const calls = await page.evaluate(() => window.__calls);
+        const opened = calls.find((c) => c.cmd === "chat_menu");
+        const n = await page.locator('#menu-items [role="menuitemradio"]').count();
+        const checked = await page.locator('#menu-items [aria-checked="true"]').count();
+        const menuH = await page.evaluate(() => document.getElementById("menu").offsetHeight);
+        const ok = !!opened && opened.args.height > 0 && opened.args.height <= h && n === rows && checked === 1 && menuH === opened.args.height;
+        return { ok, detail: `chat_menu=${JSON.stringify(opened && opened.args)} rows=${n} checked=${checked} menuH=${menuH}` };
+      } })),
+  // エフォートの一覧（モデルのメニューの「エフォート ›」から）。選ぶと chat_options_set が届き、閉じて（高さ 0）表示が変わる
+  { name: "chat-menu-effort", page: "chat.html", size: [384, 80 + 8 + 220 + 24],
+    state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } }, chat_options_set: { model: "fable", effort: "max", mode: "auto" } },
+    act: async (page) => {
+      await page.click("#model-btn");
+      await page.click('#menu-items [aria-haspopup="menu"]');
+      await page.waitForTimeout(100);
+      const n = await page.locator('#menu-items [role="menuitemradio"]').count();
+      const title = await page.textContent("#menu-title");
+      await page.screenshot({ path: `${out}/${await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")}-chat-menu-effort-open.png` });
+      await page.click('#menu-items [data-i="5"]');
+      await page.waitForTimeout(100);
+      const calls = await page.evaluate(() => window.__calls);
+      const set = calls.find((c) => c.cmd === "chat_options_set");
+      const closed = calls.filter((c) => c.cmd === "chat_menu").at(-1);
+      const label = await page.textContent("#model-btn");
+      const hidden = await page.evaluate(() => document.getElementById("menu").hidden);
+      const ok = n === 5 && title === "エフォート" && !!set && set.args.effort === "max" && !!closed && closed.args.height === 0 && hidden && label === "Fable 5.1最大";
+      return { ok, detail: `rows=${n} title=${title} set=${JSON.stringify(set && set.args)} closed=${JSON.stringify(closed && closed.args)} label=${JSON.stringify(label)}` };
+    } },
+  { name: "chat-answer", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer, error: false, busy: false } } },
+  { name: "chat-busy", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
+  { name: "chat-first-wait", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
+  { name: "chat-error", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
   // 音声入力で聞き取った文を K の発言として出す（Phase 3 後半）
-  { name: "chat-heard-busy", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+  { name: "chat-heard-busy", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
     state: { chat_state: { answer: null, error: false, busy: true, heard: "まめちゃん、明日の天気どうかな" } } },
-  { name: "chat-heard-answer", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+  { name: "chat-heard-answer", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
     state: { chat_state: { answer: "明日は晴れそうだよ。朝は少し冷えるから上着があるといいね。", error: false, busy: false, heard: "まめちゃん、明日の天気どうかな" } } },
   // 打って送る経路を画面のスクリプトで通す（2026-10-23 評価係の指摘: 送信は Rust 側から呼ぶ試験しか無く、
   // chat.html の SyntaxError を誰も踏まなかった）。打って送信を押し、invoke("chat_submit") が届くかを見る
-  { name: "chat-submit", page: "chat.html", size: [384, 48 + 24],
+  { name: "chat-submit", page: "chat.html", size: [384, 80 + 24],
     state: { chat_state: { answer: null, error: false, busy: false }, chat_submit: "考え中…" },
     act: async (page) => {
       await page.fill("#text", "明日の天気は？");
@@ -116,7 +174,7 @@ const cases = [
       return { ok, detail: JSON.stringify(calls.map((c) => c.args)) };
     } },
   // チャット欄が質問への回答の入力になっている: 質問文を出し、送信は ask_action の answer に向く
-  { name: "chat-ask", page: "chat.html", size: [384, 48 + 8 + 188 + 24],
+  { name: "chat-ask", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
     state: { chat_state: { answer: null, error: false, busy: false, ask: { id: "q1", question: "どの色が好きですか？" } }, ask_action: "ok" },
     act: async (page) => {
       await page.fill("#text", "むらさき");
