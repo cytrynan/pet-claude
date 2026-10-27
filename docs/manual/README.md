@@ -11,11 +11,14 @@
 
 `build-docx.js` は docx の初版を組んだスクリプト。**走らせると K の手直しを上書きする**ので、構成を丸ごと作り直す時にだけ使う（`node docs/manual/build-docx.js`。docx は npm のグローバルを使う）。
 
+見た目は apple-design（HIG）: 文字の大きさで階層を作り罫線は髪の毛の太さ、色は状態のチップだけ（言葉を必ず添える）。図（流れ・状態・時間軸・一覧）は `diagrams.html` に HTML で書き、`node docs/manual/render-diagrams.js` が Edge で 2 倍の PNG（`images/diagrams/`）にする。図を直したら PNG を作り直し、Word 側で「図の変更」で入れ替える。
+
 Word で直す時の約束:
 
 - 見出し 1（章）と見出し 2（節）は Word の組み込みスタイル。目次と PDF のしおりはここから作る
 - 図と説明文を横に並べている所は、罫線無しの 1 行の表。表の行は分割しない設定にしてあるので、図だけが次ページへ落ちる時は図を小さくする
-- 等幅（Cascadia Mono）の部分はコマンドやパス。日本語の既定は Yu Gothic UI（Normal スタイルに明示。無いと日本語の Word が游明朝で補う）
+- 等幅（Cascadia Mono）の部分はコマンドやパス。日本語の既定は Yu Gothic UI（Normal スタイルに明示。無いと日本語の Word が游明朝で補う。Noto Sans JP は可変フォントで Word が解決できず Calibri に落ちる）
+- 「項目: 内容」の表の左列は灰色のチップ（文字の網かけ）。状態の名前は色つきのチップ。チップは行の途中で折れるので、行頭に置く
 
 ## 画像を撮り直すとき
 

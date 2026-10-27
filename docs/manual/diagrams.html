@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>pet-claude マニュアルの図</title>
+<style>
+  /* マニュアルの図。render-diagrams.js が Edge で .dgm ごとに 2 倍で撮って images/diagrams/<id>.png にする。
+     色と字体は apple-design（HIG の system tint・label・secondaryLabel・grouped background）。
+     文字は本文（docx）と同じ Yu Gothic UI。Noto Sans JP（可変フォント）は Word が解決できず Calibri に落ちるので、図も本文に合わせた（2026-10-28 実測）。色だけで意味を伝えない＝必ず言葉を添える。 */
+  :root {
+    --label: #1d1d1f; --label-2: #6e6e73; --sep: rgba(60,60,67,.29); --bg-2: #f5f5f7; --white: #fff;
+    --blue: #0071e3; --blue-bg: #e5f1ff; --green: #1f8f45; --green-bg: #e3f7ea; --orange: #c25400; --orange-bg: #fff0e3;
+    --red: #d70015; --red-bg: #ffe5e7; --purple: #9b1fb0; --purple-bg: #f8e5fb; --indigo: #4f46e5; --indigo-bg: #ebe9ff;
+    --teal: #0b8a94; --teal-bg: #e0f6f8; --brown: #8a5a3c; --brown-bg: #f3ebe4; --gray: #6e6e73; --gray-bg: #ececf0;
+    --yellow: #9a6b00; --yellow-bg: #fff6d6;
+  }
+  html { font-family: "Yu Gothic UI", "Noto Sans JP", "BIZ UDPGothic", Meiryo, sans-serif; color: var(--label); font-size: 15px; line-height: 1.45; }
+  body { margin: 0; padding: 24px; background: #fff; }
+  .dgm { width: 720px; padding: 4px; box-sizing: border-box; margin-bottom: 40px; background: #fff; }
+  .dgm.narrow { width: 440px; }
+  .row { display: flex; align-items: center; gap: 10px; }
+  .col { display: flex; flex-direction: column; gap: 10px; }
+  .node { border: 1px solid var(--sep); border-radius: 14px; padding: 10px 14px; background: var(--white); font-weight: 600; font-size: 15px; text-align: center; min-width: 96px; }
+  .node .sub { display: block; font-weight: 400; font-size: 12px; color: var(--label-2); margin-top: 2px; }
+  .node.tint { background: var(--blue-bg); border-color: transparent; color: var(--blue); }
+  .node.soft { background: var(--bg-2); border-color: transparent; }
+  .arrow { color: var(--label-2); font-size: 22px; line-height: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+  .arrow .lbl { font-size: 11.5px; color: var(--label-2); white-space: nowrap; }
+  .chip { display: inline-flex; align-items: center; gap: 8px; padding: 7px 14px; border-radius: 999px; font-weight: 600; font-size: 14px; white-space: nowrap; }
+  .chip .dot { width: 9px; height: 9px; border-radius: 50%; background: currentColor; }
+  .chip.blue { background: var(--blue-bg); color: var(--blue); }
+  .chip.green { background: var(--green-bg); color: var(--green); }
+  .chip.orange { background: var(--orange-bg); color: var(--orange); }
+  .chip.red { background: var(--red-bg); color: var(--red); }
+  .chip.purple { background: var(--purple-bg); color: var(--purple); }
+  .chip.indigo { background: var(--indigo-bg); color: var(--indigo); }
+  .chip.teal { background: var(--teal-bg); color: var(--teal); }
+  .chip.brown { background: var(--brown-bg); color: var(--brown); }
+  .chip.gray { background: var(--gray-bg); color: var(--gray); }
+  .chip.yellow { background: var(--yellow-bg); color: var(--yellow); }
+  .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  .cards.c3 { grid-template-columns: repeat(3, 1fr); }
+  .card { background: var(--bg-2); border-radius: 16px; padding: 14px 16px; }
+  .card .t { font-weight: 700; font-size: 16px; margin-bottom: 4px; }
+  .card .d { font-size: 13px; color: var(--label-2); }
+  .card .chip { margin-bottom: 8px; }
+  /* 時間軸 */
+  .tl { position: relative; padding: 0 8px; }
+  .tl .line { height: 3px; background: var(--sep); border-radius: 2px; margin: 26px 0 10px; }
+  .tl .pts { display: flex; justify-content: space-between; margin-top: -32px; }
+  .tl .pt { width: 150px; text-align: center; }
+  .tl .pt:first-child { text-align: left; } .tl .pt:last-child { text-align: right; }
+  .tl .pt .k { display: inline-block; width: 14px; height: 14px; border-radius: 50%; background: var(--blue); border: 3px solid #fff; box-shadow: 0 0 0 1px var(--sep); }
+  .tl .pt .t { font-weight: 700; font-size: 14px; margin-top: 6px; }
+  .tl .pt .d { font-size: 12px; color: var(--label-2); }
+  .note { font-size: 12.5px; color: var(--label-2); margin-top: 10px; }
+  .state { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; background: var(--bg-2); }
+  .state .chip { min-width: 92px; justify-content: center; }
+  .state .w { font-size: 13px; }
+  .state .w { font-size: 14px; }
+  .state .w b { font-weight: 600; }
+</style>
+</head>
+<body>
+
+<!-- 1 章: 仕組み -->
+<div class="dgm" data-id="system">
+  <div class="col">
+    <div class="row">
+      <div class="node soft">Claude Code</div>
+      <div class="arrow"><span class="lbl">hooks</span>→</div>
+      <div class="node">pet-hook.exe</div>
+      <div class="arrow"><span class="lbl">状態を渡す</span>→</div>
+      <div class="node tint">ペット<span class="sub">ポーズ・吹き出し・声</span></div>
+      <div class="arrow"><span class="lbl">許可・拒否・答え</span>→</div>
+      <div class="node soft">Claude Code</div>
+    </div>
+    <div class="row">
+      <div class="node tint">ペット<span class="sub">チャット・音声入力</span></div>
+      <div class="arrow"><span class="lbl">claude -p</span>→</div>
+      <div class="node">新しいセッション<span class="sub">Claude Code と同じ環境</span></div>
+      <div class="arrow"><span class="lbl">答え</span>→</div>
+      <div class="node tint">吹き出し＋チャット欄<span class="sub">声でも読む</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- 2 章: マウス -->
+<div class="dgm" data-id="mouse">
+  <div class="cards">
+    <div class="card"><span class="chip blue"><span class="dot"></span>左クリック</span><div class="t">バーが出る</div><div class="d">なでられた反応。もう一度押すと閉じる</div></div>
+    <div class="card"><span class="chip teal"><span class="dot"></span>カーソルを乗せて 0.2 秒</span><div class="t">同じバーが出る</div><div class="d">離れて 0.4 秒で閉じる。クリックで固定</div></div>
+    <div class="card"><span class="chip gray"><span class="dot"></span>右クリック</span><div class="t">メニュー</div><div class="d">設定・バーを隠す・位置をリセット・終了</div></div>
+    <div class="card"><span class="chip orange"><span class="dot"></span>ドラッグ</span><div class="t">つまんで動かす</div><div class="d">画面の外には出ない。位置は画面ごとに覚える</div></div>
+  </div>
+</div>
+
+<!-- 2 章: 放置 -->
+<div class="dgm" data-id="idle">
+  <div class="tl">
+    <div class="line"></div>
+    <div class="pts">
+      <div class="pt"><span class="k"></span><div class="t">何もしない</div><div class="d">0 秒</div></div>
+      <div class="pt"><span class="k"></span><div class="t">散歩を始める</div><div class="d">90 秒ほど。設定「放置すると散歩する」がオンのとき</div></div>
+      <div class="pt"><span class="k"></span><div class="t">眠る</div><div class="d">5 分ほど。Claude Code が動くかクリックで起きる</div></div>
+    </div>
+  </div>
+  <div class="note">全画面のアプリを使っている間は前に出ない。閉じると戻る。</div>
+</div>
+
+<!-- 3 章: 状態 -->
+<div class="dgm" data-id="states">
+  <div class="cards">
+    <div class="state"><span class="chip blue"><span class="dot"></span>作業中</span><span class="w">作業のポーズになる</span></div>
+    <div class="state"><span class="chip green"><span class="dot"></span>できた</span><span class="w">1 回喜んで <b>「できたよ」</b></span></div>
+    <div class="state"><span class="chip red"><span class="dot"></span>失敗</span><span class="w"><b>「失敗しちゃった」</b></span></div>
+    <div class="state"><span class="chip orange"><span class="dot"></span>入力待ち</span><span class="w"><b>「入力を待ってるよ」</b></span></div>
+    <div class="state"><span class="chip purple"><span class="dot"></span>承認待ち</span><span class="w">こちらを見て、<b>承認のカード</b>を出す</span></div>
+    <div class="state"><span class="chip indigo"><span class="dot"></span>質問</span><span class="w"><b>質問のカード</b>を出す（設定でオフにすると「聞きたいことがあるよ」だけ）</span></div>
+  </div>
+</div>
+
+<!-- 3 章: 承認のカード -->
+<div class="dgm" data-id="approve" style="width:560px">
+  <div class="row">
+    <div class="node soft">承認のカード<span class="sub">ツール名と要約</span></div>
+    <div class="arrow">→</div>
+    <div class="col">
+      <div class="row"><span class="chip green"><span class="dot"></span>許可</span><span class="note" style="margin:0">そのまま進む</span></div>
+      <div class="row"><span class="chip red"><span class="dot"></span>拒否</span><span class="note" style="margin:0">止める</span></div>
+      <div class="row"><span class="chip gray"><span class="dot"></span>ターミナルで</span><span class="note" style="margin:0">いつもの画面で答える</span></div>
+    </div>
+  </div>
+  <div class="note">デスクトップアプリから来た要求では「Claude アプリで」。「許可」が無いカード＝要約が操作の全部を見せていない（Write・Edit・長いコマンド）→ いつもの画面で答える。押さずに 1 分で下がる。複数は古い順に 1 枚ずつ（「ほかに N 件」）。</div>
+</div>
+
+<!-- 4 章: チャットの流れ -->
+<div class="dgm" data-id="chat">
+  <div class="row">
+    <div class="node tint">打つ・話す<span class="sub">2000 字まで</span></div>
+    <div class="arrow"><span class="lbl">送る</span>→</div>
+    <div class="node">claude -p<span class="sub">答えまで 20 秒ほど</span></div>
+    <div class="arrow"><span class="lbl">答え</span>→</div>
+    <div class="node">吹き出し<span class="sub">1 行。「続きを見る」で全文</span></div>
+    <div class="node">チャット欄<span class="sub">全文</span></div>
+    <div class="node soft">声<span class="sub">設定でオン</span></div>
+  </div>
+  <div class="note">続けて打つと同じ会話。「新しいチャット」で忘れる。承認待ちになるとペットの承認カードが出る。</div>
+</div>
+
+<!-- 5 章: 音声入力 -->
+<div class="dgm" data-id="voice">
+  <div class="tl">
+    <div class="line"></div>
+    <div class="pts">
+      <div class="pt"><span class="k"></span><div class="t">波形のボタンを押す</div><div class="d">赤く脈打つ</div></div>
+      <div class="pt"><span class="k"></span><div class="t">5 秒以内に話し始める</div><div class="d">過ぎると取りやめ</div></div>
+      <div class="pt"><span class="k"></span><div class="t">話す</div><div class="d">1 回 15 秒まで</div></div>
+      <div class="pt"><span class="k"></span><div class="t">1 秒黙る</div><div class="d">自動で止まる</div></div>
+      <div class="pt"><span class="k"></span><div class="t">チャットに送る</div><div class="d">文字起こしは手元の PC で</div></div>
+    </div>
+  </div>
+  <div class="note">もう一度押すと、その場で止めて送る。録音はファイルに残さない。</div>
+</div>
+
+<!-- 7 章: ペット -->
+<div class="dgm" data-id="pets">
+  <div class="cards c3">
+    <div class="card"><span class="chip green"><span class="dot"></span>まめドラゴン</span><div class="d">最初のペット（既定）</div></div>
+    <div class="card"><span class="chip gray"><span class="dot"></span>りんりん</span><div class="d">パンダ</div></div>
+    <div class="card"><span class="chip orange"><span class="dot"></span>とらちゃん</span><div class="d">茶トラ</div></div>
+    <div class="card"><span class="chip brown"><span class="dot"></span>しばちゃん</span><div class="d">黒柴</div></div>
+    <div class="card"><span class="chip yellow"><span class="dot"></span>こむぎちゃん</span><div class="d">ハムスター（茶）</div></div>
+    <div class="card"><span class="chip teal"><span class="dot"></span>ごまちゃん</span><div class="d">ハムスター（灰）</div></div>
+  </div>
+</div>
+
+</body>
+</html>
