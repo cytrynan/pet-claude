@@ -29,6 +29,9 @@
   }
   .popup select:hover { background: var(--surface-press); }
   .popup select:focus-visible { outline: 2px solid var(--tint); outline-offset: 2px; }
+  /* 選択肢の一覧は WebView2 が別の窓で描き、その明暗が本文と食い違うことがある。文字色だけ継ぐと
+     暗い配色のとき白地に白文字で読めなくなった（2026-10-27 K報告）。地色も明示して組で揃える */
+  .popup option { color: var(--label); background: var(--cell); }
   .popup::after {
     content: ""; position: absolute; right: 11px; top: 50%; width: 6px; height: 6px; margin-top: -5px;
     border-right: 1.5px solid var(--label-2); border-bottom: 1.5px solid var(--label-2);
