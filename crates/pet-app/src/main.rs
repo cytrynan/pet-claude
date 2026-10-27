@@ -44,12 +44,14 @@ use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
-use windows::core::w;
+use windows::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MB_OK, MessageBoxW};
+use windows::core::{HSTRING, w};
 
 use crate::log::log;
 
-/// 起動時に表示するペット。`--pet <dir>` が最優先、次に state.json で選んだもの、無ければ内蔵の仮キャラ。
-/// 選んだペットが消えていた・読めないときも仮キャラで起動する（起動できないよりよい）。
+/// 起動時に表示するペット。`--pet <dir>` が最優先、次に state.json で選んだもの、無ければ既定のまめドラゴン、
+/// それも無ければフォルダにあるペット。選んだペットが消えていた・読めないときも次を試す（起動できないよりよい）。
+/// 1 つも読めなければ起動しない（内蔵の仮キャラは 2026-10-28 K 指示で外した。`pets::startup_order`）。
 fn startup_pet(
     pet_dir: Option<&str>,
     state: &state::AppState,
@@ -60,8 +62,8 @@ fn startup_pet(
         let loaded = pets::load(&entry, need)?;
         return Ok((entry, loaded));
     }
-    // 試す順: state.json で選んだペット → フォルダにあるペット（見つかった順）→ 仮キャラ。読めないものは
-    // 飛ばして次を試す（壊れたペットが 1 つ先にあるだけで仮キャラになっていた。2026-10-21 故障注入で発見）
+    // 試す順: state.json で選んだペット → 既定のまめドラゴン → フォルダにあるペット（見つかった順）。読めないものは
+    // 飛ばして次を試す（壊れたペットが 1 つ先にあるだけで最後の手段になっていた。2026-10-21 故障注入で発見）
     let all = pets::discover();
     let mut last_err = String::from("ペットが 1 つも無い");
     for entry in pets::startup_order(&all, state.pet.as_deref()) {
@@ -74,6 +76,24 @@ fn startup_pet(
         }
     }
     Err(last_err)
+}
+
+/// ペットが 1 つも読めず起動できない時の知らせ（ログの場所も添える）。試験の置き場所（`PET_CLAUDE_DATA_DIR`）で
+/// 起こした時は窓を出さない（故障注入が止まる）。
+fn show_startup_error(reason: &str) {
+    if std::env::var_os("PET_CLAUDE_DATA_DIR").is_some() {
+        return;
+    }
+    let text = HSTRING::from(format!(
+        "ペットを読めないので起動できません。\n{reason}\n\nペットのフォルダ（pets\\<id>\\pet.json）を確かめてください。\nログ: {}",
+        crate::log::data_dir()
+            .join("logs")
+            .join("pet.log")
+            .display()
+    ));
+    unsafe {
+        MessageBoxW(None, &text, w!("pet-claude"), MB_OK | MB_ICONERROR);
+    }
 }
 
 /// 試験用（デバッグビルドで、置き場所を `PET_CLAUDE_DATA_DIR` で差し替えた時だけ）:
@@ -401,7 +421,10 @@ fn main() {
     let (pet, sheet) = match startup_pet(arg_value(&args, "--pet").as_deref(), &app_state) {
         Ok(p) => p,
         Err(e) => {
+            // 仮キャラを外した（2026-10-28）ので、ペットが 1 つも読めない時は黙って終わらず理由を見せる
+            // （ログだけだと「起動しない」にしか見えない）
             log(format!("スプライトを読めない: {e}"));
+            show_startup_error(&e);
             return;
         }
     };

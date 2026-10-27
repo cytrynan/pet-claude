@@ -192,7 +192,7 @@
   const save = () => send(true);
   const wakeWord = document.getElementById("wake-word");
   let petList = [];
-  // 選択欄で選んでいるペットのウェイクワード。決めていないペット（仮キャラなど）は「なし」
+  // 選択欄で選んでいるペットのウェイクワード。決めていないペットは「なし」
   const showWakeWord = () => {
     const p = petList.find((q) => q.id === pet.value);
     wakeWord.textContent = (p && p.wakeWord) || "なし";

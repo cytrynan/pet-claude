@@ -10,6 +10,8 @@ const pw = require(path.join(process.env.APPDATA, "npm/node_modules/@playwright/
 const ui = path.resolve(__dirname, "../../ui").split(path.sep).join("/");
 const out = process.argv[2];
 
+// チャット欄の答えの欄の高さ（ui.rs の CHAT_ANSWER_HEIGHT・chat.html の .answer と同じ。一番高いメニューに合わせた値）
+const ANSWER_H = 264;
 const answer = "たくさん思いつくよ！食べ物なら、焼き芋、栗ご飯、さんま、新米、柿、梨、ぶどう、きのこ料理、月見団子。お出かけなら、紅葉狩り、ハイキング、芋掘り、りんご狩り、温泉。おうちなら、読書、温かいお茶、秋の映画やゲーム。\n\n夜は虫の声を聞くのもいいね。";
 const bubbleText = answer.replace(/\s+/g, " ").slice(0, 139) + "…";
 // 固定文言の吹き出し: 窓の大きさはアプリと同じ関数（pet_core::bubble::status_island）から取る（2026-10-27。
@@ -55,8 +57,8 @@ const cases = [
       const ok = v[0] === "fable" && v[1] === "high" && v[2] === "auto" && v[3] === "C:\\Users\\k" && v[4] === true;
       return { ok, detail: JSON.stringify(v) };
     } },
-  { name: "settings-placeholder", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "placeholder", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
+  { name: "settings-no-wake-word", page: "settings.html", size: [440, 960],
+    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "b", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "b", name: "ねこ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
   { name: "settings-key-empty", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: false } } },
   { name: "settings-key-saved", page: "settings.html", size: [440, 960],
@@ -84,6 +86,33 @@ const cases = [
         const ok = !!opened && opened.args.height > 0 && opened.args.height <= h && n === rows && checked === 1 && menuH === opened.args.height;
         return { ok, detail: `chat_menu=${JSON.stringify(opened && opened.args)} rows=${n} checked=${checked} menuH=${menuH}` };
       } })),
+  // 答えが出ている時にメニューを開く（2026-10-28 K 報告「自動やモデルを押すと会話が一瞬消える」）。
+  // 窓（viewport）は答えありの高さのまま。開いた瞬間（クリック直後）と開いた後（300ms）を撮り、答えの欄が
+  // 隠されず・位置も文も変わらないこと、Rust に伝える高さが答えの欄に収まる（＝窓を動かさない）ことを見る
+  ...[["mode", "#mode-btn"], ["model", "#model-btn"]].map(([kind, btn]) => (
+    { name: "chat-menu-" + kind + "-answer", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24],
+      state: { chat_state: { answer, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } } },
+      act: async (page) => {
+        const look = () => page.evaluate(() => {
+          const a = document.getElementById("answer");
+          const r = a.getBoundingClientRect();
+          return { hidden: a.hidden, rect: [r.left, r.top, r.width, r.height].join(","), text: document.getElementById("answer-text").textContent };
+        });
+        const scheme = await page.evaluate(() => matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+        const before = await look();
+        await page.click(btn);
+        await page.screenshot({ path: `${out}/${scheme}-chat-menu-${kind}-answer-instant.png` });
+        const instant = await look();
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: `${out}/${scheme}-chat-menu-${kind}-answer-after.png` });
+        const after = await look();
+        const calls = await page.evaluate(() => window.__calls);
+        const opened = calls.find((c) => c.cmd === "chat_menu");
+        const menuH = await page.evaluate(() => document.getElementById("menu").offsetHeight);
+        const same = (x) => !x.hidden && x.rect === before.rect && x.text === before.text && x.text.length > 0;
+        const ok = same(instant) && same(after) && !!opened && opened.args.height > 0 && opened.args.height <= ANSWER_H && menuH <= ANSWER_H;
+        return { ok, detail: `answer=${before.rect} instant=${instant.rect} after=${after.rect} chat_menu=${JSON.stringify(opened && opened.args)} menuH=${menuH}` };
+      } })),
   // エフォートの一覧（モデルのメニューの「エフォート ›」から）。選ぶと chat_options_set が届き、閉じて（高さ 0）表示が変わる
   { name: "chat-menu-effort", page: "chat.html", size: [384, 80 + 8 + 220 + 24],
     state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } }, chat_options_set: { model: "fable", effort: "max", mode: "auto" } },
@@ -104,14 +133,14 @@ const cases = [
       const ok = n === 5 && title === "エフォート" && !!set && set.args.effort === "max" && !!closed && closed.args.height === 0 && hidden && label === "Fable 5.1最大";
       return { ok, detail: `rows=${n} title=${title} set=${JSON.stringify(set && set.args)} closed=${JSON.stringify(closed && closed.args)} label=${JSON.stringify(label)}` };
     } },
-  { name: "chat-answer", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer, error: false, busy: false } } },
-  { name: "chat-busy", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
-  { name: "chat-first-wait", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
-  { name: "chat-error", page: "chat.html", size: [384, 80 + 8 + 188 + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
+  { name: "chat-answer", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24], state: { chat_state: { answer, error: false, busy: false } } },
+  { name: "chat-busy", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24], state: { chat_state: { answer: "こんにちは！今日はどうしたの？", error: false, busy: true } } },
+  { name: "chat-first-wait", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24], state: { chat_state: { answer: null, error: false, busy: true } } },
+  { name: "chat-error", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24], state: { chat_state: { answer: "時間切れ（120 秒）", error: true, busy: false } } },
   // 音声入力で聞き取った文を K の発言として出す（Phase 3 後半）
-  { name: "chat-heard-busy", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
+  { name: "chat-heard-busy", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24],
     state: { chat_state: { answer: null, error: false, busy: true, heard: "まめちゃん、明日の天気どうかな" } } },
-  { name: "chat-heard-answer", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
+  { name: "chat-heard-answer", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24],
     state: { chat_state: { answer: "明日は晴れそうだよ。朝は少し冷えるから上着があるといいね。", error: false, busy: false, heard: "まめちゃん、明日の天気どうかな" } } },
   // 打って送る経路を画面のスクリプトで通す（2026-10-23 評価係の指摘: 送信は Rust 側から呼ぶ試験しか無く、
   // chat.html の SyntaxError を誰も踏まなかった）。打って送信を押し、invoke("chat_submit") が届くかを見る
@@ -174,7 +203,7 @@ const cases = [
       return { ok, detail: JSON.stringify(calls.map((c) => c.args)) };
     } },
   // チャット欄が質問への回答の入力になっている: 質問文を出し、送信は ask_action の answer に向く
-  { name: "chat-ask", page: "chat.html", size: [384, 80 + 8 + 188 + 24],
+  { name: "chat-ask", page: "chat.html", size: [384, 80 + 8 + ANSWER_H + 24],
     state: { chat_state: { answer: null, error: false, busy: false, ask: { id: "q1", question: "どの色が好きですか？" } }, ask_action: "ok" },
     act: async (page) => {
       await page.fill("#text", "むらさき");

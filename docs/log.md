@@ -12,6 +12,7 @@
 ## 2026-10-28
 * **Update**: [技術仕様書](architecture.md) — §4.4「入っているペット」に 6 体目のごまちゃん（`goma`・ハムスター灰・960 生成＋`fullCell: true`。スキル `make-pet-clips`。寝姿は 0.9 倍の静止画から） (kuroko/claude-opus-5-5 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4「入っているペット」に 5 体目のこむぎちゃん（`komugi`・ハムスター茶・960 生成＋`fullCell: true`。スキル `make-pet-clips`。寝姿は色と大きさを直した静止画から） (kuroko/claude-opus-5-5 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §4.4 内蔵の仮キャラ（`placeholder`）を外す。起動時に試す順から仮キャラを除き、1 つも読めなければダイアログを出して起動しない (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 起動時に試す順に「既定のまめドラゴン（`DEFAULT_PET_ID`）」を足す。`kuroshiba` がフォルダ順で先頭になり既定が変わったため (kuroko/claude-fable-5-1 ← human:K)
 
 ## 2026-10-27
@@ -95,3 +96,4 @@
 - 2026-10-20 CLAUDE.md: /init-extras の CI を必須にし、検証の原則に「GitHub Actions でも回す」を追記
 - 2026-10-20 extras/github/workflows: 起動時 env 検証向けのダミー値の注記を ci-node / ci-node-pnpm に追加
 - 2026-10-28 docs/architecture.md §6.1・§7, DESIGN.md: チャットを Claude Code と同じ環境で起こす（model/effort/権限モードの既定は設定・切替はチャット欄のメニュー・作業フォルダはホーム）。実測と常駐案は .steering/20261027-chat-same-env/brief.md (kuroko/claude-fable-5-1 ← human:K)
+- 2026-10-28 docs/architecture.md §6.1, DESIGN.md: チャット欄の答えの欄を 188→264px（一番高い切替メニューと同じ）にし、答えが出ている間はメニューを開け閉めしても窓を動かさない（会話が一瞬消えるバグ）。経緯は .steering/20261028-fix-chat-menu-blink/brief.md (kuroko/claude-opus-5-5 ← human:K)
