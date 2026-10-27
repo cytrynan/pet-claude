@@ -22,6 +22,7 @@
 import argparse
 import base64
 import json
+import re
 import subprocess
 import sys
 import time
@@ -34,7 +35,8 @@ WORK = Path(".")
 def pw(*args: str, timeout: int = 600) -> str:
     r = subprocess.run(["playwright-cli", f"-s={SESSION}", *args], capture_output=True, text=True,
                        encoding="utf-8", timeout=timeout, shell=True)
-    out = (r.stdout or "").strip()
+    # 拡張の Welcome タブの URL に attach のトークンが載る（tab-list・tab-close の出力）。ツール結果に出さない
+    out = re.sub(r"token=[A-Za-z0-9_\-]+", "token=***", (r.stdout or "").strip())
     if r.returncode != 0:
         raise SystemExit(f"playwright-cli {args[0]} failed ({r.returncode}): {r.stderr[-800:]}\n{out[-800:]}")
     return out
