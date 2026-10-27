@@ -53,8 +53,10 @@
   .key { flex: 1; min-width: 0; height: 28px; padding: 0 10px; border: 0; border-radius: 8px;
     font: inherit; color: var(--label); background: var(--surface-hover); outline: 0; }
   .status { color: var(--label-2); font-feature-settings: "palt"; text-align: right; }
-  /* 作業フォルダのパス: 長ければ末尾を省略（全文はツールチップ）。文には palt を掛けない */
-  .status.path { font-feature-settings: normal; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* 作業フォルダの行: ラベルは折らず（2 つのボタン＋パスで幅が足りないと「作業フォルダ」が 1 字ずつ 5 行に割れた。
+     2026-10-28 受入検証の指摘）、足りない分はパスの欄を縮める（パスは末尾を省略・全文はツールチップ・palt なし） */
+  .row.dir label { flex: none; white-space: nowrap; }
+  .status.path { flex: 1; min-width: 0; font-feature-settings: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   [hidden] { display: none !important; }
 </style>
 </head>
@@ -160,7 +162,7 @@
       <label for="mode">モード</label>
       <span class="popup"><select id="mode"></select></span>
     </div>
-    <div class="row">
+    <div class="row dir">
       <label>作業フォルダ</label>
       <span class="status path" id="chat-dir"></span>
       <button type="button" class="btn" id="dir-reset" hidden>既定に戻す</button>
