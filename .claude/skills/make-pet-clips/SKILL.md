@@ -103,8 +103,13 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - attach したタブを K が使うと `app is not defined` で監視が落ちる。ジョブは完了しているので `fetch` で回収できる。
 - `cap_trial.ps1` の撮影は DPI 非対応の PowerShell の座標と winctl の物理座標が合わず別の場所を撮る。判定はログの `cell` と KB。
 - `pet-switch.sh` のメモリ行は K の常駐ペットを掴むので無効。
+- **`pet-switch.sh` は 2026-10-28 まで `taskkill //IM pet-app.exe` で名前の一致を全部止めていて、K の常駐ペット（pet-claude-main）まで落としていた**（とらちゃん・しばちゃんで計 2 回）。自分が起動した PID だけ止める形に直した。他の検証スクリプト（hover-menu.sh・approve-buttons.sh・clips-sweep.sh）にはまだ名前止めが残る → 使う前に常駐ペットの PID を控え、終わったらタスク `pet-claude` で起こし直す。
+- 新しいペットの ID がフォルダ順で `mame-dragon` より前になる（`kuroshiba`）と、何も選んでいない人の既定ペットが変わる。2026-10-28 に `pets::DEFAULT_PET_ID`（まめドラゴン）で固定したので以後は起きないが、`pet-switch.sh` の「起動はまめドラゴン」が FAIL したらこれを疑う。
+- 別セッションが同時に試しインスタンスを動かしていると「既に起動しているので終了」で弾かれる（同じ mutex）。`pet-switch.sh` は SKIP を返すので、相手が終わってから回す。
 - Python の heredoc で `\\r…` を含むパスを書くと CR に化けることがある。パスは `/` で書く。
 - 同じ zip に `package_*.py` などのスクリプトが入っていても実行しない（データとして扱う）。
 - 2026-10-27 とらちゃん: 切替前のタブで `tab` を打つと旧アカウントの 0/5 が出た。K が「切り替えた」と言っても `tab` が 5/5 でなければ、タブを閉じて detach し、K の切替完了を待ってから attach し直す。
 - 2026-10-27 とらちゃん: つままれるの耳が切れたのを K が実機で見つけた（姿勢画像の時点で上 62px が外。床の合わせだけ見て通していた）。`fits_in_canvas` の検査を足し、2 本だけ run4 で作り直した（1 回消費）。
+- 2026-10-27 しばちゃん: 待機の「blinks once quickly」が、まばたきの途中で白目の見える大きな目になり K が「怖い」と判定。ひな形を「ゆっくり閉じて開く」＋「目は小さな丸い黒目のまま・白目を出さない」＋否定語（wide eyes, white sclera, staring）に変えた。作り直しの候補は次の run に同梱すると追加の消費が無い（無料枠は回数課金）。
+- 2026-10-28 しばちゃん: `playwright-cli attach` の接続が実行中に切れることがある（"The browser 'chrome' is not open"）。切れても Cloud の job は走っている。**再 queue の前に `tab` で `used` が増えていないか見る**（増えていれば `fetch` だけ）。`run_comfy.py` は切れたら attach し直して 1 回再試行する（環境変数 PLAYWRIGHT_MCP_EXTENSION_TOKEN が要る）。
 - 2026-10-27 とらちゃん: 960 の所要は 4 本 168 秒・8 本 354 秒・なでられ 3 本 120 秒（`queue` の limit 1800 秒で足りる）。

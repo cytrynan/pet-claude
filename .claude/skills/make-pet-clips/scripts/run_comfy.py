@@ -22,6 +22,7 @@
 import argparse
 import base64
 import json
+import os
 import re
 import subprocess
 import sys
@@ -32,12 +33,35 @@ SESSION = "chrome"
 WORK = Path(".")
 
 
-def pw(*args: str, timeout: int = 600) -> str:
+def extension_token(raw: str | None) -> str:
+    """User 環境変数 PLAYWRIGHT_MCP_EXTENSION_TOKEN の値。先頭に `KEY=` が付いた形で保存されていることがあるので剥がす。"""
+    v = (raw or "").strip()
+    return v.split("=", 1)[1] if v.startswith("PLAYWRIGHT_MCP_EXTENSION_TOKEN=") else v
+
+
+def reattach() -> bool:
+    """K の Chrome に attach し直す。2026-10-27/28 しばちゃんの 3 回目で、queue のクリック後と fetch の途中に
+    接続が切れ（"The browser 'chrome' is not open"）、再 queue で同じ job を 2 回回して無料枠を 1 回無駄にした。
+    切れても job は走っているので、attach し直して続きを読む。"""
+    token = extension_token(os.environ.get("PLAYWRIGHT_MCP_EXTENSION_TOKEN"))
+    if not token:
+        return False
+    env = {**os.environ, "PLAYWRIGHT_MCP_EXTENSION_TOKEN": token}
+    subprocess.run(["playwright-cli", f"-s={SESSION}", "detach"], capture_output=True, text=True, shell=True, env=env)
+    r = subprocess.run(["playwright-cli", "attach", "--extension=chrome"], capture_output=True, text=True,
+                       encoding="utf-8", timeout=90, shell=True, env=env)
+    print("re-attached" if r.returncode == 0 else f"re-attach failed ({r.returncode})", file=sys.stderr)
+    return r.returncode == 0
+
+
+def pw(*args: str, timeout: int = 600, retry: bool = True) -> str:
     r = subprocess.run(["playwright-cli", f"-s={SESSION}", *args], capture_output=True, text=True,
                        encoding="utf-8", timeout=timeout, shell=True)
     # 拡張の Welcome タブの URL に attach のトークンが載る（tab-list・tab-close の出力）。ツール結果に出さない
     out = re.sub(r"token=[A-Za-z0-9_\-]+", "token=***", (r.stdout or "").strip())
     if r.returncode != 0:
+        if retry and "is not open" in (r.stderr or "") + (r.stdout or "") and reattach():
+            return pw(*args, timeout=timeout, retry=False)
         raise SystemExit(f"playwright-cli {args[0]} failed ({r.returncode}): {r.stderr[-800:]}\n{out[-800:]}")
     return out
 

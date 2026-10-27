@@ -1,0 +1,15 @@
+fix(pets): 既定のペットを名前（mame-dragon）で固定し、pet-switch.sh が常駐ペットまで止めないようにする
+
+なぜ: 4 体目の kuroshiba がフォルダ名の順で mame-dragon より前に並び、何も選んでいない人
+（K の常駐ペットも pet は空）の既定が黙ってしばちゃんに変わった（pet-switch.sh の
+「起動はまめドラゴン」が FAIL して判明）。既定はフォルダ順でなく pets::DEFAULT_PET_ID で決める。
+
+- crates/pet-app/src/pets.rs: startup_order で選択が無い/無効なら DEFAULT_PET_ID を先頭に。
+  テスト startup_order_prefers_the_default_pet_over_folder_order
+- scripts/verify/pet-switch.sh: taskkill を名前一致から自分が起動した PID に（2026-10-27/28 に
+  K の常駐ペットを 2 回落とした）。別セッションの試しインスタンスと mutex がぶつかった時は
+  黙って FAIL せず SKIP を返す
+- docs/architecture.md §4.4 の起動順に既定を追記、docs/log.md に 1 行
+- SKILL.md の止まった点に 3 件、tasklist に実機の結果
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -1,0 +1,19 @@
+feat(pets): 4 体目のしばちゃん（黒柴・kuroshiba）を 960 生成＋等倍の動画クリップ 13 本で足す
+
+なぜ: K 指示（2026-10-27）で 4 体目のペット「しばちゃん」をスキル make-pet-clips で作る。
+とらちゃんに続く 960・fullCell: true の 2 体目。共通倍率は 0.6801 で全部が収まり決め打ち不要。
+
+- assets/pets/kuroshiba/: spritesheet.webp・pet.json（clips・wakeWord しばちゃん・fullCell）・
+  clips/ 13 本 317 コマ・clips.json・SOURCE.md
+- 待機は K 判定「目が怖い」（速いまばたきの途中で白目の見える大きな目になる）で作り直し、
+  まばたきを外した候補 3 本から K が c（ゆっくり閉じて開く）を選んだ。なでられは b
+- crates/pet-core: clips.rs の一覧に kuroshiba、sprite.rs に fullCell のテスト
+- docs/architecture.md §4.4 に 1 行、docs/log.md に 1 行
+- .claude/skills/make-pet-clips: 待機のひな形をゆっくりまばたき＋黒目のまま＋目の否定語に、
+  run_comfy.py に接続が切れたら attach し直して再試行（切れた後の再 queue で同じ job を
+  2 回回し無料枠を 1 回無駄にした）、SKILL.md に 2 件の止まった点。テスト 7 本 OK
+- .steering/20261027-kuroshiba-clips/: brief・識別子契約・検分表（run1〜3）・止まった点
+
+元素材（zip・展開・姿勢画像・元の動画・workflow・証拠）は .git/info/exclude で外してある。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -1,43 +1,116 @@
 {
-  "_comment": "13 本の指示文のひな形。{subject}=『cute chibi baby panda』、{noun}=『panda』、{design}=見た目の列挙、{idle}=立ち姿の補足（先頭に空白。無ければ空）、{wiggle}=待機の小さな動き（『its round ears twitch slightly』）、{hand}=paw か hand、{tail}=共通の末尾。なでられは『なでる・触る』を書かない（書くと手が描かれる。2026-10-21 3/3）。",
-  "tail": "Pure white background, fixed camera. Same character design as the input image: {design}. Clean flat 2D cartoon illustration.",
-  "negative": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor",
-  "negative_petted": ", human hand, hands, fingers, arm, person, people, hand entering the frame, touching, petting",
-  "runs": {
-    "run1": ["stop", "idle", "sleep", "put_down"],
-    "run2": ["call", "working", "happy", "wake", "walk_start", "turn", "grabbed", "walk"],
-    "run3": ["petted_a", "petted_b", "petted_c"]
+ "_comment": "13 本の指示文のひな形。{subject}=『cute chibi baby panda』、{noun}=『panda』、{design}=見た目の列挙、{idle}=立ち姿の補足（先頭に空白。無ければ空）、{wiggle}=待機の小さな動き（『its round ears twitch slightly』）、{hand}=paw か hand、{tail}=共通の末尾。なでられは『なでる・触る』を書かない（書くと手が描かれる。2026-10-21 3/3）。",
+ "tail": "Pure white background, fixed camera. Same character design as the input image: {design}. Clean flat 2D cartoon illustration.",
+ "negative": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, wide eyes, white sclera, visible eye whites, staring, surprised, bulging eyes",
+ "negative_petted": ", human hand, hands, fingers, arm, person, people, hand entering the frame, touching, petting",
+ "runs": {
+  "run1": [
+   "stop",
+   "idle",
+   "sleep",
+   "put_down"
+  ],
+  "run2": [
+   "call",
+   "working",
+   "happy",
+   "wake",
+   "walk_start",
+   "turn",
+   "grabbed",
+   "walk"
+  ],
+  "run3": [
+   "petted_a",
+   "petted_b",
+   "petted_c"
+  ]
+ },
+ "clips": {
+  "stop": {
+   "start": "walk.png",
+   "end": "idle_right.png",
+   "length": 33,
+   "prompt": "A {subject} facing right is walking in place, takes one last small step and comes to a gentle stop, then settles into a relaxed standing pose still facing right{idle}. Smooth natural slowdown. It stays in the center of the frame and does not move forward. {tail}"
   },
-  "clips": {
-    "stop": {"start": "walk.png", "end": "idle_right.png", "length": 33,
-      "prompt": "A {subject} facing right is walking in place, takes one last small step and comes to a gentle stop, then settles into a relaxed standing pose still facing right{idle}. Smooth natural slowdown. It stays in the center of the frame and does not move forward. {tail}"},
-    "idle": {"start": "idle.png", "length": 81,
-      "prompt": "A {subject} stands still in a relaxed pose{idle}. It breathes gently, blinks once quickly and keeps its eyes open, and {wiggle}. Minimal calm motion, it ends in the same pose it started in. {tail} Seamless loop."},
-    "sleep": {"start": "idle.png", "end": "sleeping.png", "length": 49,
-      "prompt": "A {subject} standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. {tail}"},
-    "put_down": {"start": "dragged.png", "end": "idle.png", "length": 33,
-      "prompt": "A {subject} that was held up in the air is gently set down: it drops softly onto the ground, its body squashes down a little as it lands, then it bounces back up into a relaxed standing pose{idle}. {tail}"},
-    "call": {"start": "idle.png", "end": "attention.png", "length": 49,
-      "prompt": "A {subject} standing on the ground turns to face the viewer, raises one {hand} and waves it a few times in a friendly greeting, then keeps the {hand} raised with a cheerful open-mouth smile. {tail}"},
-    "working": {"start": "working.png", "length": 81,
-      "prompt": "A {subject} sits in front of a small laptop and types on it with both {hand}s, tapping the keys busily. Once in a while it tilts its head slightly as if thinking, then keeps typing. Calm repeated motion, it ends in the same pose it started in. Seamless loop. {tail}"},
-    "happy": {"start": "idle.png", "length": 49,
-      "prompt": "A {subject} gets happy: it smiles with its eyes closed in joy, hops up a little once and waves both {hand}s up in the air, then lands softly back in the same standing pose it started in{idle}. {tail}"},
-    "wake": {"start": "sleeping.png", "end": "idle.png", "length": 49,
-      "prompt": "A {subject} lying asleep on its belly wakes up: it slowly opens its eyes, stretches its arms and back with a small yawn, then stands up into a relaxed standing pose{idle}. One smooth continuous motion in place. {tail}"},
-    "walk_start": {"start": "idle_right.png", "end": "walk.png", "length": 33,
-      "prompt": "A {subject} standing still facing right starts to walk: it lifts one foot and takes its first small step, swinging its arms, walking in place. It stays in the center of the frame and does not move forward. {tail}"},
-    "turn": {"start": "idle_right.png", "end": "idle.png", "length": 33,
-      "prompt": "A {subject} standing still facing right turns around in place to face left. It turns its head first and then its body follows, and it ends standing still facing left{idle}. {tail}"},
-    "grabbed": {"start": "dragged.png", "length": 49,
-      "prompt": "A {subject} is held up in the air by the scruff: it dangles, gently swinging its little legs back and forth, and {wiggle} with a surprised open mouth. It ends in the same pose it started in. Seamless loop. Only the {noun} is in the picture, nothing enters the frame. {tail}"},
-    "walk": {"start": "walk.png", "length": 81,
-      "prompt": "A {subject} facing right walks in place with a cheerful bouncy stride: its legs alternate step by step and its arms swing naturally. It stays in the center of the frame and does not move forward. Smooth continuous walking, it ends in the same pose it started in. Seamless loop. {tail}"},
-    "petted_a": {"start": "idle.png", "length": 49, "seed": 42,
-      "prompt": "A {subject} stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, {wiggle}, then opens its eyes and returns to the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"},
-    "petted_b": {"start": "idle.png", "length": 49, "seed": 7,
-      "prompt": "A {subject} stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, {wiggle}, then opens its eyes and returns to the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"},
-    "petted_c": {"start": "idle.png", "length": 49, "seed": 42,
-      "prompt": "A {subject} stands alone and shows a dreamy, contented smile: its eyes close halfway in delight, its cheeks blush, it sways its head gently left and right and {wiggle}, then it settles back into the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"}
+  "idle": {
+   "start": "idle.png",
+   "length": 81,
+   "prompt": "A {subject} stands still in a relaxed pose{idle}. It breathes gently, closes its eyes fully in one slow gentle blink and opens them again, and {wiggle}. Its eyes stay small, round and solid black with one tiny white highlight, no visible white of the eyes, soft calm friendly expression. Minimal calm motion, it ends in the same pose it started in. {tail} Seamless loop."
+  },
+  "sleep": {
+   "start": "idle.png",
+   "end": "sleeping.png",
+   "length": 49,
+   "prompt": "A {subject} standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. {tail}"
+  },
+  "put_down": {
+   "start": "dragged.png",
+   "end": "idle.png",
+   "length": 33,
+   "prompt": "A {subject} that was held up in the air is gently set down: it drops softly onto the ground, its body squashes down a little as it lands, then it bounces back up into a relaxed standing pose{idle}. {tail}"
+  },
+  "call": {
+   "start": "idle.png",
+   "end": "attention.png",
+   "length": 49,
+   "prompt": "A {subject} standing on the ground turns to face the viewer, raises one {hand} and waves it a few times in a friendly greeting, then keeps the {hand} raised with a cheerful open-mouth smile. {tail}"
+  },
+  "working": {
+   "start": "working.png",
+   "length": 81,
+   "prompt": "A {subject} sits in front of a small laptop and types on it with both {hand}s, tapping the keys busily. Once in a while it tilts its head slightly as if thinking, then keeps typing. Calm repeated motion, it ends in the same pose it started in. Seamless loop. {tail}"
+  },
+  "happy": {
+   "start": "idle.png",
+   "length": 49,
+   "prompt": "A {subject} gets happy: it smiles with its eyes closed in joy, hops up a little once and waves both {hand}s up in the air, then lands softly back in the same standing pose it started in{idle}. {tail}"
+  },
+  "wake": {
+   "start": "sleeping.png",
+   "end": "idle.png",
+   "length": 49,
+   "prompt": "A {subject} lying asleep on its belly wakes up: it slowly opens its eyes, stretches its arms and back with a small yawn, then stands up into a relaxed standing pose{idle}. One smooth continuous motion in place. {tail}"
+  },
+  "walk_start": {
+   "start": "idle_right.png",
+   "end": "walk.png",
+   "length": 33,
+   "prompt": "A {subject} standing still facing right starts to walk: it lifts one foot and takes its first small step, swinging its arms, walking in place. It stays in the center of the frame and does not move forward. {tail}"
+  },
+  "turn": {
+   "start": "idle_right.png",
+   "end": "idle.png",
+   "length": 33,
+   "prompt": "A {subject} standing still facing right turns around in place to face left. It turns its head first and then its body follows, and it ends standing still facing left{idle}. {tail}"
+  },
+  "grabbed": {
+   "start": "dragged.png",
+   "length": 49,
+   "prompt": "A {subject} is held up in the air by the scruff: it dangles, gently swinging its little legs back and forth, and {wiggle} with a surprised open mouth. It ends in the same pose it started in. Seamless loop. Only the {noun} is in the picture, nothing enters the frame. {tail}"
+  },
+  "walk": {
+   "start": "walk.png",
+   "length": 81,
+   "prompt": "A {subject} facing right walks in place with a cheerful bouncy stride: its legs alternate step by step and its arms swing naturally. It stays in the center of the frame and does not move forward. Smooth continuous walking, it ends in the same pose it started in. Seamless loop. {tail}"
+  },
+  "petted_a": {
+   "start": "idle.png",
+   "length": 49,
+   "seed": 42,
+   "prompt": "A {subject} stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, {wiggle}, then opens its eyes and returns to the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"
+  },
+  "petted_b": {
+   "start": "idle.png",
+   "length": 49,
+   "seed": 7,
+   "prompt": "A {subject} stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, {wiggle}, then opens its eyes and returns to the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"
+  },
+  "petted_c": {
+   "start": "idle.png",
+   "length": 49,
+   "seed": 42,
+   "prompt": "A {subject} stands alone and shows a dreamy, contented smile: its eyes close halfway in delight, its cheeks blush, it sways its head gently left and right and {wiggle}, then it settles back into the same standing pose it started in{idle}. Only the {noun} is in the picture, nothing enters the frame. {tail}"
   }
+ }
 }

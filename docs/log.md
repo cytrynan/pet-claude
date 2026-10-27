@@ -9,7 +9,11 @@
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
+## 2026-10-28
+* **Update**: [技術仕様書](architecture.md) — §4.4 起動時に試す順に「既定のまめドラゴン（`DEFAULT_PET_ID`）」を足す。`kuroshiba` がフォルダ順で先頭になり既定が変わったため (kuroko/claude-fable-5-1 ← human:K)
+
 ## 2026-10-27
+* **Update**: [技術仕様書](architecture.md) — §4.4「入っているペット」に 4 体目のしばちゃん（`kuroshiba`・黒柴・960 生成＋`fullCell: true`。スキル `make-pet-clips`） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4「入っているペット」に 3 体目のとらちゃん（`tora`・茶トラねこ・960 生成＋`fullCell: true` の最初の 1 体。スキル `make-pet-clips` で作成） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.5 の「次のペットから」に、手順と道具の正本としてプロジェクトスキル `make-pet-clips` を指した（2026-10-27 K 指示でスキル化） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 に `pet.json` の `fullCell`、§4.5 に「次のペットから 960 生成＋等倍」（2026-10-27 K 決定）の作り方を追記 (kuroko/claude-fable-5-1 ← human:K)

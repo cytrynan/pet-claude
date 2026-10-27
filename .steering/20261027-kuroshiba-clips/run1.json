@@ -1,0 +1,37 @@
+{
+  "name": "kuroshiba_run1",
+  "size": [
+    960,
+    960
+  ],
+  "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, cat, panda, dragon, orange tabby, stripes, horns, wings, long tail",
+  "clips": [
+    {
+      "name": "kuroshiba_stop",
+      "start": "walk.png",
+      "length": 33,
+      "prompt": "A cute chibi baby black and tan shiba inu puppy facing right is walking in place, takes one last small step and comes to a gentle stop, then settles into a relaxed standing pose still facing right with its head tilted slightly and both front paws held together at its chest. Smooth natural slowdown. It stays in the center of the frame and does not move forward. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, black fur on the head, back and curled tail, cream white muzzle, chest, belly and paws, small tan eyebrow dots above the eyes, tan patches on the cheeks and paw tips, small pointed black ears with cream inner ears, big round black eyes, pink blush cheeks, round chubby body, fluffy curled tail. Clean flat 2D cartoon illustration.",
+      "end": "idle_right.png"
+    },
+    {
+      "name": "kuroshiba_idle",
+      "start": "idle.png",
+      "length": 81,
+      "prompt": "A cute chibi baby black and tan shiba inu puppy stands still in a relaxed pose with its head tilted slightly and both front paws held together at its chest. It breathes gently, blinks once quickly and keeps its eyes open, and its curled tail wags gently and its ears twitch slightly. Minimal calm motion, it ends in the same pose it started in. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, black fur on the head, back and curled tail, cream white muzzle, chest, belly and paws, small tan eyebrow dots above the eyes, tan patches on the cheeks and paw tips, small pointed black ears with cream inner ears, big round black eyes, pink blush cheeks, round chubby body, fluffy curled tail. Clean flat 2D cartoon illustration. Seamless loop."
+    },
+    {
+      "name": "kuroshiba_sleep",
+      "start": "idle.png",
+      "length": 49,
+      "prompt": "A cute chibi baby black and tan shiba inu puppy standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, black fur on the head, back and curled tail, cream white muzzle, chest, belly and paws, small tan eyebrow dots above the eyes, tan patches on the cheeks and paw tips, small pointed black ears with cream inner ears, big round black eyes, pink blush cheeks, round chubby body, fluffy curled tail. Clean flat 2D cartoon illustration.",
+      "end": "sleeping.png"
+    },
+    {
+      "name": "kuroshiba_put_down",
+      "start": "dragged.png",
+      "length": 33,
+      "prompt": "A cute chibi baby black and tan shiba inu puppy that was held up in the air is gently set down: it drops softly onto the ground, its body squashes down a little as it lands, then it bounces back up into a relaxed standing pose with its head tilted slightly and both front paws held together at its chest. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, black fur on the head, back and curled tail, cream white muzzle, chest, belly and paws, small tan eyebrow dots above the eyes, tan patches on the cheeks and paw tips, small pointed black ears with cream inner ears, big round black eyes, pink blush cheeks, round chubby body, fluffy curled tail. Clean flat 2D cartoon illustration.",
+      "end": "idle.png"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "breathe": 0.025,
+  "cellScale": 2,
+  "clips": "clips.json",
+  "displayName": "しばちゃん",
+  "fullCell": true,
+  "id": "kuroshiba",
+  "spritesheetPath": "spritesheet.webp",
+  "wakeWord": "しばちゃん"
+}
