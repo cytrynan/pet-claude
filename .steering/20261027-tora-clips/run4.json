@@ -1,0 +1,23 @@
+{
+ "name": "tora_run4",
+ "size": [
+  960,
+  960
+ ],
+ "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, panda, dragon, green, black and white fur, horns, wings, grey fur",
+ "clips": [
+  {
+   "name": "tora_put_down",
+   "start": "dragged.png",
+   "length": 33,
+   "prompt": "A cute chibi baby orange tabby cat that was held up in the air is gently set down: it drops softly onto the ground, its body squashes down a little as it lands, then it bounces back up into a relaxed standing pose with its head tilted slightly and both front paws held together at its chest. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, orange fur with darker orange tabby stripes on the head, back and tail, cream white muzzle, belly and paws, small pink inner ears, big round black eyes, pink blush cheeks, short whiskers, round chubby body, long striped tail. Clean flat 2D cartoon illustration.",
+   "end": "idle.png"
+  },
+  {
+   "name": "tora_grabbed",
+   "start": "dragged.png",
+   "length": 49,
+   "prompt": "A cute chibi baby orange tabby cat is held up in the air by the scruff: it dangles, gently swinging its little legs back and forth, and its striped tail sways gently and its ears twitch slightly with a surprised open mouth. It ends in the same pose it started in. Seamless loop. Only the cat is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick soft dark outline, orange fur with darker orange tabby stripes on the head, back and tail, cream white muzzle, belly and paws, small pink inner ears, big round black eyes, pink blush cheeks, short whiskers, round chubby body, long striped tail. Clean flat 2D cartoon illustration."
+  }
+ ]
+}

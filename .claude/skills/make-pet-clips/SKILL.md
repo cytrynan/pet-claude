@@ -6,7 +6,7 @@ description: pet-claude の新しいペット（状態別の静止画 8 枚）�
 # make-pet-clips — ペットの動画クリップ 13 本を作る
 
 **先に読む 6 行（compaction で切れても残す）**
-1. 生成の前に Comfy Cloud の無料枠を見る（`run_comfy.py features`）。**残りが足りなければ生成を始めず K に伝える。K がアカウントを切り替える（2026-10-27 K 指示）。くろこは切替・作成・課金をしない。** 1 体 = 3 回（4 本・8 本・なでられ 3 候補）。
+1. 生成の前に Comfy Cloud の無料枠を見る（`run_comfy.py tab`）。**残りが 3 回に足りなければ、残りぶんだけ回して（1 回あれば 1 回目＝K 判定の 4 本）、切れた時点で K に伝える。K がアカウントを切り替える（2026-10-27 K 指示）。くろこは切替・作成・課金をしない。** 切替後は `detach` → `attach` → `tab` で 5/5 を確かめ、**姿勢画像を上げ直す**（アカウントごとに別）。1 体 = 3 回（4 本・8 本・なでられ 3 候補）。
 2. 2026-10-27 K 決定: **生成は 960×960、`pet.json` に `fullCell: true`**（まめドラゴン・りんりんは 640・3/4 のまま触らない）。
 3. 1 回目（4 本）の後に K 判定を 1 論点で入れてから残りを回す。前のペットとの比較を求められたら `compare` の型（上段=前のペット・下段=新）。
 4. 「なでる・触る」を指示文に書かない（手が描かれる）。ひな形はこの規約で書いてあるので変えない。
@@ -30,6 +30,7 @@ description: pet-claude の新しいペット（状態別の静止画 8 枚）�
 python -I S/align_poses.py <展開フォルダ> W/poses --size 960 [--floor happy=560] [--walk-frame <歩きの 1 コマ>]
 ```
 - 床の既定: 立ち・座り・寝姿 600（640 基準。960 では 900）、つままれる 560。zip で浮いている状態（りんりんの喜ぶ）は `--floor` で合わせる。
+- **つままれるは絵が縦に長い（尻尾が垂れる）と吊り 560 で上が切れる**。`verification.json` の `checks.fits_in_canvas` が false なら止まるので、`--floor dragged=612` のように下げる（とらちゃん 2026-10-27: 612 で上 16px・下 918）。出力フォルダは上書きしないので、作り直しは別名（`poses2`）に出して入れ替える。
 - 出力 `W/poses/verification.json` と `contact.png` を見る（床の赤線に足が乗っているか・反転版の向き）。
 - 描いた歩きのコマがある（まめドラゴン型）なら `--walk-frame`。無ければ歩行の静止画が歩きの始点/終点。
 
@@ -69,7 +70,7 @@ python -I S/run_comfy.py --work W fetch W/run1 W/wan22_flf2v_<id>_run1.cloud.jso
 ```bash
 python -I S/inspect_clips.py W/run1.json W/run1 --poses W/poses
 ```
-表（始点差・終点差・末尾-3・彩度・肌色）と `contact.png`・`preview-4up.mp4` ができる。合格の目安: 始点差 ≤ 3.5・終点差 ≤ 6.5・肌色 max が 640 で 200 未満（960 は 450 未満）・顔と模様が全コマで保たれる。
+表（始点差・終点差・末尾-3・彩度・肌色）と `contact.png`・`preview-4up.mp4` ができる。合格の目安: 始点差 ≤ 3.5・終点差 ≤ 6.5・肌色 max が 640 で 200 未満（960 は 450 未満）・顔と模様が全コマで保たれる。**肌色 max は毛色が橙・クリーム・ベージュのペットでは使えない**（茶トラで手なしでも 5,000〜79,000）。その時は手の有無を `contact.png` の目視で見る。
 - **1 回目の後に K 判定**: `preview-4up.mp4` を SendUserFile で渡し、問いは 1 つ（「この出来で残りも同じ設定で進めてよいか」）。前のペットと並べて見たいと言われたら、同じ 4 本を上下に並べた mp4（ffmpeg hstack×2 → vstack。`drawtext` は Fontconfig が無く落ちるのでラベルは caption に）。
 - 2 回目・3 回目は K の可の後に続けて回す。なでられは 3 候補から 1 本選び（手なし・表情）、K には 3up を渡して「別がよければ一言」。
 - `end_diff_minus3` が大きい本（歩き出す 28.9）は `clips-src.json` のその本を `drop_tail: 0`（make_runs の出力は歩き出すに付けてある）。
@@ -80,7 +81,7 @@ python -I S/inspect_clips.py W/run1.json W/run1 --poses W/poses
 python -I scripts/build_clips.py W/clips-src.json assets/pets/<id>          # 13 本・約 10 分
 CARGO_TARGET_DIR=target-<id> cargo run --release -p pet-core --example build_pet -- <展開フォルダ> assets/pets/<id> <id> "<表示名>" 2
 ```
-`pet.json` に `"clips": "clips.json"`・`"wakeWord": "<呼びかけ>"`・`"fullCell": true` を足す（`build_pet` を再実行しても残る）。`assets/pets/<id>/SOURCE.md` は `templates/SOURCE.md` から。共通の倍率は出力の「全部が収まる倍率」を見て決める（りんりん 0.6892＝見切れなし。まめドラゴンは眠るの尻尾で 0.69 を決め打ち）。
+`pet.json` に `"clips": "clips.json"`・`"wakeWord": "<呼びかけ>"`・`"fullCell": true` を足す（`build_pet` を再実行しても残る）。`assets/pets/<id>/SOURCE.md` は `templates/SOURCE.md` から。共通の倍率は出力の「全部が収まる倍率」と「待機の高さの基準」を見比べて決める（りんりん 0.6892＝見切れなし。まめドラゴンは眠るの尻尾で 0.69 を決め打ち。**とらちゃんは吊りの尻尾が床の下 12px に当たって 0.40 まで縮んだので 0.60 を決め打ち**）。差が大きい時は本ごとの L/R/T/B のはみ出し表（tasklist の型）を作って、切れてよい部位（尻尾の先・生成が伸ばした部分）だけが出る倍率を選び、`clips-src.json` の `scale` に書く。
 
 ### 8. 実機とテスト
 ```bash
@@ -104,3 +105,6 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - `pet-switch.sh` のメモリ行は K の常駐ペットを掴むので無効。
 - Python の heredoc で `\\r…` を含むパスを書くと CR に化けることがある。パスは `/` で書く。
 - 同じ zip に `package_*.py` などのスクリプトが入っていても実行しない（データとして扱う）。
+- 2026-10-27 とらちゃん: 切替前のタブで `tab` を打つと旧アカウントの 0/5 が出た。K が「切り替えた」と言っても `tab` が 5/5 でなければ、タブを閉じて detach し、K の切替完了を待ってから attach し直す。
+- 2026-10-27 とらちゃん: つままれるの耳が切れたのを K が実機で見つけた（姿勢画像の時点で上 62px が外。床の合わせだけ見て通していた）。`fits_in_canvas` の検査を足し、2 本だけ run4 で作り直した（1 回消費）。
+- 2026-10-27 とらちゃん: 960 の所要は 4 本 168 秒・8 本 354 秒・なでられ 3 本 120 秒（`queue` の limit 1800 秒で足りる）。

@@ -654,6 +654,21 @@ mod tests {
     /// 同梱のりんりん（パンダ・2026-10-27 K 指示）の pet.json: 呼びかけは「りんちゃん」、
     /// 動画クリップとシートの倍率はまめドラゴンと同じ（build_pet で作り直すと clips・wakeWord が
     /// 落ちていないかをここで見る）
+    /// 3 体目のとらちゃんは「次のペットから 960・等倍」（2026-10-27 K 決定）の最初の 1 体。
+    /// `fullCell: true` が入っていること（＝3/4 に縮めない）を、同梱の pet.json で確かめる。
+    #[test]
+    fn tora_manifest_is_full_cell_with_clips_and_wake_word() {
+        let text = include_str!("../../../assets/pets/tora/pet.json");
+        let m: PetManifest = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            (m.id.as_str(), m.display_name.as_str()),
+            ("tora", "とらちゃん")
+        );
+        assert_eq!(m.clips.as_deref(), Some("clips.json"));
+        assert_eq!(m.wake_word.as_deref(), Some("とらちゃん"));
+        assert!(m.full_cell());
+    }
+
     #[test]
     fn rinrin_manifest_has_clips_and_wake_word() {
         let text = include_str!("../../../assets/pets/rinrin/pet.json");

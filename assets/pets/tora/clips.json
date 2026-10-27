@@ -1,0 +1,174 @@
+{
+  "fps": 8,
+  "clips": [
+    {
+      "name": "idle",
+      "kind": "loop",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 39
+    },
+    {
+      "name": "walk",
+      "kind": "loop",
+      "from": [
+        "walk",
+        "right"
+      ],
+      "to": [
+        "walk",
+        "right"
+      ],
+      "frames": 39
+    },
+    {
+      "name": "working",
+      "kind": "loop",
+      "from": [
+        "working",
+        "left"
+      ],
+      "to": [
+        "working",
+        "left"
+      ],
+      "frames": 39
+    },
+    {
+      "name": "grabbed",
+      "kind": "loop",
+      "from": [
+        "dragged",
+        "front"
+      ],
+      "to": [
+        "dragged",
+        "front"
+      ],
+      "frames": 23
+    },
+    {
+      "name": "stop",
+      "kind": "transition",
+      "from": [
+        "walk",
+        "right"
+      ],
+      "to": [
+        "idle",
+        "right"
+      ],
+      "frames": 15
+    },
+    {
+      "name": "walk_start",
+      "kind": "transition",
+      "from": [
+        "idle",
+        "right"
+      ],
+      "to": [
+        "walk",
+        "right"
+      ],
+      "frames": 17
+    },
+    {
+      "name": "turn",
+      "kind": "transition",
+      "from": [
+        "idle",
+        "right"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 15
+    },
+    {
+      "name": "sleep",
+      "kind": "transition",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "sleep",
+        "left"
+      ],
+      "frames": 23
+    },
+    {
+      "name": "wake",
+      "kind": "transition",
+      "from": [
+        "sleep",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 23
+    },
+    {
+      "name": "put_down",
+      "kind": "transition",
+      "from": [
+        "dragged",
+        "front"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 15
+    },
+    {
+      "name": "call",
+      "kind": "transition",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "attention",
+        "front"
+      ],
+      "frames": 23
+    },
+    {
+      "name": "happy",
+      "kind": "once",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 23
+    },
+    {
+      "name": "petted",
+      "kind": "once",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "frames": 23
+    }
+  ]
+}
