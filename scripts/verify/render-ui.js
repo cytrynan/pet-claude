@@ -57,8 +57,8 @@ const cases = [
       const ok = v[0] === "fable" && v[1] === "high" && v[2] === "auto" && v[3] === "C:\\Users\\k" && v[4] === true;
       return { ok, detail: JSON.stringify(v) };
     } },
-  { name: "settings-placeholder", page: "settings.html", size: [440, 960],
-    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "placeholder", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
+  { name: "settings-no-wake-word", page: "settings.html", size: [440, 960],
+    state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "b", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "b", name: "ねこ", wakeWord: null }], chatAuth: "subscription", hasApiKey: false } } },
   { name: "settings-key-empty", page: "settings.html", size: [440, 960],
     state: { settings_get: { scale: 0.55, tts: true, wake: false, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }, { id: "placeholder", name: "仮キャラ", wakeWord: null }], chatAuth: "api_key", hasApiKey: false } } },
   { name: "settings-key-saved", page: "settings.html", size: [440, 960],

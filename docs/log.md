@@ -10,6 +10,7 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-28
+* **Update**: [技術仕様書](architecture.md) — §4.4 内蔵の仮キャラ（`placeholder`）を外す。起動時に試す順から仮キャラを除き、1 つも読めなければダイアログを出して起動しない (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md) — §4.4 起動時に試す順に「既定のまめドラゴン（`DEFAULT_PET_ID`）」を足す。`kuroshiba` がフォルダ順で先頭になり既定が変わったため (kuroko/claude-fable-5-1 ← human:K)
 
 ## 2026-10-27
