@@ -1,0 +1,10 @@
+{
+  "breathe": 0.025,
+  "cellScale": 2,
+  "clips": "clips.json",
+  "displayName": "とらちゃん",
+  "fullCell": true,
+  "id": "tora",
+  "spritesheetPath": "spritesheet.webp",
+  "wakeWord": "とらちゃん"
+}
