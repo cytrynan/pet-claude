@@ -598,7 +598,14 @@ mod tests {
     fn bundled_pets_clips_json_match_frame_files() {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/pets");
         let mut names_by_pet = Vec::new();
-        for pet in ["mame-dragon", "rinrin", "tora", "kuroshiba", "komugi"] {
+        for pet in [
+            "mame-dragon",
+            "rinrin",
+            "tora",
+            "kuroshiba",
+            "komugi",
+            "goma",
+        ] {
             let dir = root.join(pet);
             let text = std::fs::read_to_string(dir.join("clips.json")).unwrap();
             let set = ClipSet::from_json(&text).unwrap_or_else(|e| panic!("{pet}: {e}"));
