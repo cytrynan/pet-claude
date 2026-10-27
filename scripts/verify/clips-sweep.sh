@@ -38,7 +38,7 @@ try:
     s = json.load(open(src, encoding="utf-8"))
 except OSError:
     s = {"version": 1}
-s.update({"pet": "mame-dragon", "walk": sys.argv[3] == "walk", "tts": False, "wake": False})
+s.update({"pet": "mame-dragon", "walk": sys.argv[3] == "walk", "tts": False})
 if scale:
     s["scale"] = float(scale)
 if mon:

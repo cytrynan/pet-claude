@@ -20,8 +20,6 @@ pub struct AppState {
     pub positions: PositionStore,
     /// 声で知らせる（Phase 3 で使う。いまは保存だけ）
     pub tts: bool,
-    /// 呼びかけで音声入力を始める（Phase 4 で使う。いまは保存だけ）
-    pub wake: bool,
     /// 放置すると散歩する（K 指示 2026-10-21: 既定はオフ。睡眠は対象外）
     pub walk: bool,
     /// Claude Code の質問（AskUserQuestion）にペットの吹き出しで答える（K 指示 2026-10-27: 既定はオン）
@@ -43,7 +41,6 @@ impl Default for AppState {
             scale: DEFAULT_SCALE,
             positions: PositionStore::default(),
             tts: true,
-            wake: false,
             walk: false,
             ask: true,
             pet: None,
@@ -74,7 +71,7 @@ impl AppState {
                 .map_or(d.scale, |s| (s as f32).clamp(MIN_SCALE, MAX_SCALE)),
             positions: serde_json::from_value(v["positions"].clone()).unwrap_or_default(),
             tts: v["tts"].as_bool().unwrap_or(d.tts),
-            wake: v["wake"].as_bool().unwrap_or(d.wake),
+            // 旧い state.json の `wake`（呼びかけで音声入力を始める）は読まない。設定の欄ごと外した（K 指示 2026-10-28）
             walk: v["walk"].as_bool().unwrap_or(d.walk),
             ask: v["ask"].as_bool().unwrap_or(d.ask),
             pet: v["pet"].as_str().map(str::to_string),
@@ -103,7 +100,6 @@ impl AppState {
             "scale": self.scale,
             "positions": self.positions,
             "tts": self.tts,
-            "wake": self.wake,
             "walk": self.walk,
             "ask": self.ask,
             "pet": self.pet,

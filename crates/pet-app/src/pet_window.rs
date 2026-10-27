@@ -1253,7 +1253,7 @@ pub fn settings() -> serde_json::Value {
                     .map(|e| serde_json::json!({ "id": e.id, "name": e.name, "wakeWord": e.wake_word }))
                     .collect();
                 serde_json::json!({
-                    "scale": p.state.scale, "tts": p.state.tts, "wake": p.state.wake, "walk": p.state.walk,
+                    "scale": p.state.scale, "tts": p.state.tts, "walk": p.state.walk,
                     "ask": p.state.ask,
                     "pet": p.want.id, "pets": pets,
                     // 鍵は返さない。保存されているかだけ（N4）
@@ -1268,17 +1268,16 @@ pub fn settings() -> serde_json::Value {
             })
         })
     })
-    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "wake": false, "walk": false, "ask": true }))
+    .unwrap_or_else(|| serde_json::json!({ "scale": crate::state::DEFAULT_SCALE, "tts": true, "walk": false, "ask": true }))
 }
 
 /// 設定画面からの変更。大きさは足元を基準に描き直す。`save` が true のときだけ state.json に書く
 /// （スライダーを動かしている間は描き直すだけにして、離したときに 1 回保存する）。
-pub fn set_settings(scale: f32, tts: bool, wake: bool, walk: bool, ask: bool, save: bool) {
+pub fn set_settings(scale: f32, tts: bool, walk: bool, ask: bool, save: bool) {
     crate::tts::set_enabled(tts);
     crate::ui::set_ask_enabled(ask);
     with_pet(move |pet| {
         pet.state.tts = tts;
-        pet.state.wake = wake;
         pet.state.ask = ask;
         if walk != pet.state.walk {
             // 定数が変わるので作り直す（散歩中なら止まり、待機から数え直す）
