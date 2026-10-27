@@ -1,0 +1,34 @@
+{
+  "name": "rinrin_run1",
+  "size": [640, 640],
+  "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, green, dragon",
+  "clips": [
+    {
+      "name": "rinrin_stop",
+      "start": "walk.png",
+      "end": "idle_right.png",
+      "length": 33,
+      "prompt": "A cute chibi baby panda facing right is walking in place, takes one last small step and comes to a gentle stop, then settles into a relaxed standing pose still facing right, holding its paws together in front of its chest. Smooth natural slowdown. It stays in the center of the frame and does not move forward. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration."
+    },
+    {
+      "name": "rinrin_idle",
+      "start": "idle.png",
+      "length": 81,
+      "prompt": "A cute chibi baby panda stands still in a relaxed pose with its paws together in front of its chest. It breathes gently, blinks once quickly and keeps its eyes open, and its round ears twitch slightly. Minimal calm motion, it ends in the same pose it started in. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration, seamless loop."
+    },
+    {
+      "name": "rinrin_sleep",
+      "start": "idle.png",
+      "end": "sleeping.png",
+      "length": 49,
+      "prompt": "A cute chibi baby panda standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration."
+    },
+    {
+      "name": "rinrin_put_down",
+      "start": "dragged.png",
+      "end": "idle.png",
+      "length": 33,
+      "prompt": "A cute chibi baby panda that was held up in the air with its arms spread is gently set down: it drops softly onto the ground, its body squashes down a little as it lands, then it bounces back up into a relaxed standing pose with its paws together in front of its chest. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration."
+    }
+  ]
+}

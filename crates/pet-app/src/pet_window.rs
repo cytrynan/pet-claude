@@ -80,6 +80,8 @@ struct Pet {
     /// シートの 1 コマの画素数（読み込み後に縮めた大きさ）と、元のシートの 1 コマ
     cell: (u32, u32),
     source_cell: (u32, u32),
+    /// 動画のコマを元の大きさで持つペットか（pet.json の `fullCell`）
+    full_cell: bool,
     /// いま表示しているペット
     pet: PetEntry,
     /// 次に表示したいペット（設定画面で選んだもの）。読み込みが終わると `pet` になる
@@ -552,7 +554,7 @@ impl Pet {
     fn clip_store_size(&self) -> (u32, u32) {
         let (w, h) = self.size();
         let (w, h) = (w as u32, h as u32);
-        let cap = pets::max_cell(self.source_cell, true);
+        let cap = pets::max_cell(self.source_cell, true, self.full_cell);
         if w > cap.0 || h > cap.1 { cap } else { (w, h) }
     }
 
@@ -590,7 +592,7 @@ impl Pet {
         }
         let need = pets::needed_cell(display_factor(self.state.scale));
         let switching = self.want.id != self.pet.id;
-        let max = pets::max_cell(self.source_cell, self.clips.is_some());
+        let max = pets::max_cell(self.source_cell, self.clips.is_some(), self.full_cell);
         let sharper = need.0 > self.cell.0 && self.cell.0 < max.0;
         if !switching && !sharper {
             return;
@@ -652,6 +654,7 @@ impl Pet {
         self.breathe = loaded.breathe;
         self.cell = loaded.cell;
         self.source_cell = loaded.source_cell;
+        self.full_cell = loaded.full_cell;
         // 同じペットを読み直しただけ（大きさの変更）なら、動画の再生の状態は保つ
         let now = now_ms(self.epoch);
         self.clips = match (loaded.clips, self.clips.take()) {
@@ -1154,6 +1157,7 @@ pub fn create(
         breath: 0,
         cell: loaded.cell,
         source_cell: loaded.source_cell,
+        full_cell: loaded.full_cell,
         want: pet.clone(),
         pet,
         loading: false,

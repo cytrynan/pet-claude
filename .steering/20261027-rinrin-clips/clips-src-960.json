@@ -1,0 +1,45 @@
+{
+  "poses": "poses960",
+  "canvas": 960,
+  "src_fps": 16,
+  "fps": 8,
+  "drop_tail": 3,
+  "cell": [
+    384,
+    416
+  ],
+  "floor": 404,
+  "ref_height": 354,
+  "ref_pose": "idle.png",
+  "scale": 0.6892,
+  "clips": [
+    {
+      "name": "idle",
+      "kind": "loop",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "video": "run4/rinrin_idle960.mp4",
+      "start_pose": "idle.png"
+    },
+    {
+      "name": "petted",
+      "kind": "once",
+      "from": [
+        "idle",
+        "left"
+      ],
+      "to": [
+        "idle",
+        "left"
+      ],
+      "video": "run4/rinrin_petted960.mp4",
+      "start_pose": "idle.png"
+    }
+  ]
+}

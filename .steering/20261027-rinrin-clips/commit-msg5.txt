@@ -1,0 +1,17 @@
+feat(skills): ペットの動画クリップ 13 本を作る手順と道具をスキル make-pet-clips にする
+
+なぜ: K 指示（2026-10-27）「この pet 用の動画を作成する一連の手順をスキル化して」。まめドラゴン・
+りんりんで通した手順（展開 → 姿勢画像 → 指示文 → workflow → Comfy Cloud → 検分 → K 判定 →
+コマ化 → シート → 実機 → 記録）を、次のペットで同じ順に回せるようにする。
+
+- SKILL.md: 冒頭に落とせない 6 行（無料枠が足りなければ K に伝えて K がアカウントを切り替える・
+  960＋fullCell・1 回目の後に K 判定・なでるを書かない・自分のタブ・元素材は exclude）、手順 9 段、止まった点
+- scripts/: align_poses（状態名で静止画を引く・--size・--floor・--walk-frame）、make_runs（13 本の
+  指示文のひな形にキャラの説明を差し込み run1〜3.json と clips-src.json を書く）、run_comfy（--work・
+  tab/close・upload/patch/load/queue/fetch）、inspect_clips（--poses・--canvas）、cap_trial.ps1（TGT）
+- templates/: prompts.json（13 本の指示文）・SOURCE.md
+- テスト 4 本（指示文の差し込み・なでられの禁止語・clips-src と run の対応・状態名の引き方）。
+  りんりんの素材で道具を通し、姿勢画像 11 枚の bbox と run JSON の構造が実物と一致した
+- docs/architecture.md §4.5 からスキルを指す
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

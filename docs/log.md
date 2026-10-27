@@ -10,6 +10,10 @@
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
 ## 2026-10-27
+* **Update**: [技術仕様書](architecture.md) — §4.5 の「次のペットから」に、手順と道具の正本としてプロジェクトスキル `make-pet-clips` を指した（2026-10-27 K 指示でスキル化） (kuroko/claude-fable-5-1 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §4.4 に `pet.json` の `fullCell`、§4.5 に「次のペットから 960 生成＋等倍」（2026-10-27 K 決定）の作り方を追記 (kuroko/claude-fable-5-1 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §4.5 に画質の試し（`PET_TEST_FULL_CELL`・3/4 と等倍のメモリ実測・960 生成の効き）を追記 (kuroko/claude-fable-5-1 ← human:K)
+* **Update**: [技術仕様書](architecture.md) — §4.4 に 2 体目のペット「りんりん」（パンダ・`assets/pets/rinrin/`・動画クリップ 13 本）を追記。§4.5 の見出しにりんりんを足した (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[プロダクト要求定義書](product-requirements.md)・[DESIGN.md](../DESIGN.md) — 質問（AskUserQuestion）にペットの吹き出しで答える（§5.1 の表と §5.4・F21・質問のカードと設定の「Claude Code」） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [技術仕様書](architecture.md)・[DESIGN.md](../DESIGN.md) — §3-b に吹き出しの固定文言の大きさの決め方（字幅の見積もり・幅 180〜320・折り返して高さで取る・描画後の測定で広げる保険）、DESIGN.md の固定文言を文字に合わせて広げる形に (kuroko/claude-fable-5-1 ← human:K)
 ## 2026-10-26

@@ -1,0 +1,6 @@
+fix(skills): run_comfy.py の playwright-cli の出力から attach のトークンを伏せる
+
+なぜ: tab-list・tab-close の出力に拡張の Welcome タブの URL（token=…）が載り、close の結果としてツール結果に
+出た（2026-10-27）。外部へ渡す材料に混ざらないよう、出力の時点で token=*** にする。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

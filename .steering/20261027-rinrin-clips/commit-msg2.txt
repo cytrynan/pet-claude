@@ -1,0 +1,6 @@
+docs(steering): りんりんの tasklist を最終版に（止まった点・振り返り・PR #58）
+
+なぜ: 1 回目の commit の後に書いた「止まった点」（無料枠の前提・画質の案・計測の無効）と
+振り返り、PR 本文のファイルを記録として残す。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
