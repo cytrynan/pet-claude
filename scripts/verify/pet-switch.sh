@@ -23,8 +23,13 @@ data="$out/data"
 rm -rf "$data"; mkdir -p "$data"
 
 PET_CLAUDE_DATA_DIR=$(cygpath -w "$data") PET_TEST_SWITCH_PET=$switch "$app" --open-settings >/dev/null 2>&1 &
+app_pid=$!
 log="$data/logs/pet.log"
 for _ in $(seq 1 50); do grep -q "pet window created" "$log" 2>/dev/null && break; sleep 0.2; done
+# 別セッションの試しインスタンスと同じ mutex で弾かれることがある（2026-10-28）。黙って FAIL にしない
+if grep -q "既に起動しているので終了" "$log" 2>/dev/null; then
+  echo "SKIP 試しインスタンスが既に動いている（別セッションの pet-app を先に終える）"; exit 2
+fi
 sleep 1
 rect=$("$winctl" find | sed -n 's/^rect=(\(-\?[0-9]*\),\(-\?[0-9]*\))-(\(-\?[0-9]*\),\(-\?[0-9]*\)).*/\1 \2 \3 \4/p')
 read -r l t r b <<<"$rect"
@@ -38,7 +43,8 @@ sleep 2   # rapid のとき: 捨てた読み込みの後にもう一度見直す
 sleep 1
 "$winctl" shot $((l - 100)) $((t - 100)) $((r - l + 200)) $((b - t + 120)) "$(cygpath -w "$out/pet-after.png")" >/dev/null
 after=$(mem)
-taskkill //IM pet-app.exe //F >/dev/null 2>&1
+# 名前で全部殺すと K の常駐ペットまで落ちる（2026-10-27/28 に 2 回落とした）。自分が起動した PID だけ止める
+taskkill //PID "$app_pid" //T //F >/dev/null 2>&1
 sleep 0.5
 
 grep -q "(mame-dragon) loaded" "$log" && r1=PASS || r1=FAIL

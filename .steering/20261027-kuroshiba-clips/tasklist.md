@@ -29,9 +29,9 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-27 }
 - [x] 指示文 JSON（run1〜3）と workflow 3 本 (#71)
 - [x] Comfy Cloud 1 回目（4 本）と K 判定 (#72) — K「待機の目が怖い」→ 候補 3 本から c を採用
 - [x] Comfy Cloud 2 回目（8 本＋待機 3 候補）・3 回目（なでられ 3 候補） (#73)
-- [~] コマ化（倍率の確認）・シート・pet.json（fullCell true） (#74)
-- [ ] 実機・テスト・ゲート (#75)
-- [ ] 記録・commit・PR（base main） (#76)
+- [x] コマ化（倍率の確認）・シート・pet.json（fullCell true） (#74) — 13 本 317 コマ・共通倍率 0.6801（全部収まる・決め打ち不要）
+- [x] 実機・テスト・ゲート (#75)
+- [~] 記録・commit・PR（base main） (#76)
 
 ## 検分表
 ### run1（2026-10-27・無料枠 2/5 → 1/5・163 秒）
@@ -71,9 +71,22 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-27 }
 a は 24 コマ目に耳の輪郭が二重になる揺れがあり（肌色 max 3661 もそこ）、**b を採用**（手なし・終点差が最小・目を細めて笑う）。c も可。
 同じ run を 2 回実行してしまった（下の止まった点）ので 5/5 → 3/5。
 
+### 実機（2026-10-28・target-kuroshiba）
+| 項目 | 結果 |
+|---|---|
+| `pet-switch.sh`（TGT=target-kuroshiba SWITCH_TO=kuroshiba） | 3 項目 PASS（起動まめドラゴン 795 ms → kuroshiba loaded 852 ms・clips 13 → state.json）。※最初の 2 回は FAIL（下の止まった点: 既定ペットがフォルダ順で kuroshiba になっていた） |
+| `cap_trial.ps1`（2880×1800・env 無し） | held_cell **384×416**（`fullCell: true`）・専有 41.9MB（N1 50MB 以内）・idle 14.5MB・grabbed 9.2MB |
+| `gate.sh` | GATE OK（gate-commit 経由・2 commit） |
+| 単体テスト | `kuroshiba_manifest_is_full_cell_with_clips_and_wake_word`、`bundled_pets_clips_json_match_frame_files` に kuroshiba、`startup_order_prefers_the_default_pet_over_folder_order`、スキル 7 本 |
+
 ## 止まった点
 - 2026-10-27: K「左から 2 番目、目が怖いので作り直して」＝待機（preview-4up は 1×4 の横並び。報告で 2×2 と書いたのは誤り）。原因は指示文の「blinks once quickly」で、まばたきの途中（コマ 16・32）に白目の見える大きな目になっていた。直し: まばたきを外す／目は小さな丸い黒目のまま・白目を出さないと書く／否定語に wide eyes, white sclera, staring を足す。候補 3 本（a・b=まばたき無し seed 1234/7、c=ゆっくり閉じるまばたき seed 42）を 2 回目の 8 本と同じ 1 回に同梱（無料枠は回数課金なので追加コスト無し）。
 - 2026-10-27/28: 3 回目で `playwright-cli attach` の接続が途中で 2 回切れた（"The browser 'chrome' is not open"）。1 回目は queue のクリック後・監視の前に切れ、「実行していない」と誤解して attach し直して再 queue → 同じ job を 2 回回し 1 回無駄にした（5/5 → 3/5）。2 回目は fetch の途中。教訓: 切れた後は **先に `tab` で `features` を見て used が増えていれば再 queue しない**。`run_comfy.py` の `pw()` に「not open なら attach し直して 1 回だけ再試行」を入れた。
+- 2026-10-28: `pet-switch.sh` の「起動はまめドラゴン」が FAIL。アプリは何も選んでいなければフォルダ順の先頭で起動し、`kuroshiba` が `mame-dragon` より前に並んだため既定が黙ってしばちゃんになっていた（K の常駐ペットも pet が空）。`pets::DEFAULT_PET_ID` で名前固定に直した。
+- 2026-10-28: `pet-switch.sh` の `taskkill //IM pet-app.exe` が K の常駐ペット（pet-claude-main）まで落としていた（とらちゃんの時も）。自分が起動した PID だけ止める形に直し、常駐はタスク `pet-claude` で起こし直した。別セッション（feat/chat-same-env）の試しインスタンスも同時に動いていて、同じ mutex で「既に起動」と弾かれることがあった → SKIP を返すようにした。
 
 ## 振り返り
-（計画と実績の差）
+- 計画どおり 3 回で 13 本だが、K 判定で待機を作り直し（候補を 2 回目に同梱したので回数は増えず）、接続切れで 3 回目を二重に回して 1 回無駄にした（3/5 残）。
+- 計画に無かった直し 2 件: 既定ペットの名前固定（新しい ID がフォルダ順で先頭になる問題）と、検証スクリプトが常駐ペットを落とす問題。どちらも 4 体目で初めて顕在化した。
+- スキルへ戻した学び: 待機のまばたき指示／切れた後は used を見てから再 queue／名前で止めない／既定ペット。
+- 時間: 1 回目まで約 15 分、待機の作り直し＋2 回目 約 15 分、3 回目（切替・接続切れ含む）約 20 分、コマ化 10 分、実機とゲート・直し 約 25 分。

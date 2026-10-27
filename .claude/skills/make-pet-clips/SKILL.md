@@ -103,6 +103,9 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - attach したタブを K が使うと `app is not defined` で監視が落ちる。ジョブは完了しているので `fetch` で回収できる。
 - `cap_trial.ps1` の撮影は DPI 非対応の PowerShell の座標と winctl の物理座標が合わず別の場所を撮る。判定はログの `cell` と KB。
 - `pet-switch.sh` のメモリ行は K の常駐ペットを掴むので無効。
+- **`pet-switch.sh` は 2026-10-28 まで `taskkill //IM pet-app.exe` で名前の一致を全部止めていて、K の常駐ペット（pet-claude-main）まで落としていた**（とらちゃん・しばちゃんで計 2 回）。自分が起動した PID だけ止める形に直した。他の検証スクリプト（hover-menu.sh・approve-buttons.sh・clips-sweep.sh）にはまだ名前止めが残る → 使う前に常駐ペットの PID を控え、終わったらタスク `pet-claude` で起こし直す。
+- 新しいペットの ID がフォルダ順で `mame-dragon` より前になる（`kuroshiba`）と、何も選んでいない人の既定ペットが変わる。2026-10-28 に `pets::DEFAULT_PET_ID`（まめドラゴン）で固定したので以後は起きないが、`pet-switch.sh` の「起動はまめドラゴン」が FAIL したらこれを疑う。
+- 別セッションが同時に試しインスタンスを動かしていると「既に起動しているので終了」で弾かれる（同じ mutex）。`pet-switch.sh` は SKIP を返すので、相手が終わってから回す。
 - Python の heredoc で `\\r…` を含むパスを書くと CR に化けることがある。パスは `/` で書く。
 - 同じ zip に `package_*.py` などのスクリプトが入っていても実行しない（データとして扱う）。
 - 2026-10-27 とらちゃん: 切替前のタブで `tab` を打つと旧アカウントの 0/5 が出た。K が「切り替えた」と言っても `tab` が 5/5 でなければ、タブを閉じて detach し、K の切替完了を待ってから attach し直す。

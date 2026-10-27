@@ -185,10 +185,17 @@ pub fn discover() -> Vec<PetEntry> {
     discover_in(&roots())
 }
 
-/// 起動時に試す順: 選んだペット（state.json の `pet`）→ フォルダにあるペット（見つかった順）→ 内蔵の仮キャラ。
-/// 起動側は読めないものを飛ばして次を試す（仮キャラはクリックの抜けを試すための絵なので最後の手段）。
+/// 何も選んでいない（または選んだものが無い）時の既定のペット。
+/// 2026-10-28: 4 体目の `kuroshiba` がフォルダ名の順で `mame-dragon` より前に並び、何も選んでいない人の
+/// ペットが黙って変わった（pet-switch.sh の「起動はまめドラゴン」が FAIL）。既定はフォルダ順でなく名前で決める。
+pub const DEFAULT_PET_ID: &str = "mame-dragon";
+
+/// 起動時に試す順: 選んだペット（state.json の `pet`）→ 既定のまめドラゴン → フォルダにあるペット（見つかった順）
+/// → 内蔵の仮キャラ。起動側は読めないものを飛ばして次を試す（仮キャラはクリックの抜けを試すための絵なので最後の手段）。
 pub fn startup_order<'a>(pets: &'a [PetEntry], chosen: Option<&str>) -> Vec<&'a PetEntry> {
-    let first = chosen.and_then(|id| pets.iter().find(|p| p.id == id));
+    let first = chosen
+        .and_then(|id| pets.iter().find(|p| p.id == id))
+        .or_else(|| pets.iter().find(|p| p.id == DEFAULT_PET_ID));
     let mut order: Vec<&PetEntry> = first.into_iter().collect();
     for p in pets
         .iter()
@@ -430,6 +437,28 @@ mod tests {
             ["mame", "neko", "placeholder"]
         );
         assert_eq!(ids(startup_order(&discover_in(&[]), None)), ["placeholder"]);
+    }
+
+    /// 何も選んでいなければ、フォルダ順で前にある `kuroshiba` でなく既定の `mame-dragon` で起動する（2026-10-28）。
+    #[test]
+    fn startup_order_prefers_the_default_pet_over_folder_order() {
+        let root = temp_root("startup-default");
+        write_pet(&root, "kuroshiba", "kuroshiba", "しばちゃん", 1, 1);
+        write_pet(&root, "mame-dragon", "mame-dragon", "まめドラゴン", 1, 1);
+        let pets = discover_in(&[root]);
+        let ids = |o: Vec<&PetEntry>| o.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+        assert_eq!(
+            ids(startup_order(&pets, None)),
+            ["mame-dragon", "kuroshiba", "placeholder"]
+        );
+        assert_eq!(
+            ids(startup_order(&pets, Some("gone"))),
+            ["mame-dragon", "kuroshiba", "placeholder"]
+        );
+        assert_eq!(
+            ids(startup_order(&pets, Some("kuroshiba"))),
+            ["kuroshiba", "mame-dragon", "placeholder"]
+        );
     }
 
     #[test]
