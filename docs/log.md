@@ -6,6 +6,9 @@
 
 <!-- /setup-project でドキュメントを作成したら、最初のエントリを**このコメントの下（閉じ記号の後）**に追記してください。
 コメントの中に書くと Markdown の描画に出ません（実例: 「ここに追記」と読んでコメント内へ書き続け、ログ全体が見えないまま運用された）。例:
+## 2026-10-28
+* **Update**: [README.md](manual/README.md)・[pet-claude-manual.docx](manual/pet-claude-manual.docx) — マニュアルの正本を Word（pet-claude-manual.docx）に変更。PDF は export-pdf.ps1（Word の COM）で書き出す。manual.html・build-pdf.js は削除、初版を組む build-docx.js を追加 (kuroko/claude-fable-5-1 ← human:K)
+
 ## 2026-08-01
 * **Creation**: [プロダクト要求定義書](product-requirements.md) — 初版作成・ユーザー承認済み (claude/claude-sonnet-5)
 -->
