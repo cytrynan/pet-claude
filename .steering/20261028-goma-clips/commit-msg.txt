@@ -1,0 +1,18 @@
+feat(pets): 6 体目のごまちゃん（ハムスター灰・goma）を 960 生成＋等倍の動画クリップ 13 本で足す
+
+なぜ: K 指示（2026-10-28）で 5 体目こむぎちゃんに続き 6 体目のペット「ごまちゃん」を
+スキル make-pet-clips で作る。共通倍率は 0.6882 で全部が収まり決め打ち不要。
+
+- assets/pets/goma/: spritesheet.webp・pet.json（clips・wakeWord ごまちゃん・fullCell）・
+  clips/ 13 本 317 コマ・clips.json・SOURCE.md
+- こむぎちゃんの学びを最初から入れた: 生成の前に 8 枚の毛の色を比べた（灰色の毛の明るさ
+  217〜224 でそろっていたので色は直さない）、寝姿はこむぎで K が選んだ 0.9 倍、寝る・起きるの
+  指示文に「色を保つ」の一文。寝るの彩度は静止画 43.8 に対し動画 44〜46 でずれなかった
+- K 判定（1 回目）: この出来で残りも同じ設定で。なでられは b
+- crates/pet-core: clips.rs の一覧に goma（rustfmt で縦並び）、sprite.rs に fullCell のテスト
+- docs/architecture.md §4.4 に 1 行、docs/log.md に 1 行
+- .steering/20261028-goma-clips/: brief・識別子契約・検分表（run1〜3）・実機・止まった点
+
+元素材（zip・展開・直した静止画・姿勢画像・元の動画・workflow・証拠）は .git/info/exclude で外してある。
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

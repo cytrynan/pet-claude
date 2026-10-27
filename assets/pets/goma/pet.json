@@ -1,0 +1,10 @@
+{
+  "breathe": 0.025,
+  "cellScale": 2,
+  "clips": "clips.json",
+  "displayName": "ごまちゃん",
+  "fullCell": true,
+  "id": "goma",
+  "spritesheetPath": "spritesheet.webp",
+  "wakeWord": "ごまちゃん"
+}
