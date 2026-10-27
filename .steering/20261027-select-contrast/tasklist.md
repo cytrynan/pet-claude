@@ -14,7 +14,7 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-27T17:55:00+09:00 }
 ## タスク
 - [x] `.popup option` に文字色と地色を明示する (#77)
 - [x] 実機で暗い配色の一覧 4 行が読めることをスクリーンショットで確認（`settings-open.png`。仮キャラ・まめドラゴン・りんりん・とらちゃん が暗い地に白文字。明るい配色は `--cell: #fff`＋`--label: #1d1d1f` の組で実機未確認）
-- [ ] ゲート → gate-commit → PR（マージは K）
+- [x] ゲート → gate-commit → PR（マージは K）: a630213・PR は本文の URL
 
 ## 止まった点
 - 自前の exe（pet-app）は computer-use の許可対象に名前で引っかからない（Start メニューに無い）。撮影は `winctl focus/click/shot` で代替した。pwsh（DPI 非対応）の GetWindowRect は論理座標＝物理の 1/2
