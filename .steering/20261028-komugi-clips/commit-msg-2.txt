@@ -1,0 +1,7 @@
+docs(steering): こむぎちゃんの tasklist の崩れたパスを直し、PR 済みに
+
+なぜ: 実機の表で常駐ペットのパスを Python の文字列に書いた時、`\t` がタブ文字に化けて
+`pet-claude-main<TAB>arget` になっていた（ごまちゃんの記録を書いていて気づいた）。
+あわせて記録・PR の行を PR #100 で完了にする。
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>

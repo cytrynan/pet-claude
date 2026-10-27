@@ -23,7 +23,9 @@ data="$out/data"
 rm -rf "$data"; mkdir -p "$data"
 
 PET_CLAUDE_DATA_DIR=$(cygpath -w "$data") PET_TEST_SWITCH_PET=$switch "$app" --open-settings >/dev/null 2>&1 &
-app_pid=$!
+# `$!` は Git Bash の PID で、taskkill が受ける Windows の PID とは別の番号。そのまま渡すと試しの exe が
+# 残り、同じ番号の無関係なプロセスを止めるおそれもある（2026-10-28 こむぎちゃんで残りを確認）。/proc の winpid に読み替える
+app_pid=$(cat "/proc/$!/winpid" 2>/dev/null || echo $!)
 log="$data/logs/pet.log"
 for _ in $(seq 1 50); do grep -q "pet window created" "$log" 2>/dev/null && break; sleep 0.2; done
 # 別セッションの試しインスタンスと同じ mutex で弾かれることがある（2026-10-28）。黙って FAIL にしない

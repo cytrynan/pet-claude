@@ -1,0 +1,78 @@
+{
+ "name": "komugi_run2",
+ "size": [
+  960,
+  960
+ ],
+ "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, wide eyes, white sclera, visible eye whites, staring, surprised, bulging eyes, dog, shiba inu, black fur, cat, orange tabby, stripes, panda, dragon, horns, wings, long tail, darker colors, oversaturated, deep orange, color drift, tinted background, gray background, green background",
+ "clips": [
+  {
+   "name": "komugi_call",
+   "start": "idle.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster standing on the ground turns to face the viewer, raises one paw and waves it a few times in a friendly greeting, then keeps the paw raised with a cheerful open-mouth smile. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+   "end": "attention.png"
+  },
+  {
+   "name": "komugi_working",
+   "start": "working.png",
+   "length": 81,
+   "prompt": "A cute chibi baby golden hamster sits in front of a small laptop and types on it with both paws, tapping the keys busily. Once in a while it tilts its head slightly as if thinking, then keeps typing. Calm repeated motion, it ends in the same pose it started in. Seamless loop. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration."
+  },
+  {
+   "name": "komugi_happy",
+   "start": "idle.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster gets happy: it smiles with its eyes closed in joy, hops up a little once and waves both paws up in the air, then lands softly back in the same standing pose it started in with its tiny front paws held together in front of its chest. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration."
+  },
+  {
+   "name": "komugi_wake",
+   "start": "sleeping.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster lying asleep on its belly wakes up: it slowly opens its eyes, stretches its arms and back with a small yawn, then stands up into a relaxed standing pose with its tiny front paws held together in front of its chest. One smooth continuous motion in place. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Its fur keeps the same light pale golden pastel color as the input image the whole time, colors do not get darker or more saturated. Clean flat 2D cartoon illustration.",
+   "end": "idle.png"
+  },
+  {
+   "name": "komugi_walk_start",
+   "start": "idle_right.png",
+   "length": 33,
+   "prompt": "A cute chibi baby golden hamster standing still facing right starts to walk: it lifts one foot and takes its first small step, swinging its arms, walking in place. It stays in the center of the frame and does not move forward. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+   "end": "walk.png"
+  },
+  {
+   "name": "komugi_turn",
+   "start": "idle_right.png",
+   "length": 33,
+   "prompt": "A cute chibi baby golden hamster standing still facing right turns around in place to face left. It turns its head first and then its body follows, and it ends standing still facing left with its tiny front paws held together in front of its chest. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+   "end": "idle.png"
+  },
+  {
+   "name": "komugi_grabbed",
+   "start": "dragged.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster is held up in the air by the scruff: it dangles, gently swinging its little legs back and forth, and its small round ears twitch slightly and its chubby cheeks puff gently with a surprised open mouth. It ends in the same pose it started in. Seamless loop. Only the hamster is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration."
+  },
+  {
+   "name": "komugi_walk",
+   "start": "walk.png",
+   "length": 81,
+   "prompt": "A cute chibi baby golden hamster facing right walks in place with a cheerful bouncy stride: its legs alternate step by step and its arms swing naturally. It stays in the center of the frame and does not move forward. Smooth continuous walking, it ends in the same pose it started in. Seamless loop. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration."
+  },
+  {
+   "name": "komugi_sleep_a",
+   "start": "idle.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Its fur keeps the same light pale golden pastel color as the input image the whole time, colors do not get darker or more saturated. Clean flat 2D cartoon illustration.",
+   "end": "sleeping.png",
+   "seed": 42
+  },
+  {
+   "name": "komugi_sleep_b",
+   "start": "idle.png",
+   "length": 49,
+   "prompt": "A cute chibi baby golden hamster standing on the ground gets sleepy: its eyelids slowly close, it lowers itself down and lies on its belly with its head resting on the ground to sleep. One smooth continuous motion in place. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Its fur keeps the same light pale golden pastel color as the input image the whole time, colors do not get darker or more saturated. Clean flat 2D cartoon illustration.",
+   "end": "sleeping.png",
+   "seed": 1234
+  }
+ ]
+}
