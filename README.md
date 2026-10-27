@@ -32,7 +32,7 @@ cargo build --workspace --all-targets
 - チャットは送信ごとに `claude -p` を子プロセスで起こす。認証はサブスク（Claude Code のログイン）か API キー（Windows の資格情報マネージャー）
 - 読み上げは AivisSpeech（`127.0.0.1:10101`・天深シノ）。音声入力は faster-whisper small を子プロセスで起こす
 - 設定・選んだペット・位置は `%LOCALAPPDATA%\pet-claude\state.json`、ログは `%LOCALAPPDATA%\pet-claude\logs\pet.log`
-- ペットの絵は Codex ペット互換のスプライトシート（8 列、行ごとに 1 ポーズ）＋姿勢の間をつなぐ動画クリップ。読み込んだらすぐ表示に要る解像度まで縮めて持ち、常駐の専有メモリは既定の大きさで約 25MB
+- ペットの絵は Codex ペット互換のスプライトシート（8 列、行ごとに 1 ポーズ）＋姿勢の間をつなぐ動画クリップ。読み込んだらすぐ表示に要る解像度まで縮めて持つ。常駐の専有メモリ（子孫プロセス込み）は、既定の大きさのまめドラゴンで UI を出していない間 約 15MB（2026-10-28 実測・200% の画面）。ペットと大きさで増え、目安は 50MB 以内（[docs/product-requirements.md](docs/product-requirements.md) N1）
 
 | クレート | 役割 |
 |---|---|
