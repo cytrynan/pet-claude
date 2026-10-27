@@ -42,6 +42,14 @@ def find_states(src: Path) -> dict[str, Path]:
     return found
 
 
+def fits_in_canvas(bbox, size: int, margin: int = 1) -> bool:
+    """絵の範囲がキャンバスの縁に触れていない（上下左右に margin px 以上の余白）。
+    2026-10-27 とらちゃん: つままれるは吊りの既定（560）だと背の高い絵の上 62px が外に出て、
+    耳が切れたまま動画になった。床の合わせだけ見て通していたので、この検査を足した。"""
+    left, top, right, bottom = bbox
+    return left >= margin and top >= margin and right <= size - margin and bottom <= size - margin
+
+
 def parse_floors(items: list[str]) -> dict[str, int]:
     out = dict(DEFAULT_FLOORS_640)
     for it in items or []:
@@ -139,6 +147,7 @@ def main() -> None:
         "count": len(records),
         "rgb_square": all(r["size"] == [args.size, args.size] and r["mode"] == "RGB" for r in records.values()),
         "alignment": all(floor_ok(n, r) and center - 2 <= r["center_x"] <= center + 2 for n, r in records.items()),
+        "fits_in_canvas": all(fits_in_canvas(r["bbox"], args.size) for r in records.values()),
         "idle_height": records["idle.png"]["bbox_height"],
         "idle_height_expected": round(IDLE_HEIGHT_640 * ratio),
         "inputs_unchanged_sha256": all(digest(Path(metadata[n]["source"])) == hashes.get(n if n != "walk" or not args.walk_frame else "walk_frame", hashes.get(n)) for n in order if "_right" not in n),
@@ -152,6 +161,9 @@ def main() -> None:
         raise SystemExit("床か中心がそろっていない（上の表を見る）")
     if abs(checks["idle_height"] - checks["idle_height_expected"]) > 2:
         raise SystemExit("待機の高さが基準と合わない")
+    if not checks["fits_in_canvas"]:
+        cut = [n for n, r in records.items() if not fits_in_canvas(r["bbox"], args.size)]
+        raise SystemExit(f"キャンバスの縁に触れている（切れている）: {cut}。--floor <状態>=<px> で下げるか上げる")
 
 
 if __name__ == "__main__":

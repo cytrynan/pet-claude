@@ -30,6 +30,7 @@ description: pet-claude の新しいペット（状態別の静止画 8 枚）�
 python -I S/align_poses.py <展開フォルダ> W/poses --size 960 [--floor happy=560] [--walk-frame <歩きの 1 コマ>]
 ```
 - 床の既定: 立ち・座り・寝姿 600（640 基準。960 では 900）、つままれる 560。zip で浮いている状態（りんりんの喜ぶ）は `--floor` で合わせる。
+- **つままれるは絵が縦に長い（尻尾が垂れる）と吊り 560 で上が切れる**。`verification.json` の `checks.fits_in_canvas` が false なら止まるので、`--floor dragged=612` のように下げる（とらちゃん 2026-10-27: 612 で上 16px・下 918）。出力フォルダは上書きしないので、作り直しは別名（`poses2`）に出して入れ替える。
 - 出力 `W/poses/verification.json` と `contact.png` を見る（床の赤線に足が乗っているか・反転版の向き）。
 - 描いた歩きのコマがある（まめドラゴン型）なら `--walk-frame`。無ければ歩行の静止画が歩きの始点/終点。
 
@@ -80,7 +81,7 @@ python -I S/inspect_clips.py W/run1.json W/run1 --poses W/poses
 python -I scripts/build_clips.py W/clips-src.json assets/pets/<id>          # 13 本・約 10 分
 CARGO_TARGET_DIR=target-<id> cargo run --release -p pet-core --example build_pet -- <展開フォルダ> assets/pets/<id> <id> "<表示名>" 2
 ```
-`pet.json` に `"clips": "clips.json"`・`"wakeWord": "<呼びかけ>"`・`"fullCell": true` を足す（`build_pet` を再実行しても残る）。`assets/pets/<id>/SOURCE.md` は `templates/SOURCE.md` から。共通の倍率は出力の「全部が収まる倍率」を見て決める（りんりん 0.6892＝見切れなし。まめドラゴンは眠るの尻尾で 0.69 を決め打ち）。
+`pet.json` に `"clips": "clips.json"`・`"wakeWord": "<呼びかけ>"`・`"fullCell": true` を足す（`build_pet` を再実行しても残る）。`assets/pets/<id>/SOURCE.md` は `templates/SOURCE.md` から。共通の倍率は出力の「全部が収まる倍率」と「待機の高さの基準」を見比べて決める（りんりん 0.6892＝見切れなし。まめドラゴンは眠るの尻尾で 0.69 を決め打ち。**とらちゃんは吊りの尻尾が床の下 12px に当たって 0.40 まで縮んだので 0.60 を決め打ち**）。差が大きい時は本ごとの L/R/T/B のはみ出し表（tasklist の型）を作って、切れてよい部位（尻尾の先・生成が伸ばした部分）だけが出る倍率を選び、`clips-src.json` の `scale` に書く。
 
 ### 8. 実機とテスト
 ```bash
@@ -105,4 +106,5 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - Python の heredoc で `\\r…` を含むパスを書くと CR に化けることがある。パスは `/` で書く。
 - 同じ zip に `package_*.py` などのスクリプトが入っていても実行しない（データとして扱う）。
 - 2026-10-27 とらちゃん: 切替前のタブで `tab` を打つと旧アカウントの 0/5 が出た。K が「切り替えた」と言っても `tab` が 5/5 でなければ、タブを閉じて detach し、K の切替完了を待ってから attach し直す。
+- 2026-10-27 とらちゃん: つままれるの耳が切れたのを K が実機で見つけた（姿勢画像の時点で上 62px が外。床の合わせだけ見て通していた）。`fits_in_canvas` の検査を足し、2 本だけ run4 で作り直した（1 回消費）。
 - 2026-10-27 とらちゃん: 960 の所要は 4 本 168 秒・8 本 354 秒・なでられ 3 本 120 秒（`queue` の limit 1800 秒で足りる）。

@@ -65,6 +65,12 @@ class AlignPosesTest(unittest.TestCase):
         self.assertEqual((floors["happy"], floors["dragged"]), (560, 540))
         self.assertEqual(align_poses.parse_floors(None), {"dragged": 560})
 
+    def test_fits_in_canvas_rejects_a_figure_touching_the_top(self):
+        # とらちゃんのつままれる（吊り 560 のまま）は上が 0 から始まって耳が切れた
+        self.assertFalse(align_poses.fits_in_canvas((192, 0, 767, 840), 960))
+        self.assertTrue(align_poses.fits_in_canvas((193, 16, 767, 918), 960))
+        self.assertFalse(align_poses.fits_in_canvas((10, 10, 960, 900), 960))
+
 
 if __name__ == "__main__":
     unittest.main()
