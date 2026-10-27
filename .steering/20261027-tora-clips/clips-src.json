@@ -1,0 +1,201 @@
+{
+ "poses": "poses",
+ "canvas": 960,
+ "src_fps": 16,
+ "fps": 8,
+ "drop_tail": 3,
+ "cell": [
+  384,
+  416
+ ],
+ "floor": 404,
+ "ref_height": 354,
+ "ref_pose": "idle.png",
+ "scale": 0.6,
+ "scale_note": "2026-10-27: つままれる（尻尾が垂れて縦に長い）を下げたら床の下 12px に尻尾の先が当たり、自動の倍率が 0.4006 まで縮んだ。0.60 なら眠る・起きるは切れず、つままれ中の揺れで尻尾の先が最大 6px 下に出るだけ（表は tasklist.md）。",
+ "clips": [
+  {
+   "name": "idle",
+   "kind": "loop",
+   "from": [
+    "idle",
+    "left"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run1/tora_idle.mp4",
+   "start_pose": "idle.png"
+  },
+  {
+   "name": "walk",
+   "kind": "loop",
+   "from": [
+    "walk",
+    "right"
+   ],
+   "to": [
+    "walk",
+    "right"
+   ],
+   "video": "run2/tora_walk.mp4",
+   "start_pose": "walk.png"
+  },
+  {
+   "name": "working",
+   "kind": "loop",
+   "from": [
+    "working",
+    "left"
+   ],
+   "to": [
+    "working",
+    "left"
+   ],
+   "video": "run2/tora_working.mp4",
+   "start_pose": "working.png"
+  },
+  {
+   "name": "grabbed",
+   "kind": "loop",
+   "from": [
+    "dragged",
+    "front"
+   ],
+   "to": [
+    "dragged",
+    "front"
+   ],
+   "video": "run4/tora_grabbed.mp4",
+   "start_pose": "dragged.png"
+  },
+  {
+   "name": "stop",
+   "kind": "transition",
+   "from": [
+    "walk",
+    "right"
+   ],
+   "to": [
+    "idle",
+    "right"
+   ],
+   "video": "run1/tora_stop.mp4",
+   "start_pose": "walk.png"
+  },
+  {
+   "name": "walk_start",
+   "kind": "transition",
+   "from": [
+    "idle",
+    "right"
+   ],
+   "to": [
+    "walk",
+    "right"
+   ],
+   "video": "run2/tora_walk_start.mp4",
+   "start_pose": "idle_right.png",
+   "drop_tail": 0
+  },
+  {
+   "name": "turn",
+   "kind": "transition",
+   "from": [
+    "idle",
+    "right"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run2/tora_turn.mp4",
+   "start_pose": "idle_right.png"
+  },
+  {
+   "name": "sleep",
+   "kind": "transition",
+   "from": [
+    "idle",
+    "left"
+   ],
+   "to": [
+    "sleep",
+    "left"
+   ],
+   "video": "run1/tora_sleep.mp4",
+   "start_pose": "idle.png"
+  },
+  {
+   "name": "wake",
+   "kind": "transition",
+   "from": [
+    "sleep",
+    "left"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run2/tora_wake.mp4",
+   "start_pose": "sleeping.png"
+  },
+  {
+   "name": "put_down",
+   "kind": "transition",
+   "from": [
+    "dragged",
+    "front"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run4/tora_put_down.mp4",
+   "start_pose": "dragged.png"
+  },
+  {
+   "name": "call",
+   "kind": "transition",
+   "from": [
+    "idle",
+    "left"
+   ],
+   "to": [
+    "attention",
+    "front"
+   ],
+   "video": "run2/tora_call.mp4",
+   "start_pose": "idle.png"
+  },
+  {
+   "name": "happy",
+   "kind": "once",
+   "from": [
+    "idle",
+    "left"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run2/tora_happy.mp4",
+   "start_pose": "idle.png"
+  },
+  {
+   "name": "petted",
+   "kind": "once",
+   "from": [
+    "idle",
+    "left"
+   ],
+   "to": [
+    "idle",
+    "left"
+   ],
+   "video": "run3/tora_petted_b.mp4",
+   "start_pose": "idle.png"
+  }
+ ]
+}

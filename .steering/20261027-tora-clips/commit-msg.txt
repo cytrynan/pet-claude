@@ -1,0 +1,20 @@
+feat(pets): 3 体目のとらちゃん（茶トラねこ・tora）を 960 生成＋等倍の動画クリップ 13 本で足す
+
+なぜ: K 指示（2026-10-27）で 3 体目のペット「とらちゃん」を、スキル make-pet-clips の
+手順で作る。2026-10-27 K 決定「次のペットから 960 生成＋ fullCell: true」を初めて
+適用した 1 体なので、pet.json に fullCell: true を入れ、sprite.rs のテストで同梱の
+pet.json がその形であることを固定する。clips.rs のペット一覧に tora を足して
+13 本のコマ数とファイル数の一致を機械で見る。
+
+- assets/pets/tora/: spritesheet.webp・pet.json（clips・wakeWord とらちゃん・fullCell）・
+  clips/ 13 本・clips.json・SOURCE.md（元素材と作り直し方）
+- crates/pet-core: clips.rs の bundled_pets_clips_json_match_frame_files に tora、
+  sprite.rs に tora_manifest_is_full_cell_with_clips_and_wake_word
+- docs/architecture.md §4.4 に 1 行、docs/log.md に 1 行
+- .claude/skills/make-pet-clips: 無料枠が足りない時は残りぶんだけ回して切替を待つ・
+  切替後は姿勢画像を上げ直す・肌色 max は橙系の毛色では使わない（今回の実測）
+- .steering/20261027-tora-clips/: brief・識別子契約・検分表（run1〜3）・止まった点
+
+元素材（zip・展開・姿勢画像・元の動画・workflow・証拠）は .git/info/exclude で外してある。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

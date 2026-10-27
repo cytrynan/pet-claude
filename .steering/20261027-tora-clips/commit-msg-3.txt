@@ -1,0 +1,5 @@
+docs(steering): とらちゃんの PR 本文の実機・ゲートの節を埋める
+
+なぜ: commit 前は結果が無く置き場だけだった。PR #67 の本文と同じものを .steering に残す。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>
