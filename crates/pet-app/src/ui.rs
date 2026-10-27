@@ -443,6 +443,9 @@ fn open_chat() {
         return;
     }
     let Some(chat) = island(CHAT) else { return };
+    // 前に閉じた時にメニューが開いたままなら、その分の高さを捨てて閉じた形で出す（窓が作り直されて
+    // ページは閉じた形なのに、窓だけ高いままになる）
+    CHAT_MENU_HEIGHT.with(|h| h.set(0.0));
     let rect = chat_rect();
     if let Some(bar) = window(BAR) {
         let _ = bar.hide();
@@ -450,6 +453,7 @@ fn open_chat() {
     mark_shown(BAR, false);
     CHAT_OPENED_AT.with(|t| t.set(Some(Instant::now())));
     place_and_show(CHAT, &chat, rect, true);
+    let _ = chat.eval("window.closeChatMenu && window.closeChatMenu()");
     let _ = chat.eval(format!(
         "window.renderChat && window.renderChat({})",
         chat_state()

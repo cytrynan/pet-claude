@@ -234,6 +234,8 @@
     if (hit) { e.preventDefault(); hit.click(); }
   }, true);
   window.addEventListener("blur", closeMenu);
+  // Rust 側（ui.rs の open_chat）から: 窓を出し直す時にメニューを閉じた形にそろえる
+  window.closeChatMenu = closeMenu;
   renderOpts();
   // Rust 側（ui.rs の chat_state）から: { answer, error, busy, heard, ask, options }
   // （heard は音声入力で聞き取った文、options はいま効いているモデル・エフォート・モード）
