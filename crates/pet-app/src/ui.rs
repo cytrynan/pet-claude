@@ -73,7 +73,11 @@ const ANSWER_BASE_MS: u64 = 6000;
 const ANSWER_PER_CHAR_MS: u64 = 120;
 const ANSWER_MAX_MS: u64 = 20_000;
 /// チャット欄の上に出す答えの欄の高さ（論理ピクセル。中はスクロール）と、入力欄との間。
-const CHAT_ANSWER_HEIGHT: f64 = 188.0;
+/// 切替のメニューで一番高いモードの一覧（`chat.html` の `.menu`・Edge で実測 264px）に合わせる。メニューは答えの
+/// 欄に重ねて出すので、答えが出ている間はメニューを開いても窓の大きさが変わらない（188 の頃は開くたびに窓を
+/// 伸ばし、WebView2 が描き直すまでの 1 コマは前の絵が窓の上端に貼られて会話が跳んで消えて見えた。2026-10-28 K 報告）。
+/// `chat.html` の `.answer` の高さと `scripts/verify/render-ui.js` の `ANSWER_H` も同じ値。
+const CHAT_ANSWER_HEIGHT: f64 = 264.0;
 const CHAT_GAP: f64 = 8.0;
 /// チャット欄を出してから、前面を失ったら取り直す間（実機では出して 7ms で失い、入力欄に打てなかった）。
 /// 人が外を押すにはこれより長くかかる（ダブルクリックの間隔 500ms 程度）ので、その操作とは取り合わない。
@@ -471,18 +475,26 @@ fn chat_island() -> (f64, f64) {
     let has_answer = CHAT_LAST.with(|c| c.borrow().is_some())
         || crate::chat::busy()
         || ask_text_target().is_some();
+    (
+        CHAT_ISLAND.0,
+        chat_island_height(has_answer, CHAT_MENU_HEIGHT.with(Cell::get)),
+    )
+}
+
+/// チャット欄の島の高さ（入力欄＋答えの欄＋開いているメニュー）。
+/// 開いているメニュー（`menu` > 0）は答えの欄に重ねて出す。答えの欄より高い分だけ（答えが無ければ全部）上に足す。
+fn chat_island_height(has_answer: bool, menu: f64) -> f64 {
     let answer = if has_answer {
         CHAT_GAP + CHAT_ANSWER_HEIGHT
     } else {
         0.0
     };
-    // 開いているメニューは答えの欄に重ねて出す。答えの欄より高い分だけ（答えが無ければ全部）上に足す
-    let menu = CHAT_MENU_HEIGHT.with(Cell::get);
     let menu = if menu > 0.0 { CHAT_GAP + menu } else { 0.0 };
-    (CHAT_ISLAND.0, CHAT_ISLAND.1 + answer.max(menu))
+    CHAT_ISLAND.1 + answer.max(menu)
 }
 
-/// チャット欄のメニューを開いた（高さ）・閉じた（0）。窓をその分だけ広げて置き直す（中身は描き直さない）。
+/// チャット欄のメニューを開いた（高さ）・閉じた（0）。答えの欄より高い分だけ窓を広げて置き直す（中身は描き直さない。
+/// 答えが出ている間はメニューが答えの欄に収まるので窓は変わらない）。
 /// 上限は `BUBBLE_FIT_MAX` の高さ（ページ側の誤りで窓が画面いっぱいに広がらないように）。
 pub fn set_chat_menu_height(height: f64) {
     let height = if height.is_finite() {
@@ -547,8 +559,13 @@ fn place_chat() {
     }
     if let Some(w) = window(CHAT) {
         let rect = chat_rect();
-        let _ = w.set_position(PhysicalPosition::new(rect.left, rect.top));
-        let _ = w.set_size(PhysicalSize::new(rect.width() as u32, rect.height() as u32));
+        // 同じ矩形なら触らない（答えが出ている間にメニューを開け閉めした時）。窓の大きさを変えると、WebView2 が
+        // 描き直すまでの 1 コマは前の絵が窓の左上に貼られ、上に伸ばすと会話が跳んで消えて見えた（2026-10-28 K 報告。
+        // 位置と大きさを 1 回の SetWindowPos で変えても残った＝実機の連写で確認）
+        if window_rect(&w) != Some(rect) {
+            let _ = w.set_position(PhysicalPosition::new(rect.left, rect.top));
+            let _ = w.set_size(PhysicalSize::new(rect.width() as u32, rect.height() as u32));
+        }
     }
 }
 
@@ -1652,6 +1669,22 @@ mod tests {
             origin: None,
             questions: None,
         }
+    }
+
+    /// 答えが出ている間は、どのメニュー（Edge の実測: モード 264・モデル 203・エフォート 194）を開いても窓の
+    /// 高さが変わらない（変わると WebView2 の描き直し待ちの 1 コマで会話が跳んで消えて見える。2026-10-28 K 報告）。
+    /// 答えが無い時は今までどおりメニューの分だけ伸びる。
+    #[test]
+    fn chat_menu_does_not_resize_while_answer_is_shown() {
+        let closed = chat_island_height(true, 0.0);
+        for menu in [194.0, 203.0, 264.0] {
+            assert_eq!(chat_island_height(true, menu), closed, "menu {menu}");
+        }
+        assert_eq!(
+            chat_island_height(false, 264.0),
+            CHAT_ISLAND.1 + CHAT_GAP + 264.0
+        );
+        assert_eq!(chat_island_height(false, 0.0), CHAT_ISLAND.1);
     }
 
     #[test]

@@ -93,3 +93,4 @@
 - 2026-10-20 CLAUDE.md: /init-extras の CI を必須にし、検証の原則に「GitHub Actions でも回す」を追記
 - 2026-10-20 extras/github/workflows: 起動時 env 検証向けのダミー値の注記を ci-node / ci-node-pnpm に追加
 - 2026-10-28 docs/architecture.md §6.1・§7, DESIGN.md: チャットを Claude Code と同じ環境で起こす（model/effort/権限モードの既定は設定・切替はチャット欄のメニュー・作業フォルダはホーム）。実測と常駐案は .steering/20261027-chat-same-env/brief.md (kuroko/claude-fable-5-1 ← human:K)
+- 2026-10-28 docs/architecture.md §6.1, DESIGN.md: チャット欄の答えの欄を 188→264px（一番高い切替メニューと同じ）にし、答えが出ている間はメニューを開け閉めしても窓を動かさない（会話が一瞬消えるバグ）。経緯は .steering/20261028-fix-chat-menu-blink/brief.md (kuroko/claude-opus-5-5 ← human:K)
