@@ -16,7 +16,7 @@ use std::ffi::c_void;
 use std::time::Instant;
 
 use pet_core::behavior::{AgentEvent, Behavior, BehaviorConfig, UserEvent};
-use pet_core::chat::AuthMode;
+use pet_core::chat::{AuthMode, ChatOptions};
 use pet_core::clips::{ClipKind, Player, Show, Still};
 use pet_core::geometry::{Point, Rect};
 use pet_core::ipc::WireEvent;
@@ -1258,6 +1258,12 @@ pub fn settings() -> serde_json::Value {
                     "pet": p.want.id, "pets": pets,
                     // 鍵は返さない。保存されているかだけ（N4）
                     "chatAuth": p.state.chat_auth.as_str(), "hasApiKey": crate::cred::has_key(),
+                    // チャットの既定（チャット欄のメニューはこれを起点に送信ごとに変える）と作業フォルダ
+                    "chatModel": p.state.chat_options.model.as_str(),
+                    "chatEffort": p.state.chat_options.effort.as_str(),
+                    "chatMode": p.state.chat_options.mode.as_str(),
+                    "chatDir": p.state.chat_dir,
+                    "chatDirDefault": crate::chat::home_dir().map(|h| h.to_string_lossy().into_owned()),
                 })
             })
         })
@@ -1416,16 +1422,6 @@ pub fn chat_finished(session: &'static str, ok: bool) {
     });
 }
 
-/// チャットの接続（設定）。ペットがまだ無い時は既定のサブスク。
-pub fn chat_auth() -> AuthMode {
-    PET.with(|cell| {
-        cell.try_borrow()
-            .ok()
-            .and_then(|g| g.as_ref().map(|p| p.state.chat_auth))
-    })
-    .unwrap_or(AuthMode::Subscription)
-}
-
 /// 設定画面でチャットの接続を変えて保存する。
 pub fn set_chat_auth(mode: AuthMode) {
     with_pet(move |pet| {
@@ -1433,6 +1429,46 @@ pub fn set_chat_auth(mode: AuthMode) {
             pet.state.chat_auth = mode;
             pet.state.save();
             log(format!("chat_auth -> {}", mode.as_str()));
+        }
+    });
+}
+
+/// チャットの既定のモデル・エフォート・権限モードと作業フォルダ（設定）。ペットがまだ無い時は既定。
+pub fn chat_setup() -> crate::chat::ChatSetup {
+    PET.with(|cell| {
+        cell.try_borrow().ok().and_then(|g| {
+            g.as_ref().map(|p| crate::chat::ChatSetup {
+                auth: p.state.chat_auth,
+                defaults: p.state.chat_options,
+                dir: p.state.chat_dir.clone(),
+            })
+        })
+    })
+    .unwrap_or_default()
+}
+
+/// 設定画面でチャットの既定（モデル・エフォート・権限モード）を変えて保存する。
+pub fn set_chat_options(options: ChatOptions) {
+    with_pet(move |pet| {
+        if pet.state.chat_options != options {
+            pet.state.chat_options = options;
+            pet.state.save();
+            log(format!("chat_options -> {}", options.to_json()));
+        }
+    });
+}
+
+/// 設定画面でチャットの作業フォルダを変えて保存する（None は K のホーム）。
+pub fn set_chat_dir(dir: Option<String>) {
+    with_pet(move |pet| {
+        if pet.state.chat_dir != dir {
+            // パスはログに書かない（フォルダ名に K の情報が入ることがある）。選んだかどうかだけ
+            log(format!(
+                "chat_dir -> {}",
+                if dir.is_some() { "set" } else { "home" }
+            ));
+            pet.state.chat_dir = dir;
+            pet.state.save();
         }
     });
 }

@@ -173,7 +173,7 @@ fn finish(app: AppHandle, generation: u64, outcome: Outcome) {
         Outcome::Text(text) => {
             log(format!("voice: {} 字をチャットへ", text.chars().count()));
             crate::ui::show_voice_text(&text);
-            let reply = crate::chat::submit(app, text, crate::pet_window::chat_auth());
+            let reply = crate::chat::submit(app, text, crate::pet_window::chat_setup());
             if reply != "考え中…" {
                 // 送れなかった（打ったチャットの返事を待っている・長すぎる）。聞き取った文は「送った」ように
                 // 見えないよう消し、吹き出しで知らせる（2026-10-24 検証係の指摘: 黙って送らず、文だけ出ていた）

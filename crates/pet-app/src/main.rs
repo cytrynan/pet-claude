@@ -28,6 +28,7 @@ mod log;
 mod monitors;
 mod pet_window;
 mod pets;
+mod pickdir;
 mod state;
 mod tts;
 mod ui;
@@ -116,13 +117,20 @@ fn chat_for_tests(app: tauri::AppHandle) {
             } else if let Some(text) = step.strip_prefix("send:") {
                 let (text, handle) = (text.to_string(), app.clone());
                 let _ = app.run_on_main_thread(move || {
-                    let reply = chat::submit(handle, text, pet_window::chat_auth());
+                    let reply = chat::submit(handle, text, pet_window::chat_setup());
                     log(format!("test chat: submit -> {reply}"));
                 });
             } else if let Some(on) = step.strip_prefix("tts:") {
                 // 設定画面の「声で知らせる」と同じ関数（話している途中でオフにして止まるかの試験。V4）
                 tts::set_enabled(on == "on");
                 log(format!("test chat: tts -> {on}"));
+            } else if let Some(opt) = step.strip_prefix("opt:") {
+                // チャット欄のメニューと同じ関数（`opt:<model>,<effort>,<mode>`。空は変えない）
+                let v: Vec<&str> = opt.split(',').collect();
+                let pick = |i: usize| v.get(i).copied().filter(|s| !s.is_empty());
+                let got =
+                    chat::set_options(pet_window::chat_setup().defaults, pick(0), pick(1), pick(2));
+                log(format!("test chat: opt -> {}", got.to_json()));
             } else if step == "new" {
                 let _ = app.run_on_main_thread(ui::new_chat);
             } else if step == "auth" {
@@ -149,7 +157,7 @@ fn ui_action(action: String) {
 #[tauri::command]
 fn chat_submit(app: tauri::AppHandle, text: String) -> String {
     ui::clear_voice_text();
-    chat::submit(app, text, pet_window::chat_auth())
+    chat::submit(app, text, pet_window::chat_setup())
 }
 
 /// チャット欄が読み込み時に聞く（最後の答えと待ち中か）
@@ -162,6 +170,67 @@ fn chat_state() -> serde_json::Value {
 #[tauri::command]
 fn chat_auth_set(mode: String) {
     pet_window::set_chat_auth(pet_core::chat::AuthMode::from_state(Some(&mode)));
+}
+
+/// 設定画面: チャットの既定のモデル・エフォート・権限モード（知らない値は既定に倒れる）
+#[tauri::command]
+fn chat_defaults_set(model: String, effort: String, mode: String) {
+    pet_window::set_chat_options(pet_core::chat::ChatOptions::from_state(
+        Some(&model),
+        Some(&effort),
+        Some(&mode),
+    ));
+}
+
+/// 設定画面: チャットの作業フォルダ（空は K のホーム）。フォルダとして在る時だけ保存し、保存した値を返す
+/// （無ければ null＝画面は既定の表示に戻す）
+#[tauri::command]
+fn chat_dir_set(dir: String) -> Option<String> {
+    let dir = dir.trim().to_string();
+    if dir.is_empty() {
+        pet_window::set_chat_dir(None);
+        return None;
+    }
+    if !std::path::Path::new(&dir).is_dir() {
+        return None;
+    }
+    pet_window::set_chat_dir(Some(dir.clone()));
+    Some(dir)
+}
+
+/// 設定画面: フォルダを選ぶダイアログ（Windows の共通ダイアログ）。選ばなければ null。
+/// ダイアログは閉じるまで戻らないので別スレッドで
+#[tauri::command]
+async fn chat_dir_pick(window: tauri::Window) -> Option<String> {
+    let owner = window.hwnd().ok().map(|h| h.0 as isize);
+    tauri::async_runtime::spawn_blocking(move || pickdir::pick_folder("作業フォルダを選ぶ", owner))
+        .await
+        .ok()
+        .flatten()
+        .map(|p| p.to_string_lossy().into_owned())
+}
+
+/// チャット欄のメニュー: このチャットの間のモデル・エフォート・権限モード（null の項目は変えない）。
+/// 戻り値は効いている値 `{model, effort, mode}`
+#[tauri::command]
+fn chat_options_set(
+    model: Option<String>,
+    effort: Option<String>,
+    mode: Option<String>,
+) -> serde_json::Value {
+    chat::set_options(
+        pet_window::chat_setup().defaults,
+        model.as_deref(),
+        effort.as_deref(),
+        mode.as_deref(),
+    )
+    .to_json()
+}
+
+/// チャット欄のメニューを開いた・閉じた（高さ。0 で閉じた）。窓をメニューの分だけ広げる
+#[tauri::command]
+fn chat_menu(height: f64) {
+    ui::set_chat_menu_height(height);
 }
 
 /// 設定画面: API キーを資格情報マネージャーに保存する。保存できたら true（鍵はログにも戻り値にも出さない）
@@ -348,6 +417,11 @@ fn main() {
             chat_submit,
             chat_state,
             chat_auth_set,
+            chat_defaults_set,
+            chat_dir_set,
+            chat_dir_pick,
+            chat_options_set,
+            chat_menu,
             chat_key_save,
             chat_key_delete,
             chat_auth_check,

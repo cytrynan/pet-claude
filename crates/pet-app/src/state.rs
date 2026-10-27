@@ -3,7 +3,7 @@
 
 use std::fs;
 
-use pet_core::chat::AuthMode;
+use pet_core::chat::{AuthMode, ChatOptions};
 use pet_core::placement::PositionStore;
 use serde_json::{Value, json};
 
@@ -30,6 +30,11 @@ pub struct AppState {
     pub pet: Option<String>,
     /// チャットの接続（K 決定 2026-10-21: 既定はサブスク）。API キーそのものは資格情報マネージャー（cred.rs）
     pub chat_auth: AuthMode,
+    /// チャットの既定のモデル・エフォート・権限モード（K 指示 2026-10-27。既定は Fable 5.1・高・自動＝
+    /// Claude デスクトップアプリと同じ）。チャット欄のメニューで送信ごとに変えた値はここに書かない
+    pub chat_options: ChatOptions,
+    /// チャットの作業フォルダ。None は K のホーム（`pet_core::chat::work_dir`）
+    pub chat_dir: Option<String>,
 }
 
 impl Default for AppState {
@@ -43,6 +48,8 @@ impl Default for AppState {
             ask: true,
             pet: None,
             chat_auth: AuthMode::Subscription,
+            chat_options: ChatOptions::default(),
+            chat_dir: None,
         }
     }
 }
@@ -73,6 +80,18 @@ impl AppState {
             pet: v["pet"].as_str().map(str::to_string),
             // 無い・知らない値はサブスク（from_state の規則）
             chat_auth: AuthMode::from_state(v["chat_auth"].as_str()),
+            // 無い・知らない値は既定（Fable・高・自動）
+            chat_options: ChatOptions::from_state(
+                v["chat_model"].as_str(),
+                v["chat_effort"].as_str(),
+                v["chat_mode"].as_str(),
+            ),
+            // 空文字は「選んでいない」と同じ
+            chat_dir: v["chat_dir"]
+                .as_str()
+                .map(str::trim)
+                .filter(|d| !d.is_empty())
+                .map(str::to_string),
         }
     }
 
@@ -89,6 +108,10 @@ impl AppState {
             "ask": self.ask,
             "pet": self.pet,
             "chat_auth": self.chat_auth.as_str(),
+            "chat_model": self.chat_options.model.as_str(),
+            "chat_effort": self.chat_options.effort.as_str(),
+            "chat_mode": self.chat_options.mode.as_str(),
+            "chat_dir": self.chat_dir,
         });
         let tmp = dir.join("state.json.tmp");
         let ok = fs::write(&tmp, serde_json::to_vec_pretty(&body).unwrap_or_default())

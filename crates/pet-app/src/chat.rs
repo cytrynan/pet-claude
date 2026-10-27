@@ -14,7 +14,7 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use pet_core::chat::{self as core_chat, AuthMode, ChatOutcome};
+use pet_core::chat::{self as core_chat, AuthMode, ChatOptions, ChatOutcome};
 use tauri::AppHandle;
 
 use crate::child::{ChildOutput, ChildRun, Input, Stop, run_child, terminate_job, test_overrides};
@@ -23,11 +23,12 @@ use crate::log::{data_dir, log};
 /// 子を起こせなかった時の一言。
 const START_FAILED: &str = "Claude Code を起こせませんでした";
 
-/// ペットとしての話し方（Claude Code 既定のコーディング用の指示を丸ごと置き換える。設計 §2）。
+/// ペットとしての話し方。Claude Code の既定の system prompt に `--append-system-prompt-file` で足す
+/// （置き換えない。ツール・K の設定はそのまま使えるので、「道具が無い」とは言わせない。K 指示 2026-10-27）。
 const SYSTEM_PROMPT: &str = "あなたは Windows のデスクトップにいる小さなペットです。持ち主と気軽に話します。\n\
-日本語で、短く（目安 2〜3 文）答えてください。\n\
-コード・コマンド・URL・ファイルのパスは書かないでください（吹き出しに出すため）。\n\
-ファイルを読んだり、コマンドを実行したり、Web を調べたりする道具は持っていません。頼まれたら、できないと短く伝えてください。";
+日本語で、短く（目安 2〜3 文）答えてください。答えの要点は最初の 1〜2 文に入れてください（吹き出しに出すため）。\n\
+道具（ファイルを読む・コマンドを実行する・Web を調べる）は Claude Code と同じように使えます。頼まれたら使い、\
+結果は短くまとめてください。";
 
 /// 「確かめる」（`claude auth status`）の時間切れ。普段は 1 秒ほどで返る。
 const AUTH_STATUS_TIMEOUT: Duration = Duration::from_secs(15);
@@ -44,9 +45,58 @@ static GENERATION: AtomicU64 = AtomicU64::new(0);
 static RUNNING: Mutex<Option<(u64, isize)>> = Mutex::new(None);
 /// 会話の続きに使う `session_id`（`--resume`）。「新しいチャット」で消す。
 static SESSION: Mutex<Option<String>> = Mutex::new(None);
+/// チャット欄のメニューで、このチャットの間だけ変えたモデル・エフォート・権限モード。None は設定の既定。
+/// 「新しいチャット」で消す（既定に戻る）。次の送信から効く（`--resume` 中でも引数は送信ごとに組む）
+static OVERRIDE: Mutex<Option<ChatOptions>> = Mutex::new(None);
+
+/// 1 回の送信に要る設定（`pet_window::chat_setup` が state から組む）。
+#[derive(Debug, Clone, Default)]
+pub struct ChatSetup {
+    /// 接続（サブスク・API キー）
+    pub auth: AuthMode,
+    /// 設定画面の既定（チャット欄のメニューの値があればそちらが勝つ）
+    pub defaults: ChatOptions,
+    /// 設定画面で選んだ作業フォルダ（None は K のホーム）
+    pub dir: Option<String>,
+}
+
+/// いま効いているモデル・エフォート・権限モード（メニューの値があればそれ、無ければ設定の既定）。
+pub fn options(defaults: ChatOptions) -> ChatOptions {
+    OVERRIDE.lock().ok().and_then(|o| *o).unwrap_or(defaults)
+}
+
+/// チャット欄のメニューで選んだ値をこのチャットに効かせる（`None` の項目は変えない）。戻り値は効いている値。
+/// 待ち中（子が走っている）に変えてもその送信には効かず、次の送信から（引数は起こす時に組んでいるため）。
+pub fn set_options(
+    defaults: ChatOptions,
+    model: Option<&str>,
+    effort: Option<&str>,
+    mode: Option<&str>,
+) -> ChatOptions {
+    let next = options(defaults).with(model, effort, mode);
+    if let Ok(mut o) = OVERRIDE.lock() {
+        *o = Some(next);
+    }
+    log(format!("chat options -> {}", next.to_json()));
+    next
+}
+
+/// K のホーム（`%USERPROFILE%`）。作業フォルダの既定。
+pub fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("USERPROFILE").map(PathBuf::from)
+}
+
+/// 子プロセスの作業フォルダ。設定で選んだフォルダ → K のホーム → データフォルダの中の空のフォルダ、の順
+/// （`pet_core::chat::work_dir`）。試験（`PET_CLAUDE_DATA_DIR` 指定のデバッグビルド）では、偽の claude が
+/// K のホームに書かないよう、設定が無ければデータフォルダの中を使う。
+pub fn work_dir(configured: Option<&str>) -> PathBuf {
+    let fallback = data_dir().join("chat").join("work");
+    let home = if test_overrides() { None } else { home_dir() };
+    core_chat::work_dir(configured, home.as_deref(), &fallback, &|p| p.is_dir())
+}
 
 /// チャット欄の送信。待たずに戻り、答えは後で吹き出しとチャット欄に出す。戻り値は入力欄に出す一言。
-pub fn submit(app: AppHandle, text: String, auth: AuthMode) -> String {
+pub fn submit(app: AppHandle, text: String, setup: ChatSetup) -> String {
     // 長さの上限はここでも見る（入力欄の maxlength だけでは invoke を直接呼ぶ経路を止められない）
     let Some(text) = core_chat::input_text(&text) else {
         return if text.trim().is_empty() {
@@ -68,10 +118,16 @@ pub fn submit(app: AppHandle, text: String, auth: AuthMode) -> String {
         generation
     };
     let resume = SESSION.lock().ok().and_then(|s| s.clone());
+    let auth = setup.auth;
+    let options = options(setup.defaults);
+    let dir = setup.dir;
     log(format!(
-        "chat send ({} 字, auth={}, resume={})",
+        "chat send ({} 字, auth={}, model={}, effort={}, mode={}, resume={})",
         text.chars().count(),
         auth.as_str(),
+        options.model.as_str(),
+        options.effort.as_str(),
+        options.mode.as_str(),
         resume.is_some()
     ));
     crate::pet_window::chat_thinking(BEHAVIOR_SESSION);
@@ -84,7 +140,14 @@ pub fn submit(app: AppHandle, text: String, auth: AuthMode) -> String {
             // panic しても finish に失敗を渡す（渡さないと予約が外れず、以後ずっと「考え中」になる。
             // Job は JobGuard が巻き戻りで閉じるので子も止まる。2026-10-21 検証係 2 巡目の指摘）
             let outcome = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                run(generation, &text, auth, resume.as_deref())
+                run(
+                    generation,
+                    &text,
+                    auth,
+                    options,
+                    dir.as_deref(),
+                    resume.as_deref(),
+                )
             }))
             .unwrap_or_else(|_| {
                 log("chat: worker panicked");
@@ -116,6 +179,10 @@ pub fn new_chat() {
     GENERATION.fetch_add(1, Ordering::SeqCst);
     if let Ok(mut s) = SESSION.lock() {
         *s = None;
+    }
+    // メニューで変えた値も捨てる（次のチャットは設定の既定から）
+    if let Ok(mut o) = OVERRIDE.lock() {
+        *o = None;
     }
     // 止めた時は作業中の動きを終わらせる（行動ロジックに「止めた」は無いので Done＝小さく跳ねる）
     if cancel_running() {
@@ -195,7 +262,14 @@ fn failed(reason: &str) -> ChatOutcome {
 }
 
 /// チャットの子プロセスを起こして答えを待つ（チャットのスレッドで走る）。
-fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> ChatOutcome {
+fn run(
+    generation: u64,
+    text: &str,
+    auth: AuthMode,
+    options: ChatOptions,
+    dir: Option<&str>,
+    resume: Option<&str>,
+) -> ChatOutcome {
     let Some(exe) = claude_exe() else {
         return failed("Claude Code が見つかりません");
     };
@@ -207,12 +281,15 @@ fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> Cha
     let Ok(env) = core_chat::child_env(auth, &parent, key.as_deref()) else {
         return failed("API キーが保存されていません（設定で入れてください）");
     };
-    let dir = data_dir().join("chat");
-    let work = dir.join("work");
-    let prompt_file = dir.join("system-prompt.txt");
-    if std::fs::create_dir_all(&work).is_err()
+    let prompt_file = data_dir().join("chat").join("system-prompt.txt");
+    if std::fs::create_dir_all(data_dir().join("chat")).is_err()
         || std::fs::write(&prompt_file, SYSTEM_PROMPT).is_err()
     {
+        return failed("話し方の指示を書けません");
+    }
+    // 作業フォルダは起こす直前に決める（設定のフォルダが消えていればホームに戻る）。無ければ作る
+    let work = work_dir(dir);
+    if std::fs::create_dir_all(&work).is_err() {
         return failed("作業フォルダを作れません");
     }
     let ours = move || {
@@ -241,7 +318,7 @@ fn run(generation: u64, text: &str, auth: AuthMode, resume: Option<&str>) -> Cha
         tag: "chat",
         start_failed: START_FAILED,
         exe,
-        args: core_chat::child_args(&prompt_file.to_string_lossy(), resume),
+        args: core_chat::child_args(&prompt_file.to_string_lossy(), resume, options),
         env,
         cwd: work,
         input: Input::Now(text.as_bytes().to_vec()),
@@ -334,7 +411,8 @@ pub fn auth_status(auth: AuthMode) -> String {
     let Ok(env) = core_chat::child_env(auth, &parent, key.as_deref()) else {
         return "API キーが保存されていません".into();
     };
-    let work = data_dir().join("chat").join("work");
+    // 作業フォルダはチャットと同じ既定（ホーム）。接続の確認なので設定のフォルダは要らない
+    let work = work_dir(None);
     if std::fs::create_dir_all(&work).is_err() {
         return "確かめられませんでした".into();
     }

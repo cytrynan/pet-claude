@@ -4,7 +4,8 @@
 //! 整形、実行ファイルの探索を持つ。OS にもファイルにもネットワークにも触らない（ファイルの有無は
 //! 引数の関数で受け取る）。答えもエラーの文も外（モデル・CLI）から来る信頼できないデータなので、
 //! どの経路でも panic しない。
-//! 仕様の正本は `.steering/20261021-phase3-chat/core-requirements.md`。
+//! 仕様の正本は `.steering/20261021-phase3-chat/core-requirements.md`（同じ環境で起こす変更は
+//! `.steering/20261027-chat-same-env/brief.md`）。
 
 use std::path::{Path, PathBuf};
 
@@ -12,8 +13,9 @@ use serde_json::Value;
 
 use crate::hook::sanitize_line;
 
-/// 子プロセスに使うモデル。
-pub const MODEL: &str = "sonnet";
+/// 子プロセスに渡す設定の読み込み元（`--setting-sources`）。Claude Code の対話と同じく、K のユーザー設定・
+/// 作業フォルダのプロジェクト設定・ローカル設定をすべて読む（K 指示 2026-10-27「Claude Code と全く同じ環境に」）。
+pub const SETTING_SOURCES: &str = "user,project,local";
 
 /// 子プロセスを待つ最大の秒数。
 pub const TIMEOUT_SECS: u64 = 120;
@@ -47,9 +49,10 @@ const MASK: &str = "••••";
 const SECRET_RUN_MIN: usize = 32;
 
 /// 子プロセスの認証の方式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AuthMode {
     /// Claude のサブスク（既定）。
+    #[default]
     Subscription,
     /// Anthropic の API キー（従量課金）。
     ApiKey,
@@ -113,32 +116,203 @@ pub fn is_session_id(s: &str) -> bool {
         })
 }
 
+/// 子プロセスのモデル。値は Claude Code の alias（`claude -p --model <alias>` 2.1.305 で 4 つとも通り、
+/// `modelUsage` に claude-opus-5-5 / claude-fable-5-1 / claude-sonnet-5-5 / claude-haiku-5-5 が出ることを
+/// 2026-10-27 に確かめた）。`state.json` にも同じ文字列で持つ。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Model {
+    Opus,
+    /// 既定（Claude デスクトップアプリの既定と同じ。K 指示 2026-10-27）。
+    #[default]
+    Fable,
+    Sonnet,
+    Haiku,
+}
+
+impl Model {
+    /// 設定画面・チャット欄のメニューと同じ並び（番号 1〜4）。
+    pub const ALL: [Model; 4] = [Model::Opus, Model::Fable, Model::Sonnet, Model::Haiku];
+
+    /// 保存した状態の文字列から戻す。無い・知らない値は既定（Fable）。
+    pub fn from_state(v: Option<&str>) -> Model {
+        Model::ALL
+            .into_iter()
+            .find(|m| Some(m.as_str()) == v)
+            .unwrap_or_default()
+    }
+
+    /// 状態に保存する文字列＝`--model` に渡す alias。`from_state` と往復できる。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Model::Opus => "opus",
+            Model::Fable => "fable",
+            Model::Sonnet => "sonnet",
+            Model::Haiku => "haiku",
+        }
+    }
+}
+
+/// 子プロセスの思考の深さ（`--effort`。`claude --help` 2.1.305 の choices）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Effort {
+    Low,
+    Medium,
+    /// 既定（Claude デスクトップアプリの既定「高」と同じ）。
+    #[default]
+    High,
+    XHigh,
+    Max,
+}
+
+impl Effort {
+    /// メニューの並び（低・中・高・最高・最大）。
+    pub const ALL: [Effort; 5] = [
+        Effort::Low,
+        Effort::Medium,
+        Effort::High,
+        Effort::XHigh,
+        Effort::Max,
+    ];
+
+    /// 保存した状態の文字列から戻す。無い・知らない値は既定（High）。
+    pub fn from_state(v: Option<&str>) -> Effort {
+        Effort::ALL
+            .into_iter()
+            .find(|e| Some(e.as_str()) == v)
+            .unwrap_or_default()
+    }
+
+    /// 状態に保存する文字列＝`--effort` の値。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Effort::Low => "low",
+            Effort::Medium => "medium",
+            Effort::High => "high",
+            Effort::XHigh => "xhigh",
+            Effort::Max => "max",
+        }
+    }
+}
+
+/// 子プロセスの権限モード（`--permission-mode`。`claude --help` 2.1.305 の choices のうち、Claude デスクトップ
+/// アプリの入力欄が出す 5 つ。`dontAsk` は出さない）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PermissionMode {
+    /// 既定（Claude が権限の決定を処理する）。
+    #[default]
+    Auto,
+    Manual,
+    AcceptEdits,
+    Plan,
+    BypassPermissions,
+}
+
+impl PermissionMode {
+    /// メニューの並び（自動・手動・編集を受け入れる・プラン・権限をバイパス＝番号 1〜5）。
+    pub const ALL: [PermissionMode; 5] = [
+        PermissionMode::Auto,
+        PermissionMode::Manual,
+        PermissionMode::AcceptEdits,
+        PermissionMode::Plan,
+        PermissionMode::BypassPermissions,
+    ];
+
+    /// 保存した状態の文字列から戻す。無い・知らない値は既定（Auto）。
+    /// `bypassPermissions` のような広い権限に、壊れた値で倒れないための規則。
+    pub fn from_state(v: Option<&str>) -> PermissionMode {
+        PermissionMode::ALL
+            .into_iter()
+            .find(|m| Some(m.as_str()) == v)
+            .unwrap_or_default()
+    }
+
+    /// 状態に保存する文字列＝`--permission-mode` の値（CLI の綴りそのまま）。
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PermissionMode::Auto => "auto",
+            PermissionMode::Manual => "manual",
+            PermissionMode::AcceptEdits => "acceptEdits",
+            PermissionMode::Plan => "plan",
+            PermissionMode::BypassPermissions => "bypassPermissions",
+        }
+    }
+}
+
+/// 1 回の送信に使うモデル・エフォート・権限モード。設定画面の値が既定で、チャット欄のメニューで
+/// そのチャットの間だけ変えられる（「新しいチャット」で既定に戻る）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct ChatOptions {
+    pub model: Model,
+    pub effort: Effort,
+    pub mode: PermissionMode,
+}
+
+impl ChatOptions {
+    /// 保存した状態の 3 つの文字列から組む（それぞれ無い・知らない値は既定）。
+    pub fn from_state(
+        model: Option<&str>,
+        effort: Option<&str>,
+        mode: Option<&str>,
+    ) -> ChatOptions {
+        ChatOptions {
+            model: Model::from_state(model),
+            effort: Effort::from_state(effort),
+            mode: PermissionMode::from_state(mode),
+        }
+    }
+
+    /// 画面（チャット欄・設定）とやり取りする JSON（`{"model","effort","mode"}`。値は `as_str`）。
+    pub fn to_json(self) -> Value {
+        serde_json::json!({
+            "model": self.model.as_str(),
+            "effort": self.effort.as_str(),
+            "mode": self.mode.as_str(),
+        })
+    }
+
+    /// 画面から来た部分的な変更（`None` は変えない）を当てた新しい値。知らない値は既定に倒れる
+    /// （`from_state` と同じ規則。画面の値も外から来たものとして扱う）。
+    pub fn with(
+        &self,
+        model: Option<&str>,
+        effort: Option<&str>,
+        mode: Option<&str>,
+    ) -> ChatOptions {
+        ChatOptions {
+            model: model.map_or(self.model, |m| Model::from_state(Some(m))),
+            effort: effort.map_or(self.effort, |e| Effort::from_state(Some(e))),
+            mode: mode.map_or(self.mode, |m| PermissionMode::from_state(Some(m))),
+        }
+    }
+}
+
 /// 子プロセス（`claude`）に渡す引数。本文（ユーザーの文）は標準入力で渡すので含めない。
 ///
-/// 組み込みツール・MCP・フック・スラッシュコマンドをすべて外し、1 ターンで答えさせる。
+/// Claude Code の対話セッションと同じ環境で起こす（K 指示 2026-10-27）: ツール・MCP・hooks・スラッシュ
+/// コマンド・ターン数は制限せず、設定は `--setting-sources user,project,local` で K のものを全部読み、
+/// ペットの話し方は `--append-system-prompt-file` で既定の system prompt に足す（置き換えない）。
+/// `--permission-prompts none` は `-p` では対話の承認が出せないため（出せるものが無い時は拒否に倒す）。
 /// `resume` は `is_session_id` を満たす時だけ末尾に付ける（満たさなければ新しい会話にする）。
-pub fn child_args(system_prompt_file: &str, resume: Option<&str>) -> Vec<String> {
+pub fn child_args(
+    system_prompt_file: &str,
+    resume: Option<&str>,
+    options: ChatOptions,
+) -> Vec<String> {
     let mut args: Vec<String> = [
         "-p",
         "--output-format",
         "json",
-        "--safe-mode",
         "--model",
-        MODEL,
-        // 空文字 1 つで組み込みツールを全部外す
-        "--tools",
-        "",
-        "--disallowedTools",
-        "mcp__*",
-        "--strict-mcp-config",
-        "--settings",
-        r#"{"disableAllHooks":true}"#,
-        "--disable-slash-commands",
+        options.model.as_str(),
+        "--effort",
+        options.effort.as_str(),
+        "--permission-mode",
+        options.mode.as_str(),
         "--permission-prompts",
         "none",
-        "--max-turns",
-        "1",
-        "--system-prompt-file",
+        "--setting-sources",
+        SETTING_SOURCES,
+        "--append-system-prompt-file",
     ]
     .iter()
     .map(|s| (*s).to_string())
@@ -149,6 +323,29 @@ pub fn child_args(system_prompt_file: &str, resume: Option<&str>) -> Vec<String>
         args.push(id.to_string());
     }
     args
+}
+
+/// 子プロセスの作業フォルダ。
+///
+/// 設定で選んだフォルダ（`configured`。前後の空白を落とす）がフォルダとして在ればそれ、無い・消えた・
+/// 選んでいなければ K のホーム（`home`。既定＝「この PC・K のホーム」K 指示 2026-10-27）、ホームも
+/// 無ければ `fallback`（アプリのデータフォルダの中の空のフォルダ）。フォルダの有無は引数の関数で受け取る。
+pub fn work_dir(
+    configured: Option<&str>,
+    home: Option<&Path>,
+    fallback: &Path,
+    is_dir: &dyn Fn(&Path) -> bool,
+) -> PathBuf {
+    if let Some(c) = configured.map(str::trim).filter(|c| !c.is_empty()) {
+        let p = PathBuf::from(c);
+        if is_dir(&p) {
+            return p;
+        }
+    }
+    if let Some(h) = home.filter(|h| is_dir(h)) {
+        return h.to_path_buf();
+    }
+    fallback.to_path_buf()
 }
 
 /// 子プロセスに渡さない環境変数の名前。

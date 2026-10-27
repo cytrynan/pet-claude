@@ -7,10 +7,11 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use pet_core::chat::{
-    AuthMode, BUBBLE_HIDDEN, BUBBLE_MAX_CHARS, CREDENTIAL_TARGET, ChatError, ChatOutcome,
-    FAILURE_MAX_CHARS, MAX_INPUT_CHARS, MODEL, PANEL_MAX_CHARS, TIMEOUT_SECS, auth_status_label,
-    bubble_text, child_args, child_env, find_claude, input_text, is_session_id, mask_secrets,
-    panel_text, parse_output,
+    AuthMode, BUBBLE_HIDDEN, BUBBLE_MAX_CHARS, CREDENTIAL_TARGET, ChatError, ChatOptions,
+    ChatOutcome, Effort, FAILURE_MAX_CHARS, MAX_INPUT_CHARS, Model, PANEL_MAX_CHARS,
+    PermissionMode, SETTING_SOURCES, TIMEOUT_SECS, auth_status_label, bubble_text, child_args,
+    child_env, find_claude, input_text, is_session_id, mask_secrets, panel_text, parse_output,
+    work_dir,
 };
 use serde_json::{Value, json};
 
@@ -79,7 +80,8 @@ fn find(dirs: &[PathBuf], home: Option<&Path>, existing: &HashSet<PathBuf>) -> O
 // 要件 §識別子契約: 定数の値
 #[test]
 fn constants_have_contract_values() {
-    assert_eq!(MODEL, "sonnet");
+    // 同じ環境（2026-10-27）: モデルは定数でなく設定（既定 Fable）。設定の読み込み元は 3 つ全部
+    assert_eq!(SETTING_SOURCES, "user,project,local");
     assert_eq!(TIMEOUT_SECS, 120);
     assert_eq!(BUBBLE_MAX_CHARS, 140);
     assert_eq!(PANEL_MAX_CHARS, 4000);
@@ -199,30 +201,30 @@ fn session_id_rejects_non_hex() {
 }
 
 // ---------------------------------------------------------------------------
-// 3. child_args
+// 3. child_args（同じ環境で起こす。brief 2026-10-27 §1）
 // ---------------------------------------------------------------------------
 
+/// 既定（Fable・高・自動）での引数の並び。`--append-system-prompt-file <file>` が最後。
 fn base_args(file: &str) -> Vec<String> {
+    args_with(file, "fable", "high", "auto")
+}
+
+fn args_with(file: &str, model: &str, effort: &str, mode: &str) -> Vec<String> {
     [
         "-p",
         "--output-format",
         "json",
-        "--safe-mode",
         "--model",
-        "sonnet",
-        "--tools",
-        "",
-        "--disallowedTools",
-        "mcp__*",
-        "--strict-mcp-config",
-        "--settings",
-        r#"{"disableAllHooks":true}"#,
-        "--disable-slash-commands",
+        model,
+        "--effort",
+        effort,
+        "--permission-mode",
+        mode,
         "--permission-prompts",
         "none",
-        "--max-turns",
-        "1",
-        "--system-prompt-file",
+        "--setting-sources",
+        "user,project,local",
+        "--append-system-prompt-file",
         file,
     ]
     .iter()
@@ -230,33 +232,53 @@ fn base_args(file: &str) -> Vec<String> {
     .collect()
 }
 
-// 要件 §3: resume なしの並びが完全一致（--tools の次は空文字の要素 1 つ）
+// brief §1: resume なし・既定の並びが完全一致
 #[test]
 fn child_args_without_resume_exact() {
     let file = r"C:\pet\system.md";
-    let got = child_args(file, None);
+    let got = child_args(file, None, ChatOptions::default());
     assert_eq!(got, base_args(file));
-    let i = got.iter().position(|a| a == "--tools").unwrap();
-    assert_eq!(got[i + 1], "");
     assert!(!got.iter().any(|a| a == "--resume"));
 }
 
-// 要件 §3: 有効な id なら末尾に --resume <id> の 2 要素
+// brief §1: 外した引数が無い（制限していた物は全部外す。system prompt は置き換えでなく追加）
+#[test]
+fn child_args_drops_restrictions() {
+    let got = child_args(r"C:\pet\system.md", None, ChatOptions::default());
+    for gone in [
+        "--safe-mode",
+        "--tools",
+        "--disallowedTools",
+        "--strict-mcp-config",
+        "--settings",
+        "--disable-slash-commands",
+        "--max-turns",
+        "--system-prompt-file",
+    ] {
+        assert!(!got.iter().any(|a| a == gone), "{gone} は外れているべき");
+    }
+    assert!(!got.iter().any(|a| a.is_empty()), "空の引数は無い");
+}
+
+// brief §1: 有効な id なら末尾に --resume <id> の 2 要素
 #[test]
 fn child_args_with_valid_resume_appends_two() {
     let file = r"C:\pet\system.md";
     let mut want = base_args(file);
     want.push(st("--resume"));
     want.push(st(SID));
-    assert_eq!(child_args(file, Some(SID)), want);
+    assert_eq!(child_args(file, Some(SID), ChatOptions::default()), want);
 
     let mut want_upper = base_args(file);
     want_upper.push(st("--resume"));
     want_upper.push(st(SID_UPPER));
-    assert_eq!(child_args(file, Some(SID_UPPER)), want_upper);
+    assert_eq!(
+        child_args(file, Some(SID_UPPER), ChatOptions::default()),
+        want_upper
+    );
 }
 
-// 要件 §3: is_session_id を満たさない resume は付けない（外から来た値を引数に混ぜない）
+// brief §1: is_session_id を満たさない resume は付けない（外から来た値を引数に混ぜない）
 #[test]
 fn child_args_ignores_invalid_resume() {
     let file = r"C:\pet\system.md";
@@ -268,23 +290,253 @@ fn child_args_ignores_invalid_resume() {
         &format!("{SID} --tools Bash"),
         &SID[..35],
     ] {
-        let got = child_args(file, Some(bad));
+        let got = child_args(file, Some(bad), ChatOptions::default());
         assert_eq!(got, base_args(file), "resume={bad:?} は無視されるべき");
     }
 }
 
-// 要件 §3: 空白を含む system_prompt_file は 1 要素のまま
+// brief §1: 空白を含む system_prompt_file は 1 要素のまま
 #[test]
 fn child_args_keeps_spaced_path_as_one_element() {
     let file = r"C:\Users\K San\AppData\Roaming\pet claude\system prompt.md";
-    let got = child_args(file, None);
-    assert_eq!(got.len(), 20);
+    let got = child_args(file, None, ChatOptions::default());
+    assert_eq!(got.len(), 15);
     assert_eq!(got.last().unwrap(), file);
     let i = got
         .iter()
-        .position(|a| a == "--system-prompt-file")
+        .position(|a| a == "--append-system-prompt-file")
         .unwrap();
     assert_eq!(got[i + 1], file);
+}
+
+// brief §1: モデル・エフォート・権限モードはそれぞれ as_str の値で、同じ位置に入る
+#[test]
+fn child_args_carries_every_option_combination() {
+    let file = r"C:\pet\system.md";
+    for m in Model::ALL {
+        for e in Effort::ALL {
+            for p in PermissionMode::ALL {
+                let o = ChatOptions {
+                    model: m,
+                    effort: e,
+                    mode: p,
+                };
+                let got = child_args(file, Some(SID), o);
+                let mut want = args_with(file, m.as_str(), e.as_str(), p.as_str());
+                want.push(st("--resume"));
+                want.push(st(SID));
+                assert_eq!(got, want, "{o:?}");
+            }
+        }
+    }
+}
+
+// brief §1: 引数の値は CLI の綴り（claude --help 2.1.305 の choices）そのもの
+#[test]
+fn child_args_values_are_cli_spellings() {
+    let got = child_args(
+        "f",
+        None,
+        ChatOptions {
+            model: Model::Haiku,
+            effort: Effort::XHigh,
+            mode: PermissionMode::BypassPermissions,
+        },
+    );
+    let after = |flag: &str| got[got.iter().position(|a| a == flag).unwrap() + 1].clone();
+    assert_eq!(after("--model"), "haiku");
+    assert_eq!(after("--effort"), "xhigh");
+    assert_eq!(after("--permission-mode"), "bypassPermissions");
+    assert_eq!(after("--permission-prompts"), "none");
+    assert_eq!(after("--setting-sources"), SETTING_SOURCES);
+}
+
+// ---------------------------------------------------------------------------
+// 3b. Model / Effort / PermissionMode / ChatOptions（brief 2026-10-27 §2）
+// ---------------------------------------------------------------------------
+
+// brief §2: 既定は Fable・高・自動（Claude デスクトップアプリと同じ）
+#[test]
+fn options_default_is_fable_high_auto() {
+    let d = ChatOptions::default();
+    assert_eq!(d.model, Model::Fable);
+    assert_eq!(d.effort, Effort::High);
+    assert_eq!(d.mode, PermissionMode::Auto);
+    assert_eq!(Model::default(), Model::Fable);
+    assert_eq!(Effort::default(), Effort::High);
+    assert_eq!(PermissionMode::default(), PermissionMode::Auto);
+}
+
+// brief §2: as_str は CLI の alias / choices。from_state と往復する
+#[test]
+fn options_as_str_round_trip() {
+    assert_eq!(
+        Model::ALL.map(|m| m.as_str()),
+        ["opus", "fable", "sonnet", "haiku"]
+    );
+    assert_eq!(
+        Effort::ALL.map(|e| e.as_str()),
+        ["low", "medium", "high", "xhigh", "max"]
+    );
+    assert_eq!(
+        PermissionMode::ALL.map(|m| m.as_str()),
+        ["auto", "manual", "acceptEdits", "plan", "bypassPermissions"]
+    );
+    for m in Model::ALL {
+        assert_eq!(Model::from_state(Some(m.as_str())), m);
+    }
+    for e in Effort::ALL {
+        assert_eq!(Effort::from_state(Some(e.as_str())), e);
+    }
+    for p in PermissionMode::ALL {
+        assert_eq!(PermissionMode::from_state(Some(p.as_str())), p);
+    }
+}
+
+// brief §2: 無い・知らない値・大文字違い・前後空白は既定（広い権限に壊れた値で倒れない）
+#[test]
+fn options_unknown_values_fall_back_to_default() {
+    assert_eq!(Model::from_state(None), Model::Fable);
+    assert_eq!(Effort::from_state(None), Effort::High);
+    assert_eq!(PermissionMode::from_state(None), PermissionMode::Auto);
+    for v in [
+        "",
+        "Opus",
+        "OPUS",
+        " opus",
+        "opus ",
+        "claude-opus-5-5",
+        "sonnet-4",
+        "unknown",
+        "bypasspermissions",
+        "BypassPermissions",
+        "dontAsk",
+        "MAX",
+        "x-high",
+    ] {
+        assert_eq!(Model::from_state(Some(v)), Model::Fable, "{v:?}");
+        assert_eq!(Effort::from_state(Some(v)), Effort::High, "{v:?}");
+        assert_eq!(
+            PermissionMode::from_state(Some(v)),
+            PermissionMode::Auto,
+            "{v:?}"
+        );
+    }
+    // dontAsk は CLI にはあるがメニューに無い＝受けない
+    assert_eq!(
+        PermissionMode::from_state(Some("dontAsk")),
+        PermissionMode::Auto
+    );
+}
+
+// brief §2: 3 つの文字列から組む。それぞれ独立に既定へ倒れる
+#[test]
+fn options_from_state_each_field_independent() {
+    let o = ChatOptions::from_state(Some("haiku"), Some("junk"), Some("plan"));
+    assert_eq!(o.model, Model::Haiku);
+    assert_eq!(o.effort, Effort::High);
+    assert_eq!(o.mode, PermissionMode::Plan);
+    assert_eq!(
+        ChatOptions::from_state(None, None, None),
+        ChatOptions::default()
+    );
+}
+
+// brief §2: to_json は画面とやり取りする 3 つのキーだけ。値は as_str
+#[test]
+fn options_to_json_has_three_keys() {
+    let o = ChatOptions {
+        model: Model::Opus,
+        effort: Effort::Max,
+        mode: PermissionMode::AcceptEdits,
+    };
+    assert_eq!(
+        o.to_json(),
+        json!({"model": "opus", "effort": "max", "mode": "acceptEdits"})
+    );
+    assert_eq!(o.to_json().as_object().unwrap().len(), 3);
+}
+
+// brief §3: 画面からの部分的な変更。None は変えず、知らない値は既定に倒れる
+#[test]
+fn options_with_partial_change() {
+    let o = ChatOptions {
+        model: Model::Opus,
+        effort: Effort::Low,
+        mode: PermissionMode::Plan,
+    };
+    assert_eq!(o.with(None, None, None), o);
+    assert_eq!(
+        o.with(Some("sonnet"), None, None),
+        ChatOptions {
+            model: Model::Sonnet,
+            ..o
+        }
+    );
+    assert_eq!(
+        o.with(None, Some("max"), Some("manual")),
+        ChatOptions {
+            model: Model::Opus,
+            effort: Effort::Max,
+            mode: PermissionMode::Manual,
+        }
+    );
+    // 知らない値は「変えない」でなく既定（画面の値も外から来たもの）
+    assert_eq!(
+        o.with(Some("gpt"), Some("ultra"), Some("root")),
+        ChatOptions::default()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 3c. work_dir（brief 2026-10-27 §1: 既定は K のホーム）
+// ---------------------------------------------------------------------------
+
+// brief §1: 設定のフォルダが在ればそれ（前後の空白は落とす）
+#[test]
+fn work_dir_prefers_configured_existing_folder() {
+    let cfg = PathBuf::from(r"D:\work\proj");
+    let home = PathBuf::from(r"C:\Users\K");
+    let fallback = PathBuf::from(r"C:\data\chat\work");
+    let have = fs(&[cfg.clone(), home.clone(), fallback.clone()]);
+    let is_dir = |p: &Path| have.contains(p);
+    assert_eq!(
+        work_dir(Some(r"D:\work\proj"), Some(&home), &fallback, &is_dir),
+        cfg
+    );
+    assert_eq!(
+        work_dir(Some(r"  D:\work\proj  "), Some(&home), &fallback, &is_dir),
+        cfg
+    );
+}
+
+// brief §1: 選んでいない・空・消えたフォルダはホーム
+#[test]
+fn work_dir_falls_back_to_home() {
+    let home = PathBuf::from(r"C:\Users\K");
+    let fallback = PathBuf::from(r"C:\data\chat\work");
+    let have = fs(&[home.clone(), fallback.clone()]);
+    let is_dir = |p: &Path| have.contains(p);
+    for cfg in [None, Some(""), Some("   "), Some(r"D:\gone")] {
+        assert_eq!(
+            work_dir(cfg, Some(&home), &fallback, &is_dir),
+            home,
+            "{cfg:?}"
+        );
+    }
+}
+
+// brief §1: ホームも無ければ fallback（fallback は在るかどうか見ない＝呼ぶ側が作る）
+#[test]
+fn work_dir_falls_back_to_data_dir_without_home() {
+    let fallback = PathBuf::from(r"C:\data\chat\work");
+    let none = |_: &Path| false;
+    assert_eq!(work_dir(None, None, &fallback, &none), fallback);
+    let home = PathBuf::from(r"C:\Users\Gone");
+    assert_eq!(
+        work_dir(Some(r"D:\x"), Some(&home), &fallback, &none),
+        fallback
+    );
 }
 
 // ---------------------------------------------------------------------------
