@@ -1,0 +1,20 @@
+feat(pets): 2 体目のペット「りんりん」（パンダ）のシートと動画クリップ 13 本
+
+なぜ: K 指示（2026-10-27）で、まめドラゴンと同じ手順で 2 体目のペットを作る。
+状態別の静止画 8 枚（zip）から build_pet でシートを、Comfy Cloud の Wan 2.2 14B FLF2V で
+13 本の動画（ループ 4・つなぎ 7・単発 2）を作り、scripts/build_clips.py でコマにした。
+
+- assets/pets/rinrin/: spritesheet.webp（cellScale 2）・pet.json（clips・wakeWord「りんちゃん」）・
+  clips/（317 コマ・6.5MB）・clips.json・SOURCE.md（元素材と作り直し方）
+- .steering/20261027-rinrin-clips/: brief と識別子契約・検分表（align_poses.py・run_comfy.py・
+  inspect_clips.py・run1〜3.json・clips-src.json）。元素材と動画は .git/info/exclude で外した
+- scripts/verify/pet-switch.sh: TGT（ビルドの target）と SWITCH_TO（切り替え先）を環境変数で
+  指定できるようにした（既定は今までどおり target / placeholder）。2 体目を別ビルドで確かめるため
+- docs/architecture.md §4.4 にりんりんを追記
+- テスト 2 本: rinrin の pet.json（clips・wakeWord・cellScale）と、同梱 2 体の clips.json が 13 本・
+  同じ名前で、コマ数が clips/<名前>/ の WebP の数と合うこと（コマ数を 1 つ変えると落ちるのを確認）
+
+実機: pet-switch.sh で まめドラゴン → りんりん の切り替え 3 項目 PASS、`clips 13` と
+`clip idle loaded` をログで確認。無料枠は 5 回中 3 回を使用（残り 2）。
+
+Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>

@@ -591,6 +591,31 @@ impl Player {
 mod tests {
     use super::*;
 
+    /// 同梱のペット（まめドラゴン・りんりん）の clips.json が読め、13 本の名前が同じで、
+    /// 各クリップのコマ数が `clips/<名前>/` の WebP の数と合う。りんりんはまめドラゴンと同じ
+    /// 13 本の構成で作った（2026-10-27）ので、計画の経路（つなぎのグラフ）も同じになる
+    #[test]
+    fn bundled_pets_clips_json_match_frame_files() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../assets/pets");
+        let mut names_by_pet = Vec::new();
+        for pet in ["mame-dragon", "rinrin"] {
+            let dir = root.join(pet);
+            let text = std::fs::read_to_string(dir.join("clips.json")).unwrap();
+            let set = ClipSet::from_json(&text).unwrap_or_else(|e| panic!("{pet}: {e}"));
+            assert_eq!(set.fps, 8, "{pet}");
+            assert_eq!(set.clips.len(), 13, "{pet}");
+            for c in &set.clips {
+                let webps = std::fs::read_dir(dir.join("clips").join(&c.name))
+                    .unwrap_or_else(|e| panic!("{pet}/{}: {e}", c.name))
+                    .filter(|f| f.as_ref().unwrap().path().extension() == Some("webp".as_ref()))
+                    .count();
+                assert_eq!(webps as u32, c.frames, "{pet}/{} のコマ数", c.name);
+            }
+            names_by_pet.push(set.clips.iter().map(|c| c.name.clone()).collect::<Vec<_>>());
+        }
+        assert_eq!(names_by_pet[0], names_by_pet[1], "2 体の 13 本の名前と並び");
+    }
+
     #[test]
     fn sheet_poses_are_failed_and_loopless_stills() {
         let set = ClipSet::from_json(

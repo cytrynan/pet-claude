@@ -1,0 +1,9 @@
+{
+  "breathe": 0.025,
+  "cellScale": 2,
+  "clips": "clips.json",
+  "displayName": "りんりん",
+  "id": "rinrin",
+  "spritesheetPath": "spritesheet.webp",
+  "wakeWord": "りんちゃん"
+}

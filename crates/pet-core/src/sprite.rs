@@ -620,4 +620,20 @@ mod tests {
         let m: PetManifest = serde_json::from_str(text).unwrap();
         assert_eq!(m.wake_word(), Some("まめちゃん"));
     }
+
+    /// 同梱のりんりん（パンダ・2026-10-27 K 指示）の pet.json: 呼びかけは「りんちゃん」、
+    /// 動画クリップとシートの倍率はまめドラゴンと同じ（build_pet で作り直すと clips・wakeWord が
+    /// 落ちていないかをここで見る）
+    #[test]
+    fn rinrin_manifest_has_clips_and_wake_word() {
+        let text = include_str!("../../../assets/pets/rinrin/pet.json");
+        let m: PetManifest = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            (m.id.as_str(), m.display_name.as_str()),
+            ("rinrin", "りんりん")
+        );
+        assert_eq!(m.wake_word(), Some("りんちゃん"));
+        assert_eq!(m.clips.as_deref(), Some("clips.json"));
+        assert_eq!(m.cell_scale, Some(2));
+    }
 }
