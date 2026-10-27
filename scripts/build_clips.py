@@ -4,9 +4,11 @@
 
 ソースの JSON（例: `assets/pets/mame-dragon/clips-src.json`）:
     {"poses": "<姿勢画像のフォルダ（verification.json がある）>",
+     "canvas": 640,   # 動画と姿勢画像の一辺（省略時 640。床は 600/640・中心は 1/2 の位置）
      "src_fps": 16, "fps": 8, "drop_tail": 3,
      "cell": [384, 416], "floor": 404, "ref_height": 354, "ref_pose": "idle.png",
-     "clips": [{"name", "kind", "from": [...], "to": [...], "video", "start_pose"}]}
+     "clips": [{"name", "kind", "from": [...], "to": [...], "video", "start_pose",
+                "canvas"?, "poses"?}]}   # 本ごとに別の大きさ・別の姿勢画像のフォルダで作った動画を混ぜられる
 
 なぜこの形か（.steering/20261021-clip-playback/design.md §2）:
 - Wan 2.2 FLF2V の動画は最後の 2〜3 コマで彩度が落ちてかすむ（2026-10-21 実測 24→18）ので、末尾を捨てる。
@@ -29,18 +31,24 @@ from scipy import ndimage
 BG_MIN = 236
 # 縁の画素のアルファを白との混ざり具合から戻すときの「完全に不透明」とみなす明るさ（輪郭の茶色の最小値付近）
 EDGE_DARK = 70
-# キャンバス（動画）の大きさ
+# キャンバス（動画）の既定の大きさ。床と中心はこの大きさでの 600・320 を比例で伸ばす
+# （2026-10-27 画質の試しで 960×960 の動画も混ぜられるようにした）
 SRC = 640
 
 
-def read_frames(video: Path) -> np.ndarray:
-    """ffmpeg で全コマを (n, 640, 640, 3) の uint8 にする。"""
+def floor_center(canvas: int) -> tuple[float, float]:
+    """キャンバス座標の床の y と横の中心（640 なら 600・320）。"""
+    return canvas * 600 / SRC, canvas / 2
+
+
+def read_frames(video: Path, canvas: int = SRC) -> np.ndarray:
+    """ffmpeg で全コマを (n, canvas, canvas, 3) の uint8 にする。"""
     raw = subprocess.run(
         ["ffmpeg", "-v", "error", "-i", str(video), "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
         capture_output=True, check=True,
     ).stdout
-    n = len(raw) // (SRC * SRC * 3)
-    return np.frombuffer(raw, np.uint8)[: n * SRC * SRC * 3].reshape(n, SRC, SRC, 3)
+    n = len(raw) // (canvas * canvas * 3)
+    return np.frombuffer(raw, np.uint8)[: n * canvas * canvas * 3].reshape(n, canvas, canvas, 3)
 
 
 def pick(n: int, src_fps: int, fps: int, drop_tail: int) -> list[int]:
@@ -96,12 +104,15 @@ def align(first_box, pose_box) -> tuple[float, float, float]:
     return s, dx, dy
 
 
-def place(rgba: np.ndarray, s: float, dx: float, dy: float, k: float, cell, floor: int) -> Image.Image:
+def place(rgba: np.ndarray, s: float, dx: float, dy: float, k: float, cell, floor: int, canvas: int = SRC) -> Image.Image:
     """キャンバスの絵を、(s, dx, dy) で姿勢に合わせ、共通倍率 k でコマへ置く。
-    コマ座標: x' = cell_w/2 + (X - 320) k、y' = floor + (Y - 600) k（X, Y は姿勢合わせ後。床 600・中心 320）。"""
+    コマ座標: x' = cell_w/2 + (X - cx) k、y' = floor + (Y - fy) k（X, Y は姿勢合わせ後。640 なら床 fy=600・中心 cx=320）。
+    k はキャンバス 640 基準の倍率（960 の動画は 640 相当に縮めてから同じ k を掛ける＝キャラの大きさが同じになる）。"""
+    fy, cx = floor_center(canvas)
+    k = k * SRC / canvas
     a = s * k
-    ox = cell[0] / 2 + (dx - 320) * k
-    oy = floor + (dy - 600) * k
+    ox = cell[0] / 2 + (dx - cx) * k
+    oy = floor + (dy - fy) * k
     img = Image.fromarray(rgba, "RGBA")
     # 事前乗算してから縮める（縁が黒ずまないように）。アフィン変換の逆写像を渡す
     pre = img.convert("RGBa")
@@ -115,8 +126,14 @@ def placed_box(box, s, dx, dy):
     return s * l + dx, s * t + dy, s * r + dx, s * b + dy
 
 
+def to_640(box, canvas: int):
+    """別の大きさのキャンバスの範囲を 640 基準の座標へ（倍率の計算を 640 でそろえるため）。"""
+    f = SRC / canvas
+    return tuple(v * f for v in box)
+
+
 def common_scale(boxes, cell, floor, ref_k) -> float:
-    """全コマ（姿勢合わせ後）がコマに 98% で収まり、かつ待機の高さが ref に合う倍率の小さい方。"""
+    """全コマ（姿勢合わせ後・640 基準の座標）がコマに 98% で収まり、かつ待機の高さが ref に合う倍率の小さい方。"""
     half = cell[0] / 2
     k = ref_k
     for l, t, r, b in boxes:
@@ -129,43 +146,51 @@ def common_scale(boxes, cell, floor, ref_k) -> float:
 def main(src_json: Path, pet_dir: Path) -> None:
     spec = json.loads(src_json.read_text(encoding="utf-8"))
     base = src_json.parent
-    poses = json.loads((base / spec["poses"] / "verification.json").read_text(encoding="utf-8"))["outputs"]
+    pose_sets = {}
+
+    def poses_of(rel: str) -> dict:
+        if rel not in pose_sets:
+            pose_sets[rel] = json.loads((base / rel / "verification.json").read_text(encoding="utf-8"))["outputs"]
+        return pose_sets[rel]
+
     cell = tuple(spec["cell"])
     floor = spec["floor"]
 
     loaded = []
     for c in spec["clips"]:
-        frames = read_frames(base / c["video"])
+        canvas = c.get("canvas", spec.get("canvas", SRC))
+        poses = poses_of(c.get("poses", spec["poses"]))
+        frames = read_frames(base / c["video"], canvas)
         # 末尾のかすみを捨てると、つなぎが終点の姿勢まで届かず次のループとの継ぎ目で跳ねることがある
         # （2026-10-21 walk_start→walk で頭が 24px）。そのクリップだけ drop_tail を上書きできる
         idx = pick(len(frames), spec["src_fps"], spec["fps"], c.get("drop_tail", spec["drop_tail"]))
         rgba = [remove_white(frames[i]) for i in idx]
         pose = poses[c["start_pose"]]["bbox"]
         s, dx, dy = align(bbox(rgba[0]), pose)
-        boxes = [placed_box(bbox(f), s, dx, dy) for f in rgba if bbox(f)]
-        loaded.append((c, rgba, (s, dx, dy), boxes))
-        print(f"{c['name']}: {len(rgba)} コマ  姿勢合わせ 倍率 {s:.3f}")
+        boxes = [to_640(placed_box(bbox(f), s, dx, dy), canvas) for f in rgba if bbox(f)]
+        loaded.append((c, rgba, (s, dx, dy), boxes, canvas))
+        print(f"{c['name']}: {len(rgba)} コマ  姿勢合わせ 倍率 {s:.3f}" + (f"  キャンバス {canvas}" if canvas != SRC else ""))
 
-    ref = poses[spec["ref_pose"]]["bbox"]
+    ref = to_640(poses_of(spec["poses"])[spec["ref_pose"]]["bbox"], spec.get("canvas", SRC))
     ref_k = spec["ref_height"] / (ref[3] - ref[1])
-    k_fit = common_scale([b for *_, boxes in loaded for b in boxes], cell, floor, ref_k)
+    k_fit = common_scale([b for *_, boxes, _ in loaded for b in boxes], cell, floor, ref_k)
     # spec の scale で決め打ちできる。全部を収める倍率は、横に長い姿勢（眠る）1 つに引っ張られて
     # 全体が小さくなる（まめドラゴンは 0.588＝シートの待機の 8 割）ので、少しの見切れを許して大きくする
     k = spec.get("scale", k_fit)
     print(f"共通の倍率 {k:.4f}（全部が収まる倍率 {k_fit:.4f}・待機の高さの基準 {ref_k:.4f}）")
-    for c, _, _, boxes in loaded:
+    for c, _, _, boxes, _ in loaded:
         over = max(max((320 - l) * k - cell[0] / 2, (r - 320) * k - cell[0] / 2, (600 - t) * k - floor) for l, t, r, _ in boxes)
         if over > 0:
             print(f"  見切れ {c['name']}: 最大 {over:.1f}px（コマの端から）")
 
     out_clips = []
-    for c, rgba, (s, dx, dy), _ in loaded:
+    for c, rgba, (s, dx, dy), _, canvas in loaded:
         d = pet_dir / "clips" / c["name"]
         d.mkdir(parents=True, exist_ok=True)
         for old in d.glob("*.webp"):
             old.unlink()
         for i, f in enumerate(rgba):
-            place(f, s, dx, dy, k, cell, floor).save(d / f"{i:03d}.webp", lossless=False, quality=92, alpha_quality=100, method=6)
+            place(f, s, dx, dy, k, cell, floor, canvas).save(d / f"{i:03d}.webp", lossless=False, quality=92, alpha_quality=100, method=6)
         out_clips.append({"name": c["name"], "kind": c["kind"], "from": c["from"], "to": c["to"], "frames": len(rgba)})
     (pet_dir / "clips.json").write_text(
         json.dumps({"fps": spec["fps"], "clips": out_clips}, ensure_ascii=False, indent=2) + "\n",

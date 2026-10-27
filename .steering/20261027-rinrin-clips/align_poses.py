@@ -15,12 +15,16 @@ bbox の right/bottom は含まない（exclusive）。
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 
 from PIL import Image, ImageChops, ImageDraw, ImageOps
 
 ROOT = Path(__file__).resolve().parent
-OUT = ROOT / "poses"
+# 引数で大きさを変えられる（既定 640。2026-10-27 K 指示の画質の試しで 960 を作る）。640 以外は poses<大きさ>/ に出す
+SIZE = int(sys.argv[1]) if len(sys.argv) > 1 else 640
+R = SIZE / 640  # 640 基準の座標（床 600・中心 320・待機 480）をこの倍率で伸ばす
+OUT = ROOT / ("poses" if SIZE == 640 else f"poses{SIZE}")
 SRC = ROOT / "src"
 FILES = {
     "idle": SRC / "01-idle.png",
@@ -36,10 +40,11 @@ FILES = {
 ORDER = ["idle", "idle_right", "walk", "working", "working_right", "attention", "happy",
          "confused", "sleeping", "sleeping_right", "dragged"]
 # 待機の高さ（まめドラゴンと同じ基準。640 のキャンバスで足元 600・頭が 120 付近）
-IDLE_HEIGHT = 480
+IDLE_HEIGHT = round(480 * R)
 # 下端を置く y。喜ぶは zip で 60px 浮いている（1024 基準）、つままれるはぶら下がり
-FLOOR = {"happy": 560, "dragged": 560}
-FLOOR_DEFAULT = 600
+FLOOR = {"happy": round(560 * R), "dragged": round(560 * R)}
+FLOOR_DEFAULT = round(600 * R)
+CENTER = round(320 * R)
 
 
 def digest(path):
@@ -72,8 +77,8 @@ def main():
         resized = src.resize(size, Image.Resampling.LANCZOS)
         sx, sy = size[0] / src.width, size[1] / src.height
         floor = FLOOR.get(name, FLOOR_DEFAULT)
-        offset = (round(320 - (left + right) / 2 * sx), round(floor - bottom * sy))
-        canvas = Image.new("RGBA", (640, 640), (255, 255, 255, 255))
+        offset = (round(CENTER - (left + right) / 2 * sx), round(floor - bottom * sy))
+        canvas = Image.new("RGBA", (SIZE, SIZE), (255, 255, 255, 255))
         canvas.alpha_composite(resized, dest=offset)
         results[name] = canvas.convert("RGB")
         metadata[name] = {"source": str(FILES[name]), "scale": scale,
@@ -92,12 +97,12 @@ def main():
             records[path.name] = {**metadata[name], "size": list(saved.size), "mode": saved.mode,
                                   "bbox": bbox, "bbox_height": bbox[3] - bbox[1],
                                   "bottom_y": bbox[3], "center_x": (bbox[0] + bbox[2]) / 2}
-    contact = Image.new("RGB", (640 * len(ORDER), 640), "white")
+    contact = Image.new("RGB", (SIZE * len(ORDER), SIZE), "white")
     draw = ImageDraw.Draw(contact)
     for index, name in enumerate(ORDER):
-        contact.paste(results[name], (index * 640, 0))
-        draw.text((index * 640 + 10, 10), name + ".png", fill="black")
-    draw.line((0, 600, contact.width - 1, 600), fill=(255, 0, 0), width=1)
+        contact.paste(results[name], (index * SIZE, 0))
+        draw.text((index * SIZE + 10, 10), name + ".png", fill="black")
+    draw.line((0, FLOOR_DEFAULT, contact.width - 1, FLOOR_DEFAULT), fill=(255, 0, 0), width=1)
     contact.save(OUT / "contact.png")
     unchanged = all(digest(path) == hashes[name] for name, path in FILES.items())
 
@@ -106,12 +111,13 @@ def main():
         return f - 2 <= r["bottom_y"] <= f + 2
 
     checks = {
-        "11_rgb_640": len(records) == 11 and all(r["size"] == [640, 640] and r["mode"] == "RGB" for r in records.values()),
-        "alignment": all(floor_ok(n, r) and 318 <= r["center_x"] <= 322 for n, r in records.items()),
+        "11_rgb_640": len(records) == 11 and all(r["size"] == [SIZE, SIZE] and r["mode"] == "RGB" for r in records.values()),
+        "alignment": all(floor_ok(n, r) and CENTER - 2 <= r["center_x"] <= CENTER + 2 for n, r in records.items()),
         "idle_height": records["idle.png"]["bbox_height"],
         "inputs_unchanged_sha256": unchanged,
     }
-    report = {"bbox_convention": "[left, top, right exclusive, bottom exclusive]",
+    report = {"size": SIZE, "floor": FLOOR_DEFAULT, "center": CENTER,
+              "bbox_convention": "[left, top, right exclusive, bottom exclusive]",
               "measurement": "any RGB channel < 250", "outputs": records,
               "input_sha256": hashes, "checks": checks}
     (OUT / "verification.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")

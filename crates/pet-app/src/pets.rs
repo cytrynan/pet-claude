@@ -220,11 +220,25 @@ fn entry_from(m: PetManifest, dir: PathBuf) -> PetEntry {
 /// 読み直しの判定（`pet_window::kick_load`）もこの上限を使う（使わないと「もっと細かく」が成り立ち続け、
 /// シートを読み直し続けた。2026-10-21 実測で CPU 200%）
 pub fn max_cell(source_cell: (u32, u32), has_clips: bool) -> (u32, u32) {
-    if has_clips {
+    max_cell_with(source_cell, has_clips, full_cell_for_tests())
+}
+
+/// `max_cell` の本体。`full` なら動画のあるペットでも元のコマの大きさまで持つ
+/// （2026-10-27 K 指示の画質の試し。メモリと見え方を 3/4 と比べるため）。
+pub fn max_cell_with(source_cell: (u32, u32), has_clips: bool, full: bool) -> (u32, u32) {
+    if has_clips && !full {
         (source_cell.0 * 3 / 4, source_cell.1 * 3 / 4)
     } else {
         source_cell
     }
+}
+
+/// 試験用（デバッグビルドで、置き場所を `PET_CLAUDE_DATA_DIR` で差し替えた時だけ）: `PET_TEST_FULL_CELL=1` なら
+/// 動画のコマを 3/4 に縮めず元の大きさで持つ。同じビルドで 3/4 と等倍を並べて測るため（2026-10-27）
+fn full_cell_for_tests() -> bool {
+    cfg!(debug_assertions)
+        && std::env::var_os("PET_CLAUDE_DATA_DIR").is_some()
+        && std::env::var_os("PET_TEST_FULL_CELL").is_some_and(|v| v == "1")
 }
 
 /// 表示倍率 `factor`（= 大きさ × DPI / 96 の最大）で 1 コマを描くのに要る画素数。
@@ -487,5 +501,15 @@ mod tests {
         std::fs::write(root.join("tiny").join("pet.json"), m).unwrap();
         let entry = entry_for_dir(&root.join("tiny")).unwrap();
         assert!(load(&entry, needed_cell(1.0)).is_err());
+    }
+
+    /// 上限は動画のあるペットだけ 3/4。`full` ならどちらも元の大きさ（2026-10-27 画質の試し）
+    #[test]
+    fn max_cell_is_three_quarters_only_with_clips_unless_full() {
+        assert_eq!(max_cell_with((384, 416), true, false), (288, 312));
+        assert_eq!(max_cell_with((384, 416), false, false), (384, 416));
+        assert_eq!(max_cell_with((384, 416), true, true), (384, 416));
+        // 試験の切り替えが無い普段の経路は 3/4（環境変数を立てていないテストプロセスで）
+        assert_eq!(max_cell((384, 416), true), (288, 312));
     }
 }

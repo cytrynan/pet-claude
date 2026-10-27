@@ -1,0 +1,23 @@
+{
+  "name": "rinrin_run4",
+  "size": [
+    960,
+    960
+  ],
+  "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, green, dragon, human hand, hands, fingers, arm, person, people, hand entering the frame, touching, petting",
+  "clips": [
+    {
+      "name": "rinrin_idle960",
+      "start": "idle960.png",
+      "length": 81,
+      "prompt": "A cute chibi baby panda stands still in a relaxed pose with its paws together in front of its chest. It breathes gently, blinks once quickly and keeps its eyes open, and its round ears twitch slightly. Minimal calm motion, it ends in the same pose it started in. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration, seamless loop."
+    },
+    {
+      "name": "rinrin_petted960",
+      "start": "idle960.png",
+      "length": 49,
+      "seed": 42,
+      "prompt": "A cute chibi baby panda stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, wiggles its round ears, then opens its eyes and returns to the same standing pose it started in with its paws together in front of its chest. Only the panda is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick dark brown outline, flat white fur, dark charcoal ears, eye patches, arms and legs, pink cheeks. Clean flat 2D cartoon illustration."
+    }
+  ]
+}

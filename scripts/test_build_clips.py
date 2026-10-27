@@ -73,6 +73,21 @@ class PlaceTest(unittest.TestCase):
         self.assertLessEqual(abs(int(ys.max()) - 403), 1, "足元が床 y=404 の直上")
         self.assertLessEqual(abs((int(xs.min()) + int(xs.max())) / 2 - 191.5), 1, "横の中心")
 
+    def test_canvas_960_lands_on_the_same_cell_pixels(self):
+        # 960 のキャンバスに 1.5 倍で描いた同じ箱は、同じ k でコマの同じ場所・同じ大きさになる（2026-10-27 画質の試し）
+        big = np.full((960, 960, 3), 252, np.uint8)
+        big[180:900, 330:630] = (90, 60, 50)
+        big[183:897, 333:627] = (190, 225, 195)
+        small = b.remove_white(canvas_with_box(220, 120, 420, 600))
+        c640 = np.array(b.place(small, 1.0, 0.0, 0.0, 0.5, (384, 416), 404))[..., 3] > 128
+        c960 = np.array(b.place(b.remove_white(big), 1.0, 0.0, 0.0, 0.5, (384, 416), 404, canvas=960))[..., 3] > 128
+        ys6, xs6 = np.nonzero(c640)
+        ys9, xs9 = np.nonzero(c960)
+        for a, c in ((ys6.min(), ys9.min()), (ys6.max(), ys9.max()), (xs6.min(), xs9.min()), (xs6.max(), xs9.max())):
+            self.assertLessEqual(abs(int(a) - int(c)), 1)
+        self.assertEqual(b.floor_center(960), (900.0, 480.0))
+        self.assertEqual(b.to_640((0, 900, 960, 900), 960), (0.0, 600.0, 640.0, 600.0))
+
 
 if __name__ == "__main__":
     unittest.main()
