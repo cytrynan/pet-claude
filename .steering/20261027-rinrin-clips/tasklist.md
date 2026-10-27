@@ -91,6 +91,11 @@ tracking: #49
 - 仕組み: `pet.json` に `fullCell`（無ければ 3/4・true で等倍）を足し、`pets::max_cell` をペットごとに。試験の切り替え `PET_TEST_FULL_CELL` は残す。テスト: sprite.rs `full_cell_defaults_to_false`（同梱 2 体は false）・pets.rs `max_cell_is_three_quarters_only_with_clips_unless_full`。
 - 手順の正本: `docs/architecture.md` §4.5「次のペットから」（姿勢画像 960・size 960・canvas 960・fullCell true）。比較用の `assets/pets/rinrin-960/` は git 外のまま（採用しない）。
 
+## スキル化（2026-10-27 K 指示「この pet 用の動画を作成する一連の手順をスキル化して」）
+- `.claude/skills/make-pet-clips/`: SKILL.md（手順 9 段・止まった点）・`scripts/`（align_poses・make_runs・run_comfy・inspect_clips・cap_trial）・`templates/`（prompts.json＝13 本の指示文のひな形・SOURCE.md・clips-src は make_runs が書く）・テスト 4 本。
+- 検証: スキルの道具でりんりんの姿勢画像を作り直すと 11 枚とも bbox が一致。run1〜3.json は構造（本・始点/終点・長さ・seed）が一致（指示文はひな形化で語句が少し違う）。
+- K 指示（同日）「Comfy の無料分が切れたらアカウントを切り替えるので教えて」→ SKILL.md 冒頭 1 行目と memory `comfy-cloud-account-switch`。残りは 1/5。
+
 ## 止まった点
 - **無料枠の前提が外れていた**: 「前回 0/5 で使い切った」を前提に止まる計画だったが、同じ Chrome で `/api/features` は 5/5・履歴 0 件。使う前に必ず `/features` を見る（前提で止まらない）。枠が戻る周期か別アカウント扱いかは未確認。
 - **まめドラゴンと同じ 4 本の検分の数値が、本ごとには残っていなかった**（1 回目の記録は範囲だけ）。今回は `inspect_clips.py` で本ごとの表を `runN/inspection.json` に残した。
