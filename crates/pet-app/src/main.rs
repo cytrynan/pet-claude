@@ -353,8 +353,8 @@ async fn autostart_set(on: bool) -> serde_json::Value {
 }
 
 #[tauri::command]
-fn settings_set(scale: f32, tts: bool, wake: bool, walk: bool, ask: bool, save: bool) {
-    pet_window::set_settings(scale, tts, wake, walk, ask, save);
+fn settings_set(scale: f32, tts: bool, walk: bool, ask: bool, save: bool) {
+    pet_window::set_settings(scale, tts, walk, ask, save);
 }
 
 fn arg_value(args: &[String], name: &str) -> Option<String> {
