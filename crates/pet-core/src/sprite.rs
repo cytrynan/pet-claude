@@ -683,6 +683,20 @@ mod tests {
         assert!(m.full_cell());
     }
 
+    /// 5 体目のこむぎちゃん（ハムスター茶）も 960・等倍（2026-10-28 K 指示）。
+    #[test]
+    fn komugi_manifest_is_full_cell_with_clips_and_wake_word() {
+        let text = include_str!("../../../assets/pets/komugi/pet.json");
+        let m: PetManifest = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            (m.id.as_str(), m.display_name.as_str()),
+            ("komugi", "こむぎちゃん")
+        );
+        assert_eq!(m.clips.as_deref(), Some("clips.json"));
+        assert_eq!(m.wake_word.as_deref(), Some("こむぎちゃん"));
+        assert!(m.full_cell());
+    }
+
     #[test]
     fn rinrin_manifest_has_clips_and_wake_word() {
         let text = include_str!("../../../assets/pets/rinrin/pet.json");

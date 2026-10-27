@@ -1,0 +1,31 @@
+{
+  "name": "komugi_run3",
+  "size": [
+    960,
+    960
+  ],
+  "negative_extra": "extra characters, extra limbs, deformed, melting, morphing into another creature, color shift, style change, 3D render, photorealistic, watermark, text, blur, camera movement, zoom, background change, shadow on the floor, wide eyes, white sclera, visible eye whites, staring, surprised, bulging eyes, dog, shiba inu, black fur, cat, orange tabby, stripes, panda, dragon, horns, wings, long tail, human hand, hands, fingers, arm, person, people, hand entering the frame, touching, petting",
+  "clips": [
+    {
+      "name": "komugi_petted_a",
+      "start": "idle.png",
+      "length": 49,
+      "prompt": "A cute chibi baby golden hamster stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, its small round ears twitch slightly and its chubby cheeks puff gently, then opens its eyes and returns to the same standing pose it started in with its tiny front paws held together in front of its chest. Only the hamster is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+      "seed": 42
+    },
+    {
+      "name": "komugi_petted_b",
+      "start": "idle.png",
+      "length": 49,
+      "prompt": "A cute chibi baby golden hamster stands alone in a relaxed pose and looks blissfully content: it slowly narrows its eyes into a happy squint with a soft smile, tilts its head a little to one side, its small round ears twitch slightly and its chubby cheeks puff gently, then opens its eyes and returns to the same standing pose it started in with its tiny front paws held together in front of its chest. Only the hamster is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+      "seed": 7
+    },
+    {
+      "name": "komugi_petted_c",
+      "start": "idle.png",
+      "length": 49,
+      "prompt": "A cute chibi baby golden hamster stands alone and shows a dreamy, contented smile: its eyes close halfway in delight, its cheeks blush, it sways its head gently left and right and its small round ears twitch slightly and its chubby cheeks puff gently, then it settles back into the same standing pose it started in with its tiny front paws held together in front of its chest. Only the hamster is in the picture, nothing enters the frame. Pure white background, fixed camera. Same character design as the input image: thick soft dark brown outline, fluffy light golden orange fur on the head, back and sides, cream white muzzle, cheek pouches, chest and belly, small round ears with pink inner ears, small round black eyes with a tiny white highlight, pink blush cheeks, tiny pink paws and feet, round chubby body, no visible tail. Clean flat 2D cartoon illustration.",
+      "seed": 42
+    }
+  ]
+}

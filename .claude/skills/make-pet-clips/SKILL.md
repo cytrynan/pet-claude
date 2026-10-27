@@ -103,7 +103,7 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - attach したタブを K が使うと `app is not defined` で監視が落ちる。ジョブは完了しているので `fetch` で回収できる。
 - `cap_trial.ps1` の撮影は DPI 非対応の PowerShell の座標と winctl の物理座標が合わず別の場所を撮る。判定はログの `cell` と KB。
 - `pet-switch.sh` のメモリ行は K の常駐ペットを掴むので無効。
-- **`pet-switch.sh` は 2026-10-28 まで `taskkill //IM pet-app.exe` で名前の一致を全部止めていて、K の常駐ペット（pet-claude-main）まで落としていた**（とらちゃん・しばちゃんで計 2 回）。自分が起動した PID だけ止める形に直した。他の検証スクリプト（hover-menu.sh・approve-buttons.sh・clips-sweep.sh）にはまだ名前止めが残る → 使う前に常駐ペットの PID を控え、終わったらタスク `pet-claude` で起こし直す。
+- **`pet-switch.sh` は 2026-10-28 まで `taskkill //IM pet-app.exe` で名前の一致を全部止めていて、K の常駐ペット（pet-claude-main）まで落としていた**（とらちゃん・しばちゃんで計 2 回）。自分が起動した PID だけ止める形に直した（2026-10-28 こむぎちゃん: `$!` は Git Bash の PID で Windows の PID と別の番号だったので、試しの exe が止まらず残っていた。`/proc/$!/winpid` に読み替えた）。他の検証スクリプト（hover-menu.sh・approve-buttons.sh・clips-sweep.sh）にはまだ名前止めが残る → 使う前に常駐ペットの PID を控え、終わったらタスク `pet-claude` で起こし直す。
 - 新しいペットの ID がフォルダ順で `mame-dragon` より前になる（`kuroshiba`）と、何も選んでいない人の既定ペットが変わる。2026-10-28 に `pets::DEFAULT_PET_ID`（まめドラゴン）で固定したので以後は起きないが、`pet-switch.sh` の「起動はまめドラゴン」が FAIL したらこれを疑う。
 - 別セッションが同時に試しインスタンスを動かしていると「既に起動しているので終了」で弾かれる（同じ mutex）。`pet-switch.sh` は SKIP を返すので、相手が終わってから回す。
 - Python の heredoc で `\\r…` を含むパスを書くと CR に化けることがある。パスは `/` で書く。
@@ -113,3 +113,5 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - 2026-10-27 しばちゃん: 待機の「blinks once quickly」が、まばたきの途中で白目の見える大きな目になり K が「怖い」と判定。ひな形を「ゆっくり閉じて開く」＋「目は小さな丸い黒目のまま・白目を出さない」＋否定語（wide eyes, white sclera, staring）に変えた。作り直しの候補は次の run に同梱すると追加の消費が無い（無料枠は回数課金）。
 - 2026-10-28 しばちゃん: `playwright-cli attach` の接続が実行中に切れることがある（"The browser 'chrome' is not open"）。切れても Cloud の job は走っている。**再 queue の前に `tab` で `used` が増えていないか見る**（増えていれば `fetch` だけ）。`run_comfy.py` は切れたら attach し直して 1 回再試行する（環境変数 PLAYWRIGHT_MCP_EXTENSION_TOKEN が要る）。
 - 2026-10-27 とらちゃん: 960 の所要は 4 本 168 秒・8 本 354 秒・なでられ 3 本 120 秒（`queue` の limit 1800 秒で足りる）。
+- 2026-10-28 こむぎちゃん: zip の寝姿 1 枚だけ毛が濃く（毛の彩度の中央値 110。立ち姿 94〜104）、生成でさらに濃くなって（全体の彩度 95 → 108）、K が「寝るだけ色のこさと大きさが違う」と判定。始点差・終点差では拾えない。**姿勢画像を作ったら、状態ごとの毛の彩度（彩度 70 超・明るい画素の S の中央値）を並べ、1 枚だけ外れていたら生成の前に直す**（その 1 枚の S を立ち姿の中央値に合わせる・必要なら床の中心を軸に縮める。シートの `build_pet` も直した静止画のフォルダから作る）。撮り直しは次の run に同梱すれば追加の消費は無い。指示文に「色を明るいまま保つ」、否定語に darker colors・oversaturated を足すと動画の中ほどの濃さが 108 → 90 に下がった。
+- 2026-10-28 こむぎちゃん: Windows の Python で `write_text`・`open(..., 'w')` に書くと改行が CRLF になる（`.gitattributes` は LF 固定・rustfmt も LF）。JSON や .rs を Python で書き換えたら `open(..., 'w', newline='')` で書くか、バイトで CRLF を LF に戻す。

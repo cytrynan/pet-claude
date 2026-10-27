@@ -1,0 +1,23 @@
+feat(pets): 5 体目のこむぎちゃん（ハムスター茶・komugi）を 960 生成＋等倍の動画クリップ 13 本で足す
+
+なぜ: K 指示（2026-10-28）で 5 体目のペット「こむぎちゃん」をスキル make-pet-clips で作る。
+とらちゃん・しばちゃんに続く 960・fullCell: true。共通倍率は 0.6884 で全部が収まり決め打ち不要。
+
+- assets/pets/komugi/: spritesheet.webp・pet.json（clips・wakeWord こむぎちゃん・fullCell）・
+  clips/ 13 本 317 コマ・clips.json・SOURCE.md
+- 寝るは K 判定「色のこさと大きさが異なる」で作り直した。zip の寝姿だけ毛の彩度が高く
+  （110。立ち姿 94〜104）、生成でさらに濃くなっていた。寝姿の毛の彩度を 100 に下げ、
+  0.9 倍（K の選択）に縮めた静止画から、色を保つ指示文で撮り直した（動画の中ほど 108 → 90）。
+  シートも直した静止画から作った。なでられは a
+- crates/pet-core: clips.rs の一覧に komugi、sprite.rs に fullCell のテスト
+- scripts/verify/pet-switch.sh: `$!`（Git Bash の PID）をそのまま taskkill に渡していて、
+  試しの exe が止まらず残っていた（同じ番号の別プロセスを止めるおそれもあった）。
+  /proc/$!/winpid に読み替える
+- docs/architecture.md §4.4 に 1 行、docs/log.md に 1 行
+- .claude/skills/make-pet-clips/SKILL.md: 止まった点に 2 件（状態ごとの毛の彩度を生成前に比べる・
+  Python の CRLF）と PID の読み替え
+- .steering/20261028-komugi-clips/: brief・識別子契約・検分表（run1〜3）・実機・止まった点
+
+元素材（zip・展開・直した静止画・姿勢画像・元の動画・workflow・証拠）は .git/info/exclude で外してある。
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
