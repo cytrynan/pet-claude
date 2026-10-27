@@ -1,6 +1,7 @@
 //! ペットの一覧と読み込み（設定画面で切り替える。K 指示 2026-10-21）。
 //!
-//! - 内蔵の仮キャラ（`placeholder`）は exe に埋め込む。ほかはペットのフォルダ（`pet.json`＋シート）
+//! - ペットはすべてフォルダ（`pet.json`＋シート）。exe に埋め込むペットは無い（内蔵の仮キャラは
+//!   2026-10-28 K 指示で外した。読めるペットが 1 つも無ければ起動しない）
 //! - フォルダを探す場所（先に見つかった id を使う）: `%LOCALAPPDATA%\pet-claude\pets\<id>\`、
 //!   exe と同じフォルダの `pets\<id>\`、デバッグビルドだけリポジトリの `assets\pets\<id>\`
 //! - 高精細のシート（`cellScale` 2 の 384×416 のコマなど）はそのまま持つと重い（まめドラゴンは
@@ -18,17 +19,13 @@ use pet_core::sprite::{CELL_H, CELL_W, COLUMNS, PetManifest, Pose, SheetLayout};
 use crate::clipstore::ClipPack;
 use crate::log::{data_dir, log};
 
-pub const BUILTIN_ID: &str = "placeholder";
-const BUILTIN_NAME: &str = "仮キャラ";
-const BUILTIN_SHEET: &[u8] = include_bytes!("../../../assets/pets/placeholder/spritesheet.png");
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PetEntry {
     pub id: String,
     pub name: String,
-    /// ペットのフォルダ。None は内蔵の仮キャラ
-    pub dir: Option<PathBuf>,
-    /// 呼びかけの言葉（pet.json の `wakeWord`。無いペットと内蔵の仮キャラは None）
+    /// ペットのフォルダ
+    pub dir: PathBuf,
+    /// 呼びかけの言葉（pet.json の `wakeWord`。無いペットは None）
     pub wake_word: Option<String>,
 }
 
@@ -122,7 +119,7 @@ pub struct LoadedSheet {
     pub cell: (u32, u32),
     pub source_cell: (u32, u32),
     pub layout: SheetLayout,
-    /// 待機と睡眠の呼吸の大きさ（pet.json の `breathe`。内蔵の仮キャラは 0）
+    /// 待機と睡眠の呼吸の大きさ（pet.json の `breathe`）
     pub breathe: f32,
     /// 動画クリップ（pet.json の `clips`。無ければシートだけで動く）
     pub clips: Option<ClipPack>,
@@ -150,15 +147,10 @@ fn read_manifest(dir: &Path) -> Result<PetManifest, String> {
     serde_json::from_str(&text).map_err(|e| format!("pet.json: {e}"))
 }
 
-/// `roots` の下のペットのフォルダを集める。内蔵の仮キャラが先頭。同じ id は先に見つかった方。
+/// `roots` の下のペットのフォルダを集める。同じ id は先に見つかった方。
 /// 読めない pet.json はログに残して飛ばす。並びはフォルダ名の順（同じ場所の中で）。
 pub fn discover_in(roots: &[PathBuf]) -> Vec<PetEntry> {
-    let mut pets = vec![PetEntry {
-        id: BUILTIN_ID.into(),
-        name: BUILTIN_NAME.into(),
-        dir: None,
-        wake_word: None,
-    }];
+    let mut pets: Vec<PetEntry> = Vec::new();
     for root in roots {
         let Ok(read) = std::fs::read_dir(root) else {
             continue;
@@ -190,18 +182,15 @@ pub fn discover() -> Vec<PetEntry> {
 /// ペットが黙って変わった（pet-switch.sh の「起動はまめドラゴン」が FAIL）。既定はフォルダ順でなく名前で決める。
 pub const DEFAULT_PET_ID: &str = "mame-dragon";
 
-/// 起動時に試す順: 選んだペット（state.json の `pet`）→ 既定のまめドラゴン → フォルダにあるペット（見つかった順）
-/// → 内蔵の仮キャラ。起動側は読めないものを飛ばして次を試す（仮キャラはクリックの抜けを試すための絵なので最後の手段）。
+/// 起動時に試す順: 選んだペット（state.json の `pet`）→ 既定のまめドラゴン → フォルダにあるペット（見つかった順）。
+/// 起動側は読めないものを飛ばして次を試す。1 つも読めなければ起動しない（最後の手段だった内蔵の仮キャラは
+/// 2026-10-28 K 指示で外した）。
 pub fn startup_order<'a>(pets: &'a [PetEntry], chosen: Option<&str>) -> Vec<&'a PetEntry> {
     let first = chosen
         .and_then(|id| pets.iter().find(|p| p.id == id))
         .or_else(|| pets.iter().find(|p| p.id == DEFAULT_PET_ID));
     let mut order: Vec<&PetEntry> = first.into_iter().collect();
-    for p in pets
-        .iter()
-        .filter(|p| p.dir.is_some())
-        .chain(pets.iter().filter(|p| p.dir.is_none()))
-    {
+    for p in pets {
         if !order.iter().any(|q| q.id == p.id) {
             order.push(p);
         }
@@ -219,7 +208,7 @@ fn entry_from(m: PetManifest, dir: PathBuf) -> PetEntry {
         wake_word: m.wake_word().map(str::to_owned),
         id: m.id,
         name: m.display_name,
-        dir: Some(dir),
+        dir,
     }
 }
 
@@ -262,17 +251,9 @@ pub fn needed_cell(factor: f32) -> (u32, u32) {
 /// 補間しないように 1 コマずつ）。
 pub fn load(entry: &PetEntry, needed: (u32, u32)) -> Result<LoadedSheet, String> {
     let started = std::time::Instant::now();
-    let (image, source_cell, breathe, clips, full_cell) = match &entry.dir {
-        None => (
-            image::load_from_memory(BUILTIN_SHEET)
-                .map_err(|e| e.to_string())?
-                .into_rgba8(),
-            (CELL_W, CELL_H),
-            0.0,
-            None,
-            false,
-        ),
-        Some(dir) => {
+    let (image, source_cell, breathe, clips, full_cell) = {
+        let dir = &entry.dir;
+        {
             let m = read_manifest(dir)?;
             if !pet_core::sprite::is_inside_relative(&m.spritesheet_path) {
                 return Err(format!(
@@ -395,7 +376,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_comes_first_and_first_root_wins() {
+    fn first_root_wins_and_broken_folders_are_skipped() {
         let a = temp_root("a");
         let b = temp_root("b");
         write_pet(&a, "z-mame", "mame", "まめ", 1, 1);
@@ -409,34 +390,15 @@ mod tests {
             .iter()
             .map(|p| (p.id.as_str(), p.name.as_str()))
             .collect();
-        assert_eq!(
-            ids,
-            [
-                ("placeholder", "仮キャラ"),
-                ("mame", "まめ"),
-                ("neko", "ねこ")
-            ]
-        );
-        assert_eq!(pets[1].dir.as_deref(), Some(a.join("z-mame").as_path()));
-        // 起動時に試す順: 選んだもの → フォルダのペット → 仮キャラ（重複しない）
+        assert_eq!(ids, [("mame", "まめ"), ("neko", "ねこ")]);
+        assert_eq!(pets[0].dir, a.join("z-mame"));
+        // 起動時に試す順: 選んだもの → フォルダのペット（重複しない）
         let ids = |o: Vec<&PetEntry>| o.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
-        assert_eq!(
-            ids(startup_order(&pets, None)),
-            ["mame", "neko", "placeholder"]
-        );
-        assert_eq!(
-            ids(startup_order(&pets, Some("neko"))),
-            ["neko", "mame", "placeholder"]
-        );
-        assert_eq!(
-            ids(startup_order(&pets, Some("placeholder"))),
-            ["placeholder", "mame", "neko"]
-        );
-        assert_eq!(
-            ids(startup_order(&pets, Some("gone"))),
-            ["mame", "neko", "placeholder"]
-        );
-        assert_eq!(ids(startup_order(&discover_in(&[]), None)), ["placeholder"]);
+        assert_eq!(ids(startup_order(&pets, None)), ["mame", "neko"]);
+        assert_eq!(ids(startup_order(&pets, Some("neko"))), ["neko", "mame"]);
+        assert_eq!(ids(startup_order(&pets, Some("gone"))), ["mame", "neko"]);
+        // ペットが 1 つも無ければ試す順も空（仮キャラで起動していたのをやめた。2026-10-28）
+        assert!(startup_order(&discover_in(&[]), None).is_empty());
     }
 
     /// 何も選んでいなければ、フォルダ順で前にある `kuroshiba` でなく既定の `mame-dragon` で起動する（2026-10-28）。
@@ -449,15 +411,15 @@ mod tests {
         let ids = |o: Vec<&PetEntry>| o.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
         assert_eq!(
             ids(startup_order(&pets, None)),
-            ["mame-dragon", "kuroshiba", "placeholder"]
+            ["mame-dragon", "kuroshiba"]
         );
         assert_eq!(
             ids(startup_order(&pets, Some("gone"))),
-            ["mame-dragon", "kuroshiba", "placeholder"]
+            ["mame-dragon", "kuroshiba"]
         );
         assert_eq!(
             ids(startup_order(&pets, Some("kuroshiba"))),
-            ["kuroshiba", "mame-dragon", "placeholder"]
+            ["kuroshiba", "mame-dragon"]
         );
     }
 
@@ -473,14 +435,7 @@ mod tests {
             .iter()
             .map(|p| (p.id.as_str(), p.wake_word.as_deref()))
             .collect();
-        assert_eq!(
-            words,
-            [
-                ("placeholder", None),
-                ("mame", Some("まめちゃん")),
-                ("neko", None)
-            ]
-        );
+        assert_eq!(words, [("mame", Some("まめちゃん")), ("neko", None)]);
         assert_eq!(
             entry_for_dir(&root.join("mame"))
                 .unwrap()
@@ -523,11 +478,11 @@ mod tests {
     }
 
     #[test]
-    fn builtin_loads_and_bad_sheets_are_rejected() {
-        let builtin = discover_in(&[]).remove(0);
-        let s = load(&builtin, needed_cell(1.0)).unwrap();
-        assert_eq!((s.cell, s.layout.rows()), ((CELL_W, CELL_H), 11));
+    fn folder_pet_loads_and_bad_sheets_are_rejected() {
         let root = temp_root("bad");
+        write_pet(&root, "ok", "ok", "可", 1, 11);
+        let s = load(&entry_for_dir(&root.join("ok")).unwrap(), needed_cell(1.0)).unwrap();
+        assert_eq!((s.cell, s.layout.rows()), ((CELL_W, CELL_H), 11));
         write_pet(&root, "tiny", "tiny", "小", 1, 1);
         // コマの高さより低いシート（cellScale を大きく書き間違えた）
         let m = r#"{"id":"tiny","displayName":"小","spritesheetPath":"sheet.png","cellScale":4}"#;

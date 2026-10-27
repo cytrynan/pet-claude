@@ -2,18 +2,18 @@
 # ペットの切り替え（K 指示 2026-10-21）を、本物のマウスを使わずに確かめる。
 #   1. まだ何も選んでいなければ、フォルダの最初のペット（まめドラゴン）で起動する
 #   2. 設定画面に「ペット」の行が出る（--open-settings で開いて撮る）
-#   3. 設定画面と同じ関数で仮キャラへ切り替わり、state.json に残る（PET_TEST_SWITCH_PET）
+#   3. 設定画面と同じ関数で別のペット（既定 rinrin）へ切り替わり、state.json に残る（PET_TEST_SWITCH_PET）
 #   4. 切り替えの前後のメモリ（子孫プロセス込みの専有）
-#   rapid を付けると「仮キャラを選んで、読み込み中にまめドラゴンを選び直す」を試す（最後に選んだまめドラゴンの
+#   rapid を付けると「別のペットを選んで、読み込み中にまめドラゴンを選び直す」を試す（最後に選んだまめドラゴンの
 #   まま残り、古い読み込みが上書きしないこと）
 # 使い方: bash scripts/verify/pet-switch.sh <出力フォルダ> [rapid]
 #   環境変数 TGT=<ビルドの target フォルダ>（既定 target。別ブランチのビルド target-rinrin などを使うとき）、
-#   SWITCH_TO=<切り替え先のペット ID>（既定 placeholder。2 体目のペットを確かめるとき。2026-10-27 りんりん）
+#   SWITCH_TO=<切り替え先のペット ID>（既定 rinrin。仮キャラを外した 2026-10-28 から。新しいペットを確かめるときはその id）
 # 前提: pet-app が起動していないこと
 set -u
 out=${1:?出力フォルダを指定する}
 mode=${2:-single}
-to=${SWITCH_TO:-placeholder}
+to=${SWITCH_TO:-rinrin}
 switch=$to; [ "$mode" = rapid ] && switch=$to,mame-dragon
 repo=$(cd "$(dirname "$0")/../.." && pwd)
 tgt=${TGT:-target}
@@ -52,7 +52,7 @@ sleep 0.5
 grep -q "(mame-dragon) loaded" "$log" && r1=PASS || r1=FAIL
 grep -q "($to) loaded" "$log" && r2=PASS || r2=FAIL
 if [ "$mode" = rapid ]; then
-  # 最後に選んだまめドラゴンのまま: 仮キャラへ切り替えた記録が無く、state.json にも仮キャラが無い
+  # 最後に選んだまめドラゴンのまま: 別のペットへ切り替えた記録が無く、state.json にも残っていない
   ! grep -q "pet -> $to" "$log" && r3=PASS || r3=FAIL
   ! grep -q "\"pet\": \"$to\"" "$data/state.json" 2>/dev/null && r4=PASS || r4=FAIL
   echo "$r1 起動はまめドラゴン（$(grep -o 'mame-dragon) loaded in [0-9]* ms' "$log")）"

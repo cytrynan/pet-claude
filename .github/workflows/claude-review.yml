@@ -4,6 +4,8 @@
 # - draft の PR と bot（dependabot 等）の PR は飛ばす。fork からの PR は secret が渡らないので失敗して終わる。
 # - 指摘は correctness と docs/ に明記された要件だけ（全部拾うと過剰設計に発散するため）。
 # - 事前準備は claude.yml と同じ（GitHub App と Secret `CLAUDE_CODE_OAUTH_TOKEN`）。
+#   Secret が無いリポジトリでは、レビューを飛ばして job を成功で終える（2026-10-28。無いまま action を起こすと
+#   「Environment variable validation failed」で PR のチェックが毎回赤くなっていた。#68・#90・#110）。
 # - 書込権限は PR へのコメントだけ（contents は read）。
 name: Claude Review
 
@@ -24,12 +26,21 @@ jobs:
       contents: read
       pull-requests: write
       id-token: write
+    env:
+      # secrets は if: に直接書けないので、有無を env に落としてから step の if: で見る
+      HAS_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' }}
     steps:
+      - name: Secret が無ければレビューを飛ばす
+        if: env.HAS_TOKEN != 'true'
+        run: echo "::notice::Secret CLAUDE_CODE_OAUTH_TOKEN が無いので自動レビューを飛ばした（claude setup-token → gh secret set CLAUDE_CODE_OAUTH_TOKEN で有効になる）"
+
       - uses: actions/checkout@v7
+        if: env.HAS_TOKEN == 'true'
         with:
           fetch-depth: 1
 
       - uses: anthropics/claude-code-action@v1
+        if: env.HAS_TOKEN == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           prompt: |
