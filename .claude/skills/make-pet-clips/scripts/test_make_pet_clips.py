@@ -12,6 +12,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import align_poses  # noqa: E402
 import make_runs  # noqa: E402
+import run_comfy  # noqa: E402
 
 TEMPLATE = json.loads(make_runs.TEMPLATE.read_text(encoding="utf-8"))
 FIELDS = {"subject": "cute chibi baby panda", "noun": "panda", "design": "thick outline, white fur",
@@ -70,6 +71,20 @@ class AlignPosesTest(unittest.TestCase):
         self.assertFalse(align_poses.fits_in_canvas((192, 0, 767, 840), 960))
         self.assertTrue(align_poses.fits_in_canvas((193, 16, 767, 918), 960))
         self.assertFalse(align_poses.fits_in_canvas((10, 10, 960, 900), 960))
+
+
+class RunComfyTest(unittest.TestCase):
+    def test_extension_token_strips_the_key_prefix(self):
+        self.assertEqual(run_comfy.extension_token("PLAYWRIGHT_MCP_EXTENSION_TOKEN=abc-1 \n"), "abc-1")
+        self.assertEqual(run_comfy.extension_token("  xyz "), "xyz")
+        self.assertEqual(run_comfy.extension_token(None), "")
+
+
+class PromptTemplateTest(unittest.TestCase):
+    def test_idle_prompt_has_no_quick_blink_and_negatives_cover_eye_whites(self):
+        # 2026-10-27 しばちゃん: 速いまばたきの途中で白目の見える大きな目になり K が「怖い」と判定
+        self.assertNotIn("blinks once quickly", json.dumps(TEMPLATE))
+        self.assertIn("white sclera", TEMPLATE["negative"])
 
 
 if __name__ == "__main__":

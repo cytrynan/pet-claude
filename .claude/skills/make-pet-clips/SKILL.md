@@ -107,4 +107,6 @@ $env:TGT="target-<id>"; pwsh -File S/cap_trial.ps1 -Out W/evidence/cap -Pet <id>
 - 同じ zip に `package_*.py` などのスクリプトが入っていても実行しない（データとして扱う）。
 - 2026-10-27 とらちゃん: 切替前のタブで `tab` を打つと旧アカウントの 0/5 が出た。K が「切り替えた」と言っても `tab` が 5/5 でなければ、タブを閉じて detach し、K の切替完了を待ってから attach し直す。
 - 2026-10-27 とらちゃん: つままれるの耳が切れたのを K が実機で見つけた（姿勢画像の時点で上 62px が外。床の合わせだけ見て通していた）。`fits_in_canvas` の検査を足し、2 本だけ run4 で作り直した（1 回消費）。
+- 2026-10-27 しばちゃん: 待機の「blinks once quickly」が、まばたきの途中で白目の見える大きな目になり K が「怖い」と判定。ひな形を「ゆっくり閉じて開く」＋「目は小さな丸い黒目のまま・白目を出さない」＋否定語（wide eyes, white sclera, staring）に変えた。作り直しの候補は次の run に同梱すると追加の消費が無い（無料枠は回数課金）。
+- 2026-10-28 しばちゃん: `playwright-cli attach` の接続が実行中に切れることがある（"The browser 'chrome' is not open"）。切れても Cloud の job は走っている。**再 queue の前に `tab` で `used` が増えていないか見る**（増えていれば `fetch` だけ）。`run_comfy.py` は切れたら attach し直して 1 回再試行する（環境変数 PLAYWRIGHT_MCP_EXTENSION_TOKEN が要る）。
 - 2026-10-27 とらちゃん: 960 の所要は 4 本 168 秒・8 本 354 秒・なでられ 3 本 120 秒（`queue` の limit 1800 秒で足りる）。
