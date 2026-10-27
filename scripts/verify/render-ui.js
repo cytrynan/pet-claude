@@ -12,6 +12,8 @@ const out = process.argv[2];
 
 // チャット欄の答えの欄の高さ（ui.rs の CHAT_ANSWER_HEIGHT・chat.html の .answer と同じ。一番高いメニューに合わせた値）
 const ANSWER_H = 264;
+// チャット欄の窓の高さ（ui.rs の CHAT_FULL_HEIGHT＋影の余白 24）。答えの有無・メニューの開閉で変わらない（2026-10-28）
+const CHAT_FULL_H = 80 + 8 + ANSWER_H + 24;
 const answer = "たくさん思いつくよ！食べ物なら、焼き芋、栗ご飯、さんま、新米、柿、梨、ぶどう、きのこ料理、月見団子。お出かけなら、紅葉狩り、ハイキング、芋掘り、りんご狩り、温泉。おうちなら、読書、温かいお茶、秋の映画やゲーム。\n\n夜は虫の声を聞くのもいいね。";
 const bubbleText = answer.replace(/\s+/g, " ").slice(0, 139) + "…";
 // 固定文言の吹き出し: 窓の大きさはアプリと同じ関数（pet_core::bubble::status_island）から取る（2026-10-27。
@@ -69,23 +71,45 @@ const cases = [
       state: { settings_get: { scale: 0.55, tts: true, walk: false, pet: "a", pets: [{ id: "a", name: "まめドラゴン", wakeWord: "まめちゃん" }], chatAuth: "subscription", hasApiKey: false },
         autostart_get: { state: st, detail } } })),
   // チャット欄の下の行（モード・モデル＋エフォート）とメニュー（2026-10-27）。メニューは入力の島の上に伸びる。
-  // 窓の高さはメニューの分（ui.rs の set_chat_menu_height に伝える offsetHeight）を見込んで取る
-  { name: "chat-opts-nondefault", page: "chat.html", size: [384, 80 + 24],
+  // 窓（viewport）は答えの有無に関わらず答えの欄まで高い（ui.rs の CHAT_FULL_HEIGHT。2026-10-28 窓の大きさを変えると
+  // 中身が跳ぶため固定した）。答えもメニューも無い部分は透明（実機では領域から外す）
+  { name: "chat-opts-nondefault", page: "chat.html", size: [384, CHAT_FULL_H],
     state: { chat_state: { answer: null, error: false, busy: false, options: { model: "haiku", effort: "max", mode: "bypassPermissions" } } } },
-  ...[["mode", "#mode-btn", 5, 290], ["model", "#model-btn", 4, 220]].map(([kind, btn, rows, h]) => (
-    { name: "chat-menu-" + kind, page: "chat.html", size: [384, 80 + 8 + h + 24],
+  // 答えが無い時にメニューを開く（2026-10-28 K の再報告「自動と Fable のところを押したとき一瞬会話の画面が消える」）:
+  // 入力の島の位置が開く前後で変わらず、Rust に伝える高さが答えの欄（＝窓の上限）に収まること
+  ...[["mode", "#mode-btn", 5], ["model", "#model-btn", 4]].map(([kind, btn, rows]) => (
+    { name: "chat-menu-" + kind, page: "chat.html", size: [384, CHAT_FULL_H],
       state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } }, chat_options_set: { model: "opus", effort: "high", mode: "auto" } },
       act: async (page) => {
+        const island = () => page.evaluate(() => { const r = document.getElementById("chat").getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); });
+        const before = await island();
         await page.click(btn);
+        const instant = await island();
         await page.waitForTimeout(100);
+        const after = await island();
         const calls = await page.evaluate(() => window.__calls);
         const opened = calls.find((c) => c.cmd === "chat_menu");
         const n = await page.locator('#menu-items [role="menuitemradio"]').count();
         const checked = await page.locator('#menu-items [aria-checked="true"]').count();
         const menuH = await page.evaluate(() => document.getElementById("menu").offsetHeight);
-        const ok = !!opened && opened.args.height > 0 && opened.args.height <= h && n === rows && checked === 1 && menuH === opened.args.height;
-        return { ok, detail: `chat_menu=${JSON.stringify(opened && opened.args)} rows=${n} checked=${checked} menuH=${menuH}` };
+        const ok = !!opened && opened.args.height > 0 && opened.args.height <= ANSWER_H && n === rows && checked === 1 && menuH === opened.args.height
+          && instant === before && after === before;
+        return { ok, detail: `chat_menu=${JSON.stringify(opened && opened.args)} rows=${n} checked=${checked} menuH=${menuH} island=${before} instant=${instant} after=${after}` };
       } })),
+  // 答えが来る瞬間（答え無し→答えあり）: 入力の島の位置が変わらず、答えの欄がその上に足される
+  { name: "chat-answer-arrives", page: "chat.html", size: [384, CHAT_FULL_H],
+    state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } } },
+    act: async (page) => {
+      const look = () => page.evaluate(() => {
+        const box = (id) => { const r = document.getElementById(id).getBoundingClientRect(); return [r.left, r.top, r.width, r.height].join(","); };
+        return { island: box("chat"), answer: box("answer"), hidden: document.getElementById("answer").hidden };
+      });
+      const before = await look();
+      await page.evaluate((a) => window.renderChat({ answer: a, error: false, busy: false }), answer);
+      const after = await look();
+      const ok = before.hidden && !after.hidden && after.island === before.island && after.answer === `12,12,360,${ANSWER_H}`;
+      return { ok, detail: `island=${before.island}->${after.island} answer=${after.answer} hidden=${before.hidden}->${after.hidden}` };
+    } },
   // 答えが出ている時にメニューを開く（2026-10-28 K 報告「自動やモデルを押すと会話が一瞬消える」）。
   // 窓（viewport）は答えありの高さのまま。開いた瞬間（クリック直後）と開いた後（300ms）を撮り、答えの欄が
   // 隠されず・位置も文も変わらないこと、Rust に伝える高さが答えの欄に収まる（＝窓を動かさない）ことを見る
@@ -114,7 +138,7 @@ const cases = [
         return { ok, detail: `answer=${before.rect} instant=${instant.rect} after=${after.rect} chat_menu=${JSON.stringify(opened && opened.args)} menuH=${menuH}` };
       } })),
   // エフォートの一覧（モデルのメニューの「エフォート ›」から）。選ぶと chat_options_set が届き、閉じて（高さ 0）表示が変わる
-  { name: "chat-menu-effort", page: "chat.html", size: [384, 80 + 8 + 220 + 24],
+  { name: "chat-menu-effort", page: "chat.html", size: [384, CHAT_FULL_H],
     state: { chat_state: { answer: null, error: false, busy: false, options: { model: "fable", effort: "high", mode: "auto" } }, chat_options_set: { model: "fable", effort: "max", mode: "auto" } },
     act: async (page) => {
       await page.click("#model-btn");
