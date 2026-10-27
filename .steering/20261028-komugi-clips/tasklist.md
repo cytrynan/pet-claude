@@ -31,7 +31,7 @@ generated: { by: kuroko/claude-opus-5-5, at: 2026-10-28 }
 - [x] Comfy Cloud 2 回目（8 本＋寝る 2 候補）・3 回目（なでられ 3 候補） (#96) — 寝る b・なでられ a を採用。無料枠 0/5
 - [x] コマ化・シート・pet.json（fullCell true） (#97) — 13 本 317 コマ・6.2MB・共通倍率 0.6884（全部収まる・決め打ち不要）。シートは直した静止画 `srcfix-0.9/` から（3072×4576・7.5MB）
 - [x] 実機・テスト・ゲート (#98)
-- [~] 記録・commit・PR（base main） (#99)
+- [x] 記録・commit・PR（base main） (#99) — PR #100
 
 ## 検分表
 ### run1（2026-10-28 01:08・無料枠 3/5 → 2/5・171 秒）
@@ -77,7 +77,7 @@ K 判定（2026-10-28）: 止まる・待機・置かれるは可。寝るは「
 |---|---|
 | `pet-switch.sh`（SWITCH_TO=komugi） | 3 項目 PASS（起動まめドラゴン 766 ms → komugi loaded 769 ms・clips 13 → state.json）。専有 41.3MB（設定画面を開いたまま）。`evidence/pet-switch.txt` |
 | `cap_trial.ps1`（2880×1800） | held_cell **384×416**（`fullCell: true`）・専有 **40.4MB**（N1 50MB 以内）・idle 14.0MB・grabbed 9.1MB。`evidence/cap/result.txt` |
-| 常駐ペット | 検証の前後とも PID 86344（`pet-claude-main	arget\debug\pet-app.exe`）のまま。止めていない |
+| 常駐ペット | 検証の前後とも PID 86344（`pet-claude-main\target\debug\pet-app.exe`）のまま。止めていない |
 | `gate.sh` | GATE OK（fmt・clippy・test） |
 | 単体テスト | `komugi_manifest_is_full_cell_with_clips_and_wake_word`、`bundled_pets_clips_json_match_frame_files` に komugi |
 | 目視 | 暗い背景に 6 コマ（待機・寝る終わり・起きる始め・なでられ・歩き・つままれ）を並べ、白の抜け残りなし・寝姿の色が立ち姿とそろう（`assets-check.png`） |
