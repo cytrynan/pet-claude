@@ -7,6 +7,7 @@
 <!-- /setup-project でドキュメントを作成したら、最初のエントリを**このコメントの下（閉じ記号の後）**に追記してください。
 コメントの中に書くと Markdown の描画に出ません（実例: 「ここに追記」と読んでコメント内へ書き続け、ログ全体が見えないまま運用された）。例:
 ## 2026-10-28
+* **Creation**: [pets-lineup.png](images/pets-lineup.png) — 同梱のペット 6 体の待機の絵を名前つきで横一列に並べた 1 枚（scripts/make-lineup.py。README に掲載） (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [architecture.md](architecture.md) — §4 アイコンの作り方を make-icon.py（まめドラゴンの待機 1 コマ目）に、配布 zip は release.ps1 と明記 (kuroko/claude-fable-5-1 ← human:K)
 * **Creation**: [SETUP.md](release/SETUP.md)・[README.md](release/README.md) — 配布 zip の初回セットアップ手順（Claude Code が読んで実行: 置き場所・hooks 登録・run-hidden.vbs・まめドラゴンのショートカット・起動確認・任意の自動起動/音声）と同梱 README。zip は scripts/release.ps1 が作る (kuroko/claude-fable-5-1 ← human:K)
 * **Update**: [README.md](manual/README.md)・[pet-claude-manual.docx](manual/pet-claude-manual.docx) — マニュアルを apple-design（HIG）の値で組み直し。文章を半分に減らし、流れ・状態・時間軸の図 8 枚（diagrams.html → render-diagrams.js → images/diagrams/）と色つきチップで見せる。10 ページ・各章 1 ページ (kuroko/claude-fable-5-1 ← human:K)

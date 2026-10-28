@@ -11,6 +11,8 @@ Claude Code の作業に合わせて動く、Windows 用のデスクトップペ
 - チャット: ペットの下のバーから、Claude Code の対話と同じ環境（設定・CLAUDE.md・スキル・MCP）の新しいセッションに送り、答えを吹き出しと声で返す。モデル・エフォート・権限モードはチャット欄で切り替えられる
 - 音声入力（ローカルの文字起こし）と読み上げ（AivisSpeech）。マイクのボタンを押して話すと、そのままチャットに送る
 - ペットは 6 体（まめドラゴン・りんりん・とらちゃん・しばちゃん・こむぎちゃん・ごまちゃん）から選ぶ。フォルダを足せば増やせる
+
+![同梱のペット 6 体](docs/images/pets-lineup.png)
 - 他のウィンドウの上に浮かび、フォーカスを奪わない。キャラクターの不透明な部分だけがクリックに反応し、ドラッグで動かせる。サインインしたら自動で出す設定もある
 
 ## 使い方
@@ -40,7 +42,7 @@ cargo build --workspace --all-targets
 | `crates/pet-app` | アプリ本体（ペットの窓・トレイ・UI・hooks の受け口・チャット・声・自動起動） |
 | `crates/pet-hook` | Claude Code の hook から起動される小さな exe |
 
-`ui/` が UI の HTML、`assets/pets/` がペットの素材、`scripts/verify/` が実機確認のスクリプト。配布 zip は `pwsh scripts/release.ps1`（同梱物を集めて zip にし、展開し直して自己検査）。初回セットアップは zip の `SETUP.md`（Claude Code に読ませて実行する形。正本 `docs/release/SETUP.md`）。品質ゲートは `scripts/gate.sh`（`cargo fmt --check` → `cargo clippy -D warnings` → `cargo test`）。
+`ui/` が UI の HTML、`assets/pets/` がペットの素材（一覧の絵 `docs/images/pets-lineup.png` は `python -I scripts/make-lineup.py assets/pets docs/images/pets-lineup.png` で作り直す）、`scripts/verify/` が実機確認のスクリプト。配布 zip は `pwsh scripts/release.ps1`（同梱物を集めて zip にし、展開し直して自己検査）。初回セットアップは zip の `SETUP.md`（Claude Code に読ませて実行する形。正本 `docs/release/SETUP.md`）。品質ゲートは `scripts/gate.sh`（`cargo fmt --check` → `cargo clippy -D warnings` → `cargo test`）。
 
 計画: [docs/roadmap.md](docs/roadmap.md)。要件: [docs/product-requirements.md](docs/product-requirements.md)。設計: [docs/architecture.md](docs/architecture.md)。UI の見た目: [DESIGN.md](DESIGN.md)。参考にした OSS の解析: [OpenPets](docs/openpets-analysis.md)、[embed-pet](docs/embed-pet-analysis.md)
 
