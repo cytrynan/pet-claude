@@ -40,7 +40,7 @@ cargo build --workspace --all-targets
 | `crates/pet-app` | アプリ本体（ペットの窓・トレイ・UI・hooks の受け口・チャット・声・自動起動） |
 | `crates/pet-hook` | Claude Code の hook から起動される小さな exe |
 
-`ui/` が UI の HTML、`assets/pets/` がペットの素材、`scripts/verify/` が実機確認のスクリプト。品質ゲートは `scripts/gate.sh`（`cargo fmt --check` → `cargo clippy -D warnings` → `cargo test`）。
+`ui/` が UI の HTML、`assets/pets/` がペットの素材、`scripts/verify/` が実機確認のスクリプト。配布 zip は `pwsh scripts/release.ps1`（同梱物を集めて zip にし、展開し直して自己検査）。初回セットアップは zip の `SETUP.md`（Claude Code に読ませて実行する形。正本 `docs/release/SETUP.md`）。品質ゲートは `scripts/gate.sh`（`cargo fmt --check` → `cargo clippy -D warnings` → `cargo test`）。
 
 計画: [docs/roadmap.md](docs/roadmap.md)。要件: [docs/product-requirements.md](docs/product-requirements.md)。設計: [docs/architecture.md](docs/architecture.md)。UI の見た目: [DESIGN.md](DESIGN.md)。参考にした OSS の解析: [OpenPets](docs/openpets-analysis.md)、[embed-pet](docs/embed-pet-analysis.md)
 

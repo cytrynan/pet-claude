@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/pet-core", "crates/pet-app", "crates/pet-hook"]
 
 [workspace.package]
-version = "0.1.0"
+version = "1.0.0"
 edition = "2024"
 license = "MIT"
 authors = ["cytrynan"]
