@@ -23,3 +23,6 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-28T14:00:00+09:00 }
 - SETUP の手順 2 を最初 `.\pet-app.exe --install-hooks` と素で書いて試したら、直後の確認が hooks 1 種（書き換え前）を読んだ。pet-app は GUI サブシステムなので PowerShell が終わりを待たない。`(... 2>&1 | Out-String)` の形に直し、再実行で 6 種・7 組を確認。release.ps1 の自己検査は最初からパイプ形だったので通っていた
 - release.ps1 の `"exit $LASTEXITCODE: $x"` は PowerShell 5.1 のパーサが `$LASTEXITCODE:` を変数名と読んで構文エラー（pwsh は通る）。`${LASTEXITCODE}` に。規範どおり powershell.exe 側で ParseFile して見つけた
 - 自動起動は `%USERPROFILE%\.claude\scripts\run-hidden.vbs`（K の規範の補助）に依存していた。配布先に無いので zip に同梱し、SETUP の手順 3 で無ければ置く（あれば触らない）。Rust 側は変えていない
+
+## 実機（2026-10-28 14:08 K 指示「起こし直す」）
+- SETUP.md の手順 1〜7 を K の PC で実行: zip を `%LOCALAPPDATA%\Programs\pet-claude` に展開 → debug の常駐（PID 67704・ExecutablePath で照合）を停止 → `--install-hooks`（pet-hook 7 組が release 側・debug 側 0）→ run-hidden.vbs は既存 → デスクトップの `pet-claude.lnk` を release exe＋`pet-claude.ico` に → `--install-autostart`（`On`）→ 起動 PID 15268（ログ `start 1.0.0`・まめドラゴン 160ms・2 画面）。`claude -p` で hooks が届き、作業中→「できたよ」の吹き出し・TTS 起動をログで確認。画面の切り出しで作業中のポーズを目視
