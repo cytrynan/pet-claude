@@ -26,6 +26,7 @@ use tauri::{
     WebviewWindowBuilder, WindowEvent,
 };
 use windows::Win32::Foundation::{LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Graphics::Gdi::{CreateRectRgn, DeleteObject, HGDIOBJ, SetWindowRgn};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::WindowsAndMessaging::{
     CallNextHookEx, GetCursorPos, HHOOK, MSLLHOOKSTRUCT, SetWindowsHookExW, UnhookWindowsHookEx,
@@ -79,6 +80,13 @@ const ANSWER_MAX_MS: u64 = 20_000;
 /// `chat.html` の `.answer` の高さと `scripts/verify/render-ui.js` の `ANSWER_H` も同じ値。
 const CHAT_ANSWER_HEIGHT: f64 = 264.0;
 const CHAT_GAP: f64 = 8.0;
+/// チャット欄の窓の高さ（論理ピクセル）: 入力欄＋間＋答えの欄。**チャット欄が出ている間は窓の大きさを変えない。**
+/// 答えもメニューも無い部分は透明のままにし、`SetWindowRgn` で窓の領域から外す（クリックは裏の窓へ抜ける。
+/// `apply_chat_region`）。窓の大きさを変えると WebView2 が描き直すまでの 1〜2 コマは前の絵が窓の左上に貼られ、
+/// 上に伸ばすと中身が跳んで消えて見える。#118 は答えがある間だけ止めたが、答えが無い時にメニューを開く・答えが
+/// 来る時は伸びていて同じ跳びが残った（2026-10-28 K の再報告。実機の連写で開く時 2 コマ）。領域の変更は
+/// 描き直しを起こさない（領域を切り替えながらの連写 60 コマで 0）。
+const CHAT_FULL_HEIGHT: f64 = CHAT_ISLAND.1 + CHAT_GAP + CHAT_ANSWER_HEIGHT;
 /// チャット欄を出してから、前面を失ったら取り直す間（実機では出して 7ms で失い、入力欄に打てなかった）。
 /// 人が外を押すにはこれより長くかかる（ダブルクリックの間隔 500ms 程度）ので、その操作とは取り合わない。
 const CHAT_FOCUS_GRACE: Duration = Duration::from_millis(600);
@@ -212,7 +220,7 @@ fn island(label: &str) -> Option<WebviewWindow> {
     let app = app()?;
     let (page, size, focusable) = match label {
         BAR => ("bar.html", BAR_ISLAND, false),
-        CHAT => ("chat.html", CHAT_ISLAND, true),
+        CHAT => ("chat.html", (CHAT_ISLAND.0, CHAT_FULL_HEIGHT), true),
         BUBBLE => ("bubble.html", STATUS_ISLAND, false),
         _ => ("menu.html", MENU_ISLAND, false),
     };
@@ -456,6 +464,7 @@ fn open_chat() {
     }
     mark_shown(BAR, false);
     CHAT_OPENED_AT.with(|t| t.set(Some(Instant::now())));
+    apply_chat_region(&chat);
     place_and_show(CHAT, &chat, rect, true);
     let _ = chat.eval("window.closeChatMenu && window.closeChatMenu()");
     let _ = chat.eval(format!(
@@ -468,7 +477,8 @@ fn open_chat() {
     log("chat shown");
 }
 
-/// チャット欄の島の大きさ。答えがあれば入力欄の上に答えの欄を足す。
+/// チャット欄の見えている部分の大きさ。答えがあれば入力欄の上に答えの欄を足す
+/// （窓そのものは常に `CHAT_FULL_HEIGHT` の高さ。`chat_window_rect`・`chat_region_top`）。
 fn chat_island() -> (f64, f64) {
     // 待ち中も答えの欄を出す（「新しいチャット」で取り消せるように。2026-10-21 検証係の指摘）。
     // 質問への「回答」の入力中は、答えの欄に質問文を出す
@@ -481,20 +491,25 @@ fn chat_island() -> (f64, f64) {
     )
 }
 
-/// チャット欄の島の高さ（入力欄＋答えの欄＋開いているメニュー）。
+/// チャット欄の見えている部分の高さ（入力欄＋答えの欄＋開いているメニュー）。`CHAT_FULL_HEIGHT` を超えない。
 /// 開いているメニュー（`menu` > 0）は答えの欄に重ねて出す。答えの欄より高い分だけ（答えが無ければ全部）上に足す。
+/// メニューは答えの欄の高さまで（`chat.html` の `.menu` の max-height と同じ。超えた分は中でスクロール）。
 fn chat_island_height(has_answer: bool, menu: f64) -> f64 {
     let answer = if has_answer {
         CHAT_GAP + CHAT_ANSWER_HEIGHT
     } else {
         0.0
     };
-    let menu = if menu > 0.0 { CHAT_GAP + menu } else { 0.0 };
+    let menu = if menu > 0.0 {
+        CHAT_GAP + menu.min(CHAT_ANSWER_HEIGHT)
+    } else {
+        0.0
+    };
     CHAT_ISLAND.1 + answer.max(menu)
 }
 
-/// チャット欄のメニューを開いた（高さ）・閉じた（0）。答えの欄より高い分だけ窓を広げて置き直す（中身は描き直さない。
-/// 答えが出ている間はメニューが答えの欄に収まるので窓は変わらない）。
+/// チャット欄のメニューを開いた（高さ）・閉じた（0）。窓の大きさは変えず、見えている部分（領域）を変える。答えが
+/// 無い時はメニューの分だけ見えている部分が上に伸びる（置き直しはペットの真下に収まらなければ真上へ）。
 /// 上限は `BUBBLE_FIT_MAX` の高さ（ページ側の誤りで窓が画面いっぱいに広がらないように）。
 pub fn set_chat_menu_height(height: f64) {
     let height = if height.is_finite() {
@@ -517,7 +532,57 @@ fn chat_rect() -> Rect {
     let Some((pet, dpi)) = PET_AT.with(Cell::get) else {
         return Rect::from_xywh(0, 0, 1, 1);
     };
-    below_pet(&pet, chat_island(), dpi)
+    chat_window_rect(below_pet(&pet, chat_island(), dpi), dpi)
+}
+
+/// 見えている部分の矩形 `visible` を下端に合わせ、上に透明な部分を足した窓の矩形。窓の高さは常に
+/// `CHAT_FULL_HEIGHT`（見えている部分が全部なら同じ矩形）。上に足した分は画面の外や、下に置いた時はペットに
+/// 重なりうるが、領域から外すので描かれもクリックも取らない。
+fn chat_window_rect(visible: Rect, dpi: u32) -> Rect {
+    let (w, full) = window_size((CHAT_ISLAND.0, CHAT_FULL_HEIGHT), dpi);
+    Rect::from_xywh(visible.left, visible.bottom - full, w, full)
+}
+
+/// 窓の上端から見えている部分（高さ `visible_h`・影の余白込み）が始まるまでの透明な部分の高さ（物理ピクセル）。
+/// 0 なら窓の全部が見えている。
+fn chat_region_top(visible_h: f64, dpi: u32) -> i32 {
+    let full = window_size((CHAT_ISLAND.0, CHAT_FULL_HEIGHT), dpi).1;
+    let shown = window_size((CHAT_ISLAND.0, visible_h), dpi).1;
+    (full - shown).max(0)
+}
+
+/// 見えている部分だけを窓の領域にする（透明な部分はクリックを裏の窓へ通し、描かれもしない）。窓を置き直す・
+/// 答えが来る・メニューを開け閉めするたびに呼ぶ。領域の変更は WebView2 の描き直しを起こさない（実機の連写）。
+/// 全部が見えている時は領域を外す（普通の四角い窓に戻す）。
+fn apply_chat_region(w: &WebviewWindow) {
+    let Some((_, dpi)) = PET_AT.with(Cell::get) else {
+        return;
+    };
+    let Ok(hwnd) = w.hwnd() else {
+        return;
+    };
+    let (width, full) = window_size((CHAT_ISLAND.0, CHAT_FULL_HEIGHT), dpi);
+    let top = chat_region_top(chat_island().1, dpi);
+    // SAFETY: 自分の窓のハンドル。領域は SetWindowRgn が成功すると OS のものになる（失敗した時だけ消す）
+    unsafe {
+        if top == 0 {
+            let _ = SetWindowRgn(hwnd, None, true);
+        } else {
+            let rgn = CreateRectRgn(0, top, width, full);
+            if SetWindowRgn(hwnd, Some(rgn), true) == 0 {
+                log("chat: SetWindowRgn failed");
+                let _ = DeleteObject(HGDIOBJ(rgn.0));
+            }
+        }
+    }
+}
+
+/// 開いているチャット欄の、見えている部分の窓の矩形（上の透明な部分を除く）。右クリックメニューの内側判定に使う。
+fn chat_visible_rect(w: &WebviewWindow) -> Option<Rect> {
+    let (_, dpi) = PET_AT.with(Cell::get)?;
+    let mut r = window_rect(w)?;
+    r.top += chat_region_top(chat_island().1, dpi);
+    Some(r)
 }
 
 /// chat.html が読み込み時・答えが来た時に受け取る中身。
@@ -543,6 +608,7 @@ pub fn refresh_chat() {
         return;
     }
     let Some(w) = window(CHAT) else { return };
+    apply_chat_region(&w);
     place_and_show(CHAT, &w, chat_rect(), false);
     let _ = w.eval(format!(
         "window.renderChat && window.renderChat({})",
@@ -559,9 +625,9 @@ fn place_chat() {
     }
     if let Some(w) = window(CHAT) {
         let rect = chat_rect();
-        // 同じ矩形なら触らない（答えが出ている間にメニューを開け閉めした時）。窓の大きさを変えると、WebView2 が
-        // 描き直すまでの 1 コマは前の絵が窓の左上に貼られ、上に伸ばすと会話が跳んで消えて見えた（2026-10-28 K 報告。
-        // 位置と大きさを 1 回の SetWindowPos で変えても残った＝実機の連写で確認）
+        // 見えている部分（領域）はメニューの開け閉めで変わる。窓の矩形は変わらないことが多い（上に置いた時は
+        // 答えが来ても変わらない）ので、同じなら触らない。大きさは常に同じ（`CHAT_FULL_HEIGHT`）
+        apply_chat_region(&w);
         if window_rect(&w) != Some(rect) {
             let _ = w.set_position(PhysicalPosition::new(rect.left, rect.top));
             let _ = w.set_size(PhysicalSize::new(rect.width() as u32, rect.height() as u32));
@@ -752,8 +818,16 @@ fn open_menu(at: Point, pet: Rect, dpi: u32) {
         // 出ているバー・チャットも内側に入れる（入れないと、チャットの中のクリックで全部閉じる）
         let mut inside = vec![pet, island_rect(rect, dpi)];
         for label in [BAR, CHAT] {
+            // チャット欄は見えている部分だけ（上の透明な部分は裏の窓のもの）
+            let rect_of = |w: WebviewWindow| {
+                if label == CHAT {
+                    chat_visible_rect(&w)
+                } else {
+                    window_rect(&w)
+                }
+            };
             if visible(label)
-                && let Some(r) = window(label).and_then(|w| window_rect(&w))
+                && let Some(r) = window(label).and_then(rect_of)
             {
                 inside.push(island_rect(r, dpi));
             }
@@ -1671,12 +1745,12 @@ mod tests {
         }
     }
 
-    /// 答えが出ている間は、どのメニュー（Edge の実測: モード 264・モデル 203・エフォート 194）を開いても窓の
-    /// 高さが変わらない（変わると WebView2 の描き直し待ちの 1 コマで会話が跳んで消えて見える。2026-10-28 K 報告）。
-    /// 答えが無い時は今までどおりメニューの分だけ伸びる。
+    /// 答えが出ている間は、どのメニュー（Edge の実測: モード 264・モデル 203・エフォート 194）を開いても見えている
+    /// 部分の高さが変わらない。答えが無い時はメニューの分だけ伸びるが、窓の高さ（答えの欄まで）を超えない。
     #[test]
     fn chat_menu_does_not_resize_while_answer_is_shown() {
         let closed = chat_island_height(true, 0.0);
+        assert_eq!(closed, CHAT_FULL_HEIGHT);
         for menu in [194.0, 203.0, 264.0] {
             assert_eq!(chat_island_height(true, menu), closed, "menu {menu}");
         }
@@ -1685,6 +1759,30 @@ mod tests {
             CHAT_ISLAND.1 + CHAT_GAP + 264.0
         );
         assert_eq!(chat_island_height(false, 0.0), CHAT_ISLAND.1);
+        // 文字の大きさが違う環境でメニューが答えの欄より高くても、窓の高さを超えない（中でスクロール）
+        assert_eq!(chat_island_height(false, 600.0), CHAT_FULL_HEIGHT);
+        assert_eq!(chat_island_height(true, 600.0), CHAT_FULL_HEIGHT);
+    }
+
+    /// 窓の高さは見えている部分に関わらず一定で、見えている部分を下端に合わせる（上に透明な部分を足す）。
+    /// 200% の画面: 窓 752px。入力欄だけ（80）なら上の 544px が透明、メニュー 262 なら 4px、全部なら 0。
+    #[test]
+    fn chat_window_keeps_its_height_and_clips_the_top() {
+        let dpi = 192;
+        let (w, full) = window_size((CHAT_ISLAND.0, CHAT_FULL_HEIGHT), dpi);
+        assert_eq!((w, full), (768, 752));
+        let island = Rect::from_xywh(1056, 1299, 768, 208);
+        let win = chat_window_rect(island, dpi);
+        assert_eq!(win, Rect::from_xywh(1056, 1507 - 752, 768, 752));
+        assert_eq!(win.bottom, island.bottom);
+        let whole = Rect::from_xywh(1056, 755, 768, 752);
+        assert_eq!(chat_window_rect(whole, dpi), whole);
+        assert_eq!(chat_region_top(CHAT_ISLAND.1, dpi), 544);
+        assert_eq!(chat_region_top(chat_island_height(false, 262.0), dpi), 4);
+        assert_eq!(chat_region_top(CHAT_FULL_HEIGHT, dpi), 0);
+        assert_eq!(chat_region_top(chat_island_height(true, 264.0), dpi), 0);
+        // 100% の画面でも同じ式
+        assert_eq!(chat_region_top(CHAT_ISLAND.1, 96), 272);
     }
 
     #[test]

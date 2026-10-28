@@ -37,7 +37,8 @@
   .opt:focus-visible { outline: 2px solid var(--tint); outline-offset: 1px; }
   /* 最後の答え（入力欄の上。高さは ui.rs の CHAT_ANSWER_HEIGHT = 264px、入力欄との間 8px）。
      文は読ませるので不透明の面。全文を折り返し、長ければ中でスクロール。
-     高さは一番高いメニュー（モード 264px）と同じにして、答えが出ている間はメニューを開いても窓を動かさない。
+     高さは一番高いメニュー（モード 264px）と同じ。窓は開いた時からこの欄の分まで高く、答えもメニューも無い間は上の部分が透明
+     （ui.rs の CHAT_FULL_HEIGHT。窓の大きさを変えると中身が 1〜2 コマ跳ぶため）。
      top は auto で高さを固定（.island の inset で窓いっぱいに伸ばすと、窓が変わるたびに答えの欄も伸び縮みした） */
   .answer { top: auto; bottom: calc(12px + 80px + 8px); height: 264px; border-radius: 16px; background: var(--surface-solid);
     display: flex; flex-direction: column; }
@@ -61,8 +62,8 @@
   .scrim[hidden] { display: none; }
   .menu { position: absolute; top: auto; bottom: calc(12px + 80px + 8px); inset-inline: auto; width: 280px; z-index: 2;
     border-radius: 12px; padding: 5px; background: var(--surface-solid); display: flex; flex-direction: column; }
-  /* 答えが出ている間は答えの欄の高さを超えない（文字の大きさが違う環境でメニューが伸びても窓を動かさない。超えた分は中でスクロール） */
-  #answer:not([hidden]) ~ .menu { max-height: 264px; overflow-y: auto; }
+  /* 答えの欄の高さ（＝窓の上限）を超えない（文字の大きさが違う環境でメニューが伸びても窓の外に出ない。超えた分は中でスクロール） */
+  .menu { max-height: 264px; overflow-y: auto; }
   .menu.left { left: 12px; }
   .menu.right { right: 12px; }
   .menu[hidden] { display: none; }
@@ -211,7 +212,7 @@
     scrim.hidden = false;
     modeBtn.setAttribute("aria-expanded", kind === "mode" ? "true" : "false");
     modelBtn.setAttribute("aria-expanded", kind !== "mode" ? "true" : "false");
-    // 窓をメニューの分だけ広げてもらう（答えの欄より高い分。ui.rs の set_chat_menu_height）
+    // 見えている部分をメニューの分だけ広げてもらう（窓の大きさは変えず、領域を変える。ui.rs の set_chat_menu_height）
     invoke("chat_menu", { height: menu.offsetHeight });
     const first = menuItems.querySelector('[aria-checked="true"]') || menuItems.querySelector(".mi");
     if (first) first.focus();
