@@ -17,7 +17,7 @@ generated: { by: kuroko/claude-fable-5-1, at: 2026-10-28T14:00:00+09:00 }
 - [x] まめドラゴンのアイコン（make-icon.py＋テスト 5 本 OK）・版 1.0.0・CHANGELOG (#137)
 - [x] SETUP.md・同梱 README・release.ps1（自己検査つき。PowerShell 5.1 でもパース OK） (#138)
 - [x] release ビルド（4m05s）→ zip 69.6MB・1932 ファイル → 自己検査 OK（一覧一致・--autostart-status・--install-hooks 7 組）→ SETUP の手順 0〜4 を展開した試験フォルダで実行（ショートカットは試験フォルダに作って TargetPath/IconLocation を読み返し、ico の 6 サイズを描いて目視）→ `%USERPROFILE%\Desktop\pet-claude-1.0.0-windows-x64.zip` (#139)。未: release exe の常駐起動（常駐ペットが mutex を持つので止めないと確かめられない。K の指示待ち）
-- [~] gate-commit → タグ v1.0.0 → push (#140)
+- [x] gate-commit → タグ v1.0.0 → push (#140)。commit 9f5e70f・タグ v1.0.0・push 済み
 
 ## 止まった点
 - SETUP の手順 2 を最初 `.\pet-app.exe --install-hooks` と素で書いて試したら、直後の確認が hooks 1 種（書き換え前）を読んだ。pet-app は GUI サブシステムなので PowerShell が終わりを待たない。`(... 2>&1 | Out-String)` の形に直し、再実行で 6 種・7 組を確認。release.ps1 の自己検査は最初からパイプ形だったので通っていた
